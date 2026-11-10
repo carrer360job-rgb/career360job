@@ -1,0 +1,25 @@
+{
+  "name": "vetrijobs-platform",
+  "version": "1.0.0",
+  "description": "VetriJobs (வெற்றி ஜாப்ஸ்) — Universal Job Recruitment Platform (Flutter Universal App/Web + Node.js Backend)",
+  "private": true,
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend:web": "flutter run -d chrome --web-port=3000",
+    "build:frontend:web": "flutter build web --release",
+    "build:frontend:apk": "flutter build apk --release",
+    "prisma:generate": "npm --prefix backend run prisma:generate",
+    "prisma:migrate": "npm --prefix backend run prisma:migrate"
+  },
+  "keywords": [
+    "vetrijobs",
+    "job-portal",
+    "tamil-jobs",
+    "flutter",
+    "nodejs",
+    "prisma",
+    "postgresql"
+  ],
+  "author": "",
+  "license": "ISC"
+}

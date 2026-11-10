@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "1068640600773",
+    "project_id": "career360-95daa",
+    "storage_bucket": "career360-95daa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1068640600773:android:d27c99cf74368b7cb6a6ac",
+        "android_client_info": {
+          "package_name": "com.jobportal.candidate_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1068640600773-c5mtr8vuheuu5eku6rse5ggt8v2u565t.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBsap5-h88dZW3ckUMvhdbi9x56Yxc9_Gk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1068640600773-c5mtr8vuheuu5eku6rse5ggt8v2u565t.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

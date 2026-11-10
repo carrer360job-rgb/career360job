@@ -1,0 +1,310 @@
+// Prisma Schema for Job Portal Platform
+// Target DB: Neon PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CANDIDATE
+  EMPLOYER
+  ADMIN
+}
+
+enum AccountStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  BLOCKED
+}
+
+enum CompanyVerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum JobStatus {
+  DRAFT
+  PENDING_APPROVAL
+  PUBLISHED
+  PAUSED
+  CLOSED
+  EXPIRED
+  REJECTED
+}
+
+enum WorkMode {
+  ON_SITE
+  REMOTE
+  HYBRID
+}
+
+enum ApplicationStatus {
+  SUBMITTED
+  VIEWED
+  SHORTLISTED
+  INTERVIEW
+  HIRED
+  REJECTED
+  WITHDRAWN
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  EXHAUSTED
+  CANCELLED
+}
+
+// 1. Users (Identity & Auth)
+model User {
+  id              String         @id @default(uuid())
+  email           String?        @unique
+  mobileNumber    String         @unique
+  passwordHash    String?
+  role            UserRole       @default(CANDIDATE)
+  status          AccountStatus  @default(ACTIVE)
+  isMobileVerified Boolean       @default(false)
+  isEmailVerified Boolean        @default(false)
+  lastLoginAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  candidateProfile CandidateProfile?
+  employerMembers  EmployerMember[]
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+
+  @@index([mobileNumber])
+  @@index([email])
+  @@index([role, status])
+}
+
+// 2. Candidate Profiles
+model CandidateProfile {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName        String
+  profilePhotoUrl String?
+  locationCity    String?
+  locationState   String?
+  education       Json?
+  experience      Json?
+  skills          String[]
+  currentSalary   Decimal? @db.Decimal(12, 2)
+  expectedSalary  Decimal? @db.Decimal(12, 2)
+  preferredRole   String?
+  preferredCategory String?
+  preferredLocations String[]
+  resumeFileUrl   String?
+  resumeFileName  String?
+  resumeUpdatedAt DateTime?
+  profileScore    Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  applications    Application[]
+
+  @@index([preferredCategory])
+  @@index([locationCity])
+}
+
+// 3. Companies (Employers)
+model Company {
+  id                 String                    @id @default(uuid())
+  companyName        String
+  logoUrl            String?
+  industry           String
+  websiteUrl         String?
+  companyAddress     String?
+  description        String?
+  verificationDocUrl String?
+  verificationStatus CompanyVerificationStatus @default(PENDING)
+  verificationNotes  String?
+  verifiedAt         DateTime?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  members            EmployerMember[]
+  subscriptions      Subscription[]
+  jobs               Job[]
+
+  @@index([companyName])
+  @@index([verificationStatus])
+}
+
+// 4. Employer Members (Multi-user HR support)
+model EmployerMember {
+  id        String   @id @default(uuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memberRole String  @default("RECRUITER") // OWNER, HR_MANAGER, RECRUITER
+  createdAt DateTime @default(now())
+
+  @@unique([companyId, userId])
+}
+
+// 5. Subscription Plans
+model Plan {
+  id          String   @id @default(uuid())
+  name        String   // Monthly, Quarterly, Yearly
+  description String?
+  durationMonths Int
+  price       Decimal  @db.Decimal(10, 2)
+  taxRate     Decimal  @default(18.0) @db.Decimal(5, 2)
+  jobPostQuota Int
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  subscriptions Subscription[]
+}
+
+// 6. Subscriptions
+model Subscription {
+  id             String             @id @default(uuid())
+  companyId      String
+  company        Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  planId         String
+  plan           Plan               @relation(fields: [planId], references: [id])
+  startDate      DateTime           @default(now())
+  expiryDate     DateTime
+  totalQuota     Int
+  usedQuota      Int                @default(0)
+  status         SubscriptionStatus @default(ACTIVE)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  payments       Payment[]
+  jobs           Job[]
+
+  @@index([companyId, status])
+}
+
+// 7. Payments & Invoices
+model Payment {
+  id                String        @id @default(uuid())
+  subscriptionId    String?
+  subscription      Subscription? @relation(fields: [subscriptionId], references: [id])
+  gatewayOrderId    String        @unique // Razorpay order_id
+  gatewayPaymentId  String?       @unique // Razorpay payment_id
+  gatewaySignature  String?
+  amount            Decimal       @db.Decimal(10, 2)
+  taxAmount         Decimal       @db.Decimal(10, 2)
+  currency          String        @default("INR")
+  status            PaymentStatus @default(PENDING)
+  invoiceNumber     String?       @unique
+  invoiceUrl        String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([gatewayOrderId])
+  @@index([status])
+}
+
+// 8. Jobs
+model Job {
+  id             String       @id @default(uuid())
+  companyId      String
+  company        Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
+  title          String
+  category       String
+  description    String
+  responsibilities String?
+  skills         String[]
+  minExperience  Int          @default(0)
+  maxExperience  Int?
+  minSalary      Decimal?     @db.Decimal(12, 2)
+  maxSalary      Decimal?     @db.Decimal(12, 2)
+  locationCity   String
+  locationState  String?
+  workMode       WorkMode     @default(ON_SITE)
+  vacanciesCount Int          @default(1)
+  deadline       DateTime?
+  status         JobStatus    @default(DRAFT)
+  rejectionReason String?
+  quotaConsumed  Boolean      @default(false)
+  viewsCount     Int          @default(0)
+  publishedAt    DateTime?
+  closedAt       DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  applications   Application[]
+
+  @@index([status, category])
+  @@index([locationCity])
+  @@index([companyId])
+}
+
+// 9. Job Applications
+model Application {
+  id              String            @id @default(uuid())
+  jobId           String
+  job             Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidateId     String
+  candidate       CandidateProfile  @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  resumeUrlSnapshot String
+  screeningAnswers Json?
+  status          ApplicationStatus @default(SUBMITTED)
+  hrNotes         String?
+  interviewDate   DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@unique([jobId, candidateId]) // Prevent duplicate applications
+  @@index([jobId, status])
+  @@index([candidateId])
+}
+
+// 10. Notifications
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      String   // APPLICATION_STATUS, QUOTA_WARNING, PLAN_EXPIRY, etc.
+  metadata  Json?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+}
+
+// 11. Audit Logs
+model AuditLog {
+  id          String   @id @default(uuid())
+  actorUserId String?
+  actorUser   User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  action      String   // APPROVE_EMPLOYER, MANUAL_QUOTA_ADJUST, BLOCK_USER, etc.
+  targetType  String   // USER, COMPANY, JOB, SUBSCRIPTION
+  targetId    String
+  reason      String?
+  ipAddress   String?
+  userAgent   String?
+  changes     Json?
+  createdAt   DateTime @default(now())
+
+  @@index([action])
+  @@index([targetType, targetId])
+}
