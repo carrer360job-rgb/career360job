@@ -31,6 +31,15 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   final FirebaseAuthService _authService = FirebaseAuthService();
   AuthScreenState _screenState = AuthScreenState.signIn;
 
+  // Design Tokens (Corporate Blue Design System)
+  static const Color _primaryBlue = Color(0xFF155EEF);
+  static const Color _navyText = Color(0xFF101828);
+  static const Color _secondaryText = Color(0xFF667085);
+  static const Color _inputBorderColor = Color(0xFFD0D5DD);
+  static const Color _inputBgColor = Colors.white;
+  static const double _elementHeight = 56.0;
+  static const double _borderRadius = 10.0;
+
   // Sign In Form Controllers
   final TextEditingController _signInEmailController = TextEditingController();
   final TextEditingController _signInPasswordController = TextEditingController();
@@ -107,7 +116,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     });
   }
 
-  // --- Handlers ---
+  // --- Actions ---
 
   Future<void> _handleSignIn() async {
     final email = _signInEmailController.text.trim();
@@ -315,60 +324,54 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: Colors.white,
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 440),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF0F172A).withValues(alpha: 0.05),
-                      blurRadius: 20,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight - 32, // Accommodates safe vertical padding
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Brand Logo + Tagline Header
-                    _buildBrandHeader(),
-                    const SizedBox(height: 24),
+                child: IntrinsicHeight(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // 1. Header & Branding Section
+                      _buildBrandHeader(),
+                      const SizedBox(height: 24),
 
-                    // Main Active View
-                    if (_screenState == AuthScreenState.signIn) ...[
-                      _buildSignInView(),
-                    ] else if (_screenState == AuthScreenState.signUp) ...[
-                      _buildSignUpView(),
-                    ] else if (_screenState == AuthScreenState.verifyOtp) ...[
-                      _buildVerifyOtpView(),
-                    ] else if (_screenState == AuthScreenState.forgotPassword) ...[
-                      _buildForgotPasswordView(),
+                      // 2. Main Full-Screen Content Views
+                      if (_screenState == AuthScreenState.signIn) ...[
+                        _buildSignInView(),
+                      ] else if (_screenState == AuthScreenState.signUp) ...[
+                        _buildSignUpView(),
+                      ] else if (_screenState == AuthScreenState.verifyOtp) ...[
+                        _buildVerifyOtpView(),
+                      ] else if (_screenState == AuthScreenState.forgotPassword) ...[
+                        _buildForgotPasswordView(),
+                      ],
+
+                      // 3. Flexible Spacer to push footer to the bottom on tall viewports
+                      const Spacer(),
+                      const SizedBox(height: 24),
+
+                      // 4. Clean Footer - strictly ONE continuous line
+                      _buildFooterTerms(),
+                      const SizedBox(height: 8),
                     ],
-
-                    const SizedBox(height: 24),
-
-                    // Footer Terms - STRICTLY ONE LINE
-                    _buildFooterTerms(),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
   }
 
-  /// 1. Top Brand Header (Logo Icon + "Career360" + "Find. Apply. Grow.")
+  /// Header with Back Button (when applicable), Logo, and Tagline
   Widget _buildBrandHeader() {
     final showBack = _screenState == AuthScreenState.verifyOtp ||
         _screenState == AuthScreenState.forgotPassword;
@@ -380,7 +383,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
           Positioned(
             left: 0,
             child: IconButton(
-              icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF0B1F3A), size: 22),
+              icon: const Icon(Icons.arrow_back_rounded, color: _navyText, size: 24),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
               onPressed: () {
@@ -390,6 +393,16 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                 });
               },
             ),
+          )
+        else
+          Positioned(
+            left: 0,
+            child: IconButton(
+              icon: const Icon(Icons.arrow_back_rounded, color: _navyText, size: 24),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: widget.onBack,
+            ),
           ),
         Column(
           mainAxisSize: MainAxisSize.min,
@@ -397,12 +410,12 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Circular Blue Badge with Briefcase
+                // Clean circular blue brand icon
                 Container(
-                  width: 38,
-                  height: 38,
+                  width: 36,
+                  height: 36,
                   decoration: const BoxDecoration(
-                    color: Color(0xFF0D6EFD),
+                    color: _primaryBlue,
                     shape: BoxShape.circle,
                   ),
                   child: const Center(
@@ -419,7 +432,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF0D6EFD),
+                    color: _primaryBlue,
                     letterSpacing: -0.4,
                   ),
                 ),
@@ -431,7 +444,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
               style: TextStyle(
                 fontSize: 12.5,
                 fontWeight: FontWeight.w500,
-                color: Color(0xFF64748B),
+                color: _secondaryText,
                 letterSpacing: 0.2,
               ),
             ),
@@ -441,13 +454,14 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     );
   }
 
-  /// 2. Segmented Pill Tab Switcher: [ Sign In ] | [ Sign Up ]
+  /// Segmented Tab Switcher: [ Sign In ] | [ Sign Up ]
   Widget _buildSegmentedSwitcher({required bool isSignIn}) {
     return Container(
+      height: 48,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFFF2F4F7),
+        borderRadius: BorderRadius.circular(_borderRadius),
       ),
       child: Row(
         children: [
@@ -460,16 +474,15 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
-                  color: isSignIn ? const Color(0xFF0D6EFD) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(10),
+                  color: isSignIn ? _primaryBlue : Colors.transparent,
+                  borderRadius: BorderRadius.circular(_borderRadius - 2),
                   boxShadow: isSignIn
                       ? [
                           BoxShadow(
-                            color: const Color(0xFF0D6EFD).withValues(alpha: 0.2),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
+                            color: _primaryBlue.withValues(alpha: 0.2),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
                           ),
                         ]
                       : null,
@@ -478,9 +491,9 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                   child: Text(
                     'Sign In',
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 14.5,
                       fontWeight: FontWeight.w600,
-                      color: isSignIn ? Colors.white : const Color(0xFF475467),
+                      color: isSignIn ? Colors.white : _secondaryText,
                     ),
                   ),
                 ),
@@ -496,16 +509,15 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
-                  color: !isSignIn ? const Color(0xFF0D6EFD) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(10),
+                  color: !isSignIn ? _primaryBlue : Colors.transparent,
+                  borderRadius: BorderRadius.circular(_borderRadius - 2),
                   boxShadow: !isSignIn
                       ? [
                           BoxShadow(
-                            color: const Color(0xFF0D6EFD).withValues(alpha: 0.2),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
+                            color: _primaryBlue.withValues(alpha: 0.2),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
                           ),
                         ]
                       : null,
@@ -514,9 +526,9 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                   child: Text(
                     'Sign Up',
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 14.5,
                       fontWeight: FontWeight.w600,
-                      color: !isSignIn ? Colors.white : const Color(0xFF475467),
+                      color: !isSignIn ? Colors.white : _secondaryText,
                     ),
                   ),
                 ),
@@ -535,30 +547,33 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // Welcome Section
         const Text(
           'Welcome Back',
           style: TextStyle(
-            fontSize: 22,
+            fontSize: 24,
             fontWeight: FontWeight.w800,
-            color: Color(0xFF0F172A),
-            letterSpacing: -0.3,
+            color: _navyText,
+            letterSpacing: -0.4,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         const Text(
-          'Sign in to your Career360 account.',
+          'Sign in to your Career360 account and continue your journey.',
           style: TextStyle(
-            fontSize: 13.5,
+            fontSize: 14,
             fontWeight: FontWeight.w400,
-            color: Color(0xFF64748B),
+            color: _secondaryText,
+            height: 1.4,
           ),
         ),
-        const SizedBox(height: 18),
-
-        // Pill Switcher
-        _buildSegmentedSwitcher(isSignIn: true),
         const SizedBox(height: 20),
 
+        // Equal-width Segmented Switcher
+        _buildSegmentedSwitcher(isSignIn: true),
+        const SizedBox(height: 24),
+
+        // Email Field (56px)
         _buildFieldLabel('Email Address'),
         const SizedBox(height: 6),
         _buildInputField(
@@ -569,6 +584,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         ),
         const SizedBox(height: 16),
 
+        // Password Field (56px)
         _buildFieldLabel('Password'),
         const SizedBox(height: 6),
         _buildInputField(
@@ -579,35 +595,35 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
           suffixIcon: IconButton(
             icon: Icon(
               _obscureSignInPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-              color: const Color(0xFF94A3B8),
-              size: 19,
+              color: const Color(0xFF98A2B3),
+              size: 20,
             ),
             onPressed: () => setState(() => _obscureSignInPassword = !_obscureSignInPassword),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
 
-        // Remember me & Forgot password
+        // Remember me & Forgot Password
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Row(
               children: [
                 SizedBox(
-                  width: 18,
-                  height: 18,
+                  width: 20,
+                  height: 20,
                   child: Checkbox(
                     value: _rememberMe,
-                    activeColor: const Color(0xFF0D6EFD),
+                    activeColor: _primaryBlue,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                    side: const BorderSide(color: Color(0xFFCBD5E1), width: 1.4),
+                    side: const BorderSide(color: _inputBorderColor, width: 1.4),
                     onChanged: (val) => setState(() => _rememberMe = val ?? false),
                   ),
                 ),
                 const SizedBox(width: 8),
                 const Text(
                   'Remember me',
-                  style: TextStyle(fontSize: 12.5, color: Color(0xFF475467)),
+                  style: TextStyle(fontSize: 13, color: Color(0xFF344054), fontWeight: FontWeight.w500),
                 ),
               ],
             ),
@@ -622,26 +638,28 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
               child: const Text(
                 'Forgot password?',
                 style: TextStyle(
-                  fontSize: 12.5,
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF0D6EFD),
+                  color: _primaryBlue,
                 ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 24),
 
-        // Primary Blue Button
+        // Primary CTA Button (56px)
         _buildPrimaryButton(
-          label: 'Sign In  ➔',
+          label: 'Sign In →',
           onPressed: _handleSignIn,
         ),
         const SizedBox(height: 20),
 
-        _buildDivider('or'),
-        const SizedBox(height: 16),
+        // Subtle Divider with "or"
+        _buildDivider(),
+        const SizedBox(height: 20),
 
+        // Google Sign-In Button (56px)
         _buildGoogleButton(),
       ],
     );
@@ -654,30 +672,33 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // Welcome Section
         const Text(
           'Create Your Account',
           style: TextStyle(
-            fontSize: 22,
+            fontSize: 24,
             fontWeight: FontWeight.w800,
-            color: Color(0xFF0F172A),
-            letterSpacing: -0.3,
+            color: _navyText,
+            letterSpacing: -0.4,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         const Text(
           'Join Career360 and take the next step in your career.',
           style: TextStyle(
-            fontSize: 13.5,
+            fontSize: 14,
             fontWeight: FontWeight.w400,
-            color: Color(0xFF64748B),
+            color: _secondaryText,
+            height: 1.4,
           ),
         ),
-        const SizedBox(height: 18),
-
-        // Pill Switcher
-        _buildSegmentedSwitcher(isSignIn: false),
         const SizedBox(height: 20),
 
+        // Equal-width Segmented Switcher
+        _buildSegmentedSwitcher(isSignIn: false),
+        const SizedBox(height: 24),
+
+        // Full Name Field (56px)
         _buildFieldLabel('Full Name'),
         const SizedBox(height: 6),
         _buildInputField(
@@ -688,6 +709,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         ),
         const SizedBox(height: 16),
 
+        // Email Field (56px)
         _buildFieldLabel('Email Address'),
         const SizedBox(height: 6),
         _buildInputField(
@@ -698,6 +720,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         ),
         const SizedBox(height: 16),
 
+        // Password Field (56px)
         _buildFieldLabel('Password'),
         const SizedBox(height: 6),
         _buildInputField(
@@ -708,8 +731,8 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
           suffixIcon: IconButton(
             icon: Icon(
               _obscureSignUpPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-              color: const Color(0xFF94A3B8),
-              size: 19,
+              color: const Color(0xFF98A2B3),
+              size: 20,
             ),
             onPressed: () => setState(() => _obscureSignUpPassword = !_obscureSignUpPassword),
           ),
@@ -717,20 +740,22 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         const SizedBox(height: 6),
         const Text(
           'Use at least 8 characters with a mix of letters, numbers and symbols.',
-          style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B), height: 1.3),
+          style: TextStyle(fontSize: 12, color: _secondaryText, height: 1.3),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 24),
 
-        // Primary Blue Button
+        // Primary CTA Button (56px)
         _buildPrimaryButton(
-          label: 'Create Account & Send OTP  ➔',
+          label: 'Create Account & Send OTP →',
           onPressed: _handleInitiateSignUp,
         ),
         const SizedBox(height: 20),
 
-        _buildDivider('or'),
-        const SizedBox(height: 16),
+        // Subtle Divider with "or"
+        _buildDivider(),
+        const SizedBox(height: 20),
 
+        // Google Sign-In Button (56px)
         _buildGoogleButton(),
       ],
     );
@@ -746,42 +771,43 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         const Text(
           'Verify Your Email',
           style: TextStyle(
-            fontSize: 22,
+            fontSize: 24,
             fontWeight: FontWeight.w800,
-            color: Color(0xFF0F172A),
-            letterSpacing: -0.3,
+            color: _navyText,
+            letterSpacing: -0.4,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         const Text(
           'We\'ve sent a 6-digit verification code to your email address.',
           style: TextStyle(
-            fontSize: 13.5,
+            fontSize: 14,
             fontWeight: FontWeight.w400,
-            color: Color(0xFF64748B),
+            color: _secondaryText,
+            height: 1.4,
           ),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 22),
 
-        // Email Badge Box with [ Edit ]
+        // Email Badge Card with [ Edit ]
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+            color: const Color(0xFFF9FAFB),
+            borderRadius: BorderRadius.circular(_borderRadius),
+            border: Border.all(color: _inputBorderColor, width: 1.2),
           ),
           child: Row(
             children: [
-              const Icon(Icons.mail_outline_rounded, size: 18, color: Color(0xFF0D6EFD)),
+              const Icon(Icons.mail_outline_rounded, size: 20, color: _primaryBlue),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   _pendingOtpEmail.isNotEmpty ? _pendingOtpEmail : 'dhinesh.v@example.com',
                   style: const TextStyle(
-                    fontSize: 13.5,
+                    fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF0F172A),
+                    color: _navyText,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -795,45 +821,45 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                 child: const Text(
                   'Edit',
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 13.5,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF0D6EFD),
+                    color: _primaryBlue,
                   ),
                 ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 22),
+        const SizedBox(height: 24),
 
         const Text(
           'Enter 6-digit code',
           style: TextStyle(
             fontSize: 13.5,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF334155),
+            color: Color(0xFF344054),
           ),
         ),
         const SizedBox(height: 10),
 
-        // Six OTP Digit Boxes
+        // Six OTP Digit Boxes (56px height)
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: List.generate(6, (index) => _buildOtpBox(index)),
+          children: List.generate(6, (index) => _buildOtpDigitBox(index)),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 20),
 
-        // Countdown Row
+        // Resend Timer Row
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.access_time_rounded, size: 15, color: Color(0xFF64748B)),
+            const Icon(Icons.access_time_rounded, size: 16, color: _secondaryText),
             const SizedBox(width: 6),
             Text(
               _resendCountdown > 0
                   ? 'Resend in 00:${_resendCountdown.toString().padLeft(2, '0')}'
                   : 'Didn\'t receive code? ',
-              style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+              style: const TextStyle(fontSize: 13.5, color: _secondaryText),
             ),
             if (_resendCountdown == 0)
               GestureDetector(
@@ -841,9 +867,9 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                 child: const Text(
                   'Resend',
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 13.5,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF0D6EFD),
+                    color: _primaryBlue,
                   ),
                 ),
               ),
@@ -851,8 +877,9 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         ),
         const SizedBox(height: 24),
 
+        // Verify Button (56px)
         _buildPrimaryButton(
-          label: 'Verify Code & Complete Sign Up  ➔',
+          label: 'Verify Code & Complete Sign Up →',
           onPressed: _handleVerifyEmailOtp,
         ),
       ],
@@ -869,22 +896,23 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         const Text(
           'Forgot Password?',
           style: TextStyle(
-            fontSize: 22,
+            fontSize: 24,
             fontWeight: FontWeight.w800,
-            color: Color(0xFF0F172A),
-            letterSpacing: -0.3,
+            color: _navyText,
+            letterSpacing: -0.4,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         const Text(
           'Enter your email address and we\'ll send you a link to reset your password.',
           style: TextStyle(
-            fontSize: 13.5,
+            fontSize: 14,
             fontWeight: FontWeight.w400,
-            color: Color(0xFF64748B),
+            color: _secondaryText,
+            height: 1.4,
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 24),
 
         _buildFieldLabel('Email Address'),
         const SizedBox(height: 6),
@@ -894,28 +922,29 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
           prefixIcon: Icons.mail_outline_rounded,
           keyboardType: TextInputType.emailAddress,
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 24),
 
+        // Primary Button (56px)
         _buildPrimaryButton(
           label: 'Send Reset Link',
           onPressed: _handleSendResetLink,
         ),
 
-        // Success Card (When link is sent)
+        // Success Confirmation Card
         if (_resetLinkSent) ...[
           const SizedBox(height: 20),
           Container(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: const Color(0xFFECFDF5),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(_borderRadius),
               border: Border.all(color: const Color(0xFFA7F3D0), width: 1.2),
             ),
             child: const Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 20),
-                SizedBox(width: 10),
+                Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 22),
+                SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -923,18 +952,18 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                       Text(
                         'Reset link sent!',
                         style: TextStyle(
-                          fontSize: 13.5,
+                          fontSize: 14,
                           fontWeight: FontWeight.w700,
                           color: Color(0xFF065F46),
                         ),
                       ),
-                      SizedBox(height: 2),
+                      SizedBox(height: 3),
                       Text(
                         'If the email is registered, you\'ll receive a password reset link shortly.',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 12.5,
                           color: Color(0xFF047857),
-                          height: 1.3,
+                          height: 1.4,
                         ),
                       ),
                     ],
@@ -945,7 +974,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
           ),
         ],
 
-        const SizedBox(height: 22),
+        const SizedBox(height: 24),
 
         // Back to Sign In Link
         Center(
@@ -959,14 +988,14 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
             child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.arrow_back_rounded, size: 16, color: Color(0xFF0D6EFD)),
+                Icon(Icons.arrow_back_rounded, size: 16, color: _primaryBlue),
                 SizedBox(width: 6),
                 Text(
                   'Back to Sign In',
                   style: TextStyle(
-                    fontSize: 13.5,
+                    fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF0D6EFD),
+                    color: _primaryBlue,
                   ),
                 ),
               ],
@@ -977,19 +1006,20 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     );
   }
 
-  // --- Reusable Component Helpers ---
+  // --- Helper Widgets matching Design System ---
 
   Widget _buildFieldLabel(String label) {
     return Text(
       label,
       style: const TextStyle(
-        fontSize: 13,
+        fontSize: 13.5,
         fontWeight: FontWeight.w600,
-        color: Color(0xFF1E293B),
+        color: Color(0xFF344054),
       ),
     );
   }
 
+  /// 56px High Text Input Field
   Widget _buildInputField({
     required TextEditingController controller,
     required String hint,
@@ -999,36 +1029,40 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     TextInputType keyboardType = TextInputType.text,
     TextCapitalization textCapitalization = TextCapitalization.none,
   }) {
-    return TextFormField(
-      controller: controller,
-      obscureText: obscureText,
-      keyboardType: keyboardType,
-      textCapitalization: textCapitalization,
-      style: const TextStyle(fontSize: 14, color: Color(0xFF0F172A)),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: const TextStyle(fontSize: 14, color: Color(0xFF94A3B8)),
-        prefixIcon: Icon(prefixIcon, color: const Color(0xFF94A3B8), size: 19),
-        suffixIcon: suffixIcon,
-        filled: true,
-        fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.2),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFF0D6EFD), width: 1.8),
+    return SizedBox(
+      height: _elementHeight,
+      child: TextFormField(
+        controller: controller,
+        obscureText: obscureText,
+        keyboardType: keyboardType,
+        textCapitalization: textCapitalization,
+        style: const TextStyle(fontSize: 15, color: _navyText),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: const TextStyle(fontSize: 14.5, color: Color(0xFF98A2B3)),
+          prefixIcon: Icon(prefixIcon, color: const Color(0xFF98A2B3), size: 20),
+          suffixIcon: suffixIcon,
+          filled: true,
+          fillColor: _inputBgColor,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(_borderRadius),
+            borderSide: const BorderSide(color: _inputBorderColor, width: 1.2),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(_borderRadius),
+            borderSide: const BorderSide(color: _primaryBlue, width: 1.8),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildOtpBox(int index) {
+  /// 56px High OTP Box
+  Widget _buildOtpDigitBox(int index) {
     return SizedBox(
-      width: 46,
-      height: 52,
+      width: 48,
+      height: _elementHeight,
       child: TextFormField(
         controller: _otpControllers[index],
         focusNode: _otpFocusNodes[index],
@@ -1036,22 +1070,22 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         textAlign: TextAlign.center,
         maxLength: 1,
         style: const TextStyle(
-          fontSize: 20,
+          fontSize: 22,
           fontWeight: FontWeight.w700,
-          color: Color(0xFF0F172A),
+          color: _navyText,
         ),
         decoration: InputDecoration(
           counterText: '',
           contentPadding: EdgeInsets.zero,
           filled: true,
-          fillColor: Colors.white,
+          fillColor: _inputBgColor,
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
+            borderRadius: BorderRadius.circular(_borderRadius),
+            borderSide: const BorderSide(color: _inputBorderColor, width: 1.2),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFF0D6EFD), width: 2),
+            borderRadius: BorderRadius.circular(_borderRadius),
+            borderSide: const BorderSide(color: _primaryBlue, width: 2),
           ),
         ),
         onChanged: (value) {
@@ -1070,72 +1104,77 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     );
   }
 
+  /// 56px High Primary Action Button
   Widget _buildPrimaryButton({
     required String label,
     required VoidCallback onPressed,
   }) {
     return SizedBox(
-      height: 48,
+      height: _elementHeight,
       child: ElevatedButton(
         onPressed: _isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF0D6EFD),
+          backgroundColor: _primaryBlue,
           foregroundColor: Colors.white,
+          disabledBackgroundColor: _primaryBlue.withValues(alpha: 0.6),
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(_borderRadius),
           ),
         ),
         child: _isLoading
             ? const SizedBox(
-                width: 20,
-                height: 20,
+                width: 22,
+                height: 22,
                 child: CircularProgressIndicator(
-                  strokeWidth: 2,
+                  strokeWidth: 2.2,
                   valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                 ),
               )
             : Text(
                 label,
                 style: const TextStyle(
-                  fontSize: 15,
+                  fontSize: 15.5,
                   fontWeight: FontWeight.w600,
+                  letterSpacing: -0.2,
                 ),
               ),
       ),
     );
   }
 
-  Widget _buildDivider(String text) {
-    return Row(
+  /// Subtle Divider with "or"
+  Widget _buildDivider() {
+    return const Row(
       children: [
-        const Expanded(child: Divider(color: Color(0xFFE2E8F0), thickness: 1)),
+        Expanded(child: Divider(color: Color(0xFFEAECF0), thickness: 1)),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: EdgeInsets.symmetric(horizontal: 14),
           child: Text(
-            text,
-            style: const TextStyle(
-              fontSize: 12,
+            'or',
+            style: TextStyle(
+              fontSize: 13,
               fontWeight: FontWeight.w500,
-              color: Color(0xFF94A3B8),
+              color: _secondaryText,
             ),
           ),
         ),
-        const Expanded(child: Divider(color: Color(0xFFE2E8F0), thickness: 1)),
+        Expanded(child: Divider(color: Color(0xFFEAECF0), thickness: 1)),
       ],
     );
   }
 
+  /// 56px High Google Sign-In Button
   Widget _buildGoogleButton() {
     return SizedBox(
-      height: 48,
+      height: _elementHeight,
       child: OutlinedButton(
         onPressed: _isLoading ? null : _handleGoogleSignIn,
         style: OutlinedButton.styleFrom(
           backgroundColor: Colors.white,
-          side: const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
+          side: const BorderSide(color: _inputBorderColor, width: 1.2),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(_borderRadius),
           ),
         ),
         child: Row(
@@ -1143,21 +1182,21 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
           children: [
             Image.asset(
               'assets/images/google_logo.png',
-              width: 18,
-              height: 18,
+              width: 20,
+              height: 20,
               errorBuilder: (context, error, stackTrace) => const Icon(
                 Icons.g_mobiledata_rounded,
-                size: 24,
+                size: 26,
                 color: Color(0xFF4285F4),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
             const Text(
               'Continue with Google',
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 15,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF334155),
+                color: Color(0xFF344054),
               ),
             ),
           ],
@@ -1175,15 +1214,15 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         children: [
           const Icon(
             Icons.shield_outlined,
-            size: 14,
-            color: Color(0xFF0D6EFD),
+            size: 15,
+            color: _primaryBlue,
           ),
           const SizedBox(width: 6),
           RichText(
             text: TextSpan(
               style: const TextStyle(
-                color: Color(0xFF64748B),
-                fontSize: 11.5,
+                color: _secondaryText,
+                fontSize: 12,
                 fontWeight: FontWeight.w400,
               ),
               children: [
@@ -1191,7 +1230,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                 TextSpan(
                   text: 'Terms of Service',
                   style: const TextStyle(
-                    color: Color(0xFF0D6EFD),
+                    color: _primaryBlue,
                     fontWeight: FontWeight.w600,
                     decoration: TextDecoration.underline,
                   ),
@@ -1201,7 +1240,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                 TextSpan(
                   text: 'Privacy Policy.',
                   style: const TextStyle(
-                    color: Color(0xFF0D6EFD),
+                    color: _primaryBlue,
                     fontWeight: FontWeight.w600,
                     decoration: TextDecoration.underline,
                   ),
