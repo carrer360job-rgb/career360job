@@ -1,8 +1,21 @@
-import { auth, firebaseApp } from '../config/firebase.js';
+import { auth } from '../config/firebase.js';
+import { syncCandidateProfile, prisma } from '../config/db.js';
 import { sendOtpEmail } from '../services/emailService.js';
 
-// In-memory OTP store (email -> { otp, expiresAt, name, type, createdAt })
+// In-memory OTP store (email -> { otp, expiresAt, name, password, type, createdAt })
 const otpStore = new Map();
+
+/**
+ * Clean up expired OTPs periodically (every 10 minutes)
+ */
+setInterval(() => {
+  const now = Date.now();
+  for (const [email, record] of otpStore.entries()) {
+    if (now > record.expiresAt) {
+      otpStore.delete(email);
+    }
+  }
+}, 10 * 60 * 1000).unref?.();
 
 /**
  * 1. Send 6-Digit Email OTP
@@ -40,6 +53,7 @@ export async function sendEmailOtp(req, res) {
       otp,
       expiresAt,
       name: name || existing?.name || null,
+      password: existing?.password || null,
       type,
       createdAt: Date.now(),
     });
@@ -49,6 +63,7 @@ export async function sendEmailOtp(req, res) {
       to: normalizedEmail,
       otp,
       type,
+      name: name || existing?.name || null,
     });
 
     return res.status(200).json({
@@ -89,7 +104,7 @@ export async function verifyEmailOtp(req, res) {
     if (!record) {
       return res.status(400).json({
         success: false,
-        message: 'No verification session found. Please request a new code.',
+        message: 'No active verification session found. Please request a new code.',
       });
     }
 
@@ -108,30 +123,38 @@ export async function verifyEmailOtp(req, res) {
       });
     }
 
-    // OTP is valid! Clean up store
+    const resolvedName = name || record.name || normalizedEmail.split('@')[0];
+    const resolvedPassword = password || record.password;
+
+    // Clean up OTP session
     otpStore.delete(normalizedEmail);
 
     let customToken = null;
     let firebaseUser = null;
 
-    // If Firebase Admin is available, create or fetch user & generate custom token
+    // Firebase Admin Integration
     if (auth) {
       try {
         try {
           firebaseUser = await auth.getUserByEmail(normalizedEmail);
+          // If password was supplied, update user password
+          if (resolvedPassword && resolvedPassword.length >= 6) {
+            await auth.updateUser(firebaseUser.uid, {
+              password: resolvedPassword,
+              emailVerified: true,
+              displayName: resolvedName,
+            });
+          } else {
+            await auth.updateUser(firebaseUser.uid, { emailVerified: true });
+          }
         } catch (notFoundErr) {
-          // User doesn't exist in Firebase yet, create new user
+          // User doesn't exist yet, create new Firebase user
           firebaseUser = await auth.createUser({
             email: normalizedEmail,
             emailVerified: true,
-            displayName: name || record.name || normalizedEmail.split('@')[0],
-            password: password || undefined,
+            displayName: resolvedName,
+            password: resolvedPassword || undefined,
           });
-        }
-
-        // Ensure email is marked verified
-        if (!firebaseUser.emailVerified) {
-          await auth.updateUser(firebaseUser.uid, { emailVerified: true });
         }
 
         customToken = await auth.createCustomToken(firebaseUser.uid);
@@ -140,14 +163,23 @@ export async function verifyEmailOtp(req, res) {
       }
     }
 
+    // Sync to PostgreSQL DB (Prisma)
+    const dbSync = await syncCandidateProfile({
+      firebaseUid: firebaseUser?.uid || null,
+      email: normalizedEmail,
+      fullName: resolvedName,
+      isEmailVerified: true,
+    });
+
     return res.status(200).json({
       success: true,
       message: 'Email successfully verified!',
       customToken,
       user: {
-        email: normalizedEmail,
-        displayName: name || record.name || null,
         uid: firebaseUser?.uid || null,
+        email: normalizedEmail,
+        displayName: resolvedName,
+        role: dbSync.user?.role || 'CANDIDATE',
       },
     });
   } catch (error) {
@@ -175,10 +207,10 @@ export async function registerWithOtp(req, res) {
       });
     }
 
-    if (password.length < 6) {
+    if (password.length < 8) {
       return res.status(400).json({
         success: false,
-        message: 'Password must be at least 6 characters long.',
+        message: 'Password must be at least 8 characters long.',
       });
     }
 
@@ -192,6 +224,7 @@ export async function registerWithOtp(req, res) {
       otp,
       expiresAt,
       name: name.trim(),
+      password,
       type: 'signup',
       createdAt: Date.now(),
     });
@@ -200,6 +233,7 @@ export async function registerWithOtp(req, res) {
       to: normalizedEmail,
       otp,
       type: 'signup',
+      name: name.trim(),
     });
 
     return res.status(200).json({
@@ -213,6 +247,289 @@ export async function registerWithOtp(req, res) {
     return res.status(500).json({
       success: false,
       message: 'Sign up failed. Please try again.',
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 4. Google Sign-In Profile Synchronization
+ * POST /api/auth/google-sync
+ */
+export async function googleSync(req, res) {
+  try {
+    const { idToken } = req.body;
+
+    if (!idToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Firebase idToken is required for Google synchronization.',
+      });
+    }
+
+    let decodedToken = null;
+    if (auth) {
+      try {
+        decodedToken = await auth.verifyIdToken(idToken);
+      } catch (tokenErr) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid or expired Google authentication token.',
+          error: tokenErr.message,
+        });
+      }
+    } else {
+      // In dev fallback, extract unverified payload if available
+      try {
+        const payloadBase64 = idToken.split('.')[1];
+        decodedToken = JSON.parse(Buffer.from(payloadBase64, 'base64').toString('utf8'));
+      } catch (_) {}
+    }
+
+    const firebaseUid = decodedToken?.uid || decodedToken?.sub;
+    const email = decodedToken?.email;
+    const fullName = decodedToken?.name || email?.split('@')[0] || 'Google User';
+    const photoUrl = decodedToken?.picture || null;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'No email found in Google authentication token.',
+      });
+    }
+
+    // Sync to PostgreSQL DB (Prisma)
+    const dbSync = await syncCandidateProfile({
+      firebaseUid,
+      email,
+      fullName,
+      photoUrl,
+      isEmailVerified: true,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Google profile synchronized successfully.',
+      user: {
+        uid: firebaseUid,
+        email,
+        displayName: fullName,
+        photoUrl,
+        role: dbSync.user?.role || 'CANDIDATE',
+      },
+    });
+  } catch (error) {
+    console.error('[googleSync Error]', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Google sync failed. Please try again.',
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 5. Forgot Password - Send OTP
+ * POST /api/auth/forgot-password/send-otp
+ */
+export async function sendForgotPasswordOtp(req, res) {
+  try {
+    const { email } = req.body;
+
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({
+        success: false,
+        message: 'A valid email address is required.',
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Check if user exists in Firebase Admin (if connected)
+    if (auth) {
+      try {
+        await auth.getUserByEmail(normalizedEmail);
+      } catch (notFound) {
+        return res.status(404).json({
+          success: false,
+          message: 'No Career360 account exists with this email address.',
+        });
+      }
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 10 * 60 * 1000;
+
+    otpStore.set(normalizedEmail, {
+      otp,
+      expiresAt,
+      type: 'password_reset',
+      createdAt: Date.now(),
+    });
+
+    await sendOtpEmail({
+      to: normalizedEmail,
+      otp,
+      type: 'password_reset',
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password reset code sent to your email.',
+      email: normalizedEmail,
+      resendWaitSeconds: 45,
+    });
+  } catch (error) {
+    console.error('[sendForgotPasswordOtp Error]', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to send password reset code. Please try again.',
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 6. Forgot Password - Verify OTP & Update Password
+ * POST /api/auth/forgot-password/verify-reset
+ */
+export async function resetPasswordWithOtp(req, res) {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email, verification code, and new password are required.',
+      });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 8 characters long.',
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const record = otpStore.get(normalizedEmail);
+
+    if (!record || record.type !== 'password_reset') {
+      return res.status(400).json({
+        success: false,
+        message: 'No password reset session found. Please request a new code.',
+      });
+    }
+
+    if (Date.now() > record.expiresAt) {
+      otpStore.delete(normalizedEmail);
+      return res.status(400).json({
+        success: false,
+        message: 'Password reset code has expired. Please request a new code.',
+      });
+    }
+
+    if (record.otp !== otp.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid verification code. Please check your email and try again.',
+      });
+    }
+
+    // Code verified! Remove from store
+    otpStore.delete(normalizedEmail);
+
+    // Update password in Firebase
+    if (auth) {
+      try {
+        const user = await auth.getUserByEmail(normalizedEmail);
+        await auth.updateUser(user.uid, {
+          password: newPassword,
+        });
+      } catch (fbErr) {
+        console.error('[Firebase Password Reset Error]', fbErr.message);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to update password in Firebase: ' + fbErr.message,
+        });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password has been successfully reset! You can now sign in.',
+    });
+  } catch (error) {
+    console.error('[resetPasswordWithOtp Error]', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to reset password. Please try again.',
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 7. Sync & Get Current Authenticated Profile
+ * POST /api/auth/sync-profile
+ */
+export async function syncProfile(req, res) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        message: 'Missing or invalid Authorization header.',
+      });
+    }
+
+    const token = authHeader.split('Bearer ')[1];
+    let decodedToken = null;
+
+    if (auth) {
+      try {
+        decodedToken = await auth.verifyIdToken(token);
+      } catch (err) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid or expired Firebase ID token.',
+        });
+      }
+    } else {
+      try {
+        const payloadBase64 = token.split('.')[1];
+        decodedToken = JSON.parse(Buffer.from(payloadBase64, 'base64').toString('utf8'));
+      } catch (_) {}
+    }
+
+    const firebaseUid = decodedToken?.uid || decodedToken?.sub;
+    const email = decodedToken?.email;
+    const fullName = decodedToken?.name || email?.split('@')[0] || 'Candidate';
+    const photoUrl = decodedToken?.picture || null;
+
+    const dbSync = await syncCandidateProfile({
+      firebaseUid,
+      email,
+      fullName,
+      photoUrl,
+      isEmailVerified: decodedToken?.email_verified ?? true,
+    });
+
+    return res.status(200).json({
+      success: true,
+      user: {
+        uid: firebaseUid,
+        email,
+        displayName: fullName,
+        photoUrl,
+        role: dbSync.user?.role || 'CANDIDATE',
+      },
+    });
+  } catch (error) {
+    console.error('[syncProfile Error]', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to sync profile.',
       error: error.message,
     });
   }
