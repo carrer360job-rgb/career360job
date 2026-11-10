@@ -6,7 +6,12 @@ import '../../core/theme/app_theme.dart';
 import '../../core/services/firebase_auth_service.dart';
 import '../legal/privacy_policy_screen.dart';
 
-enum AuthMode { signIn, signUp }
+enum AuthScreenState {
+  signIn,
+  signUp,
+  verifyOtp,
+  forgotPassword,
+}
 
 class CandidateLoginScreen extends StatefulWidget {
   final VoidCallback onLoginSuccess;
@@ -24,7 +29,7 @@ class CandidateLoginScreen extends StatefulWidget {
 
 class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   final FirebaseAuthService _authService = FirebaseAuthService();
-  AuthMode _authMode = AuthMode.signIn;
+  AuthScreenState _screenState = AuthScreenState.signIn;
 
   // Sign In Form Controllers
   final TextEditingController _signInEmailController = TextEditingController();
@@ -38,13 +43,14 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   final TextEditingController _signUpPasswordController = TextEditingController();
   bool _obscureSignUpPassword = true;
 
-  // Email OTP Verification State
-  bool _isVerifyingOtp = false;
+  // Forgot Password Controllers
+  final TextEditingController _forgotEmailController = TextEditingController();
+  bool _resetLinkSent = false;
+
+  // OTP Verification State
   String _pendingOtpEmail = '';
   String _pendingOtpName = '';
   String _pendingOtpPassword = '';
-  String _otpType = 'signup'; // 'signup' or 'reset'
-  
   final List<TextEditingController> _otpControllers =
       List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _otpFocusNodes = List.generate(6, (_) => FocusNode());
@@ -72,6 +78,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     _signUpNameController.dispose();
     _signUpEmailController.dispose();
     _signUpPasswordController.dispose();
+    _forgotEmailController.dispose();
     for (final c in _otpControllers) {
       c.dispose();
     }
@@ -100,9 +107,8 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     });
   }
 
-  // --- Actions ---
+  // --- Handlers ---
 
-  /// Sign In with Email & Password
   Future<void> _handleSignIn() async {
     final email = _signInEmailController.text.trim();
     final password = _signInPasswordController.text;
@@ -148,7 +154,6 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     }
   }
 
-  /// Initiate Sign Up with 6-Digit Email OTP
   Future<void> _handleInitiateSignUp() async {
     final name = _signUpNameController.text.trim();
     final email = _signUpEmailController.text.trim();
@@ -162,8 +167,8 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       _showError('Please enter a valid email address.');
       return;
     }
-    if (password.length < 6) {
-      _showError('Password must be at least 6 characters.');
+    if (password.length < 8) {
+      _showError('Password must be at least 8 characters.');
       return;
     }
 
@@ -182,8 +187,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         _pendingOtpEmail = email;
         _pendingOtpName = name;
         _pendingOtpPassword = password;
-        _otpType = 'signup';
-        _isVerifyingOtp = true;
+        _screenState = AuthScreenState.verifyOtp;
 
         for (final c in _otpControllers) {
           c.clear();
@@ -191,14 +195,13 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         _startResendTimer(res['resendWaitSeconds'] ?? 45);
         _otpFocusNodes[0].requestFocus();
 
-        _showSuccess(res['message'] ?? 'Verification code sent to your email.');
+        _showSuccess('Verification code sent to your email.');
       } else {
         _showError(res['message'] ?? 'Failed to send verification code.');
       }
     }
   }
 
-  /// Verify 6-Digit Email OTP
   Future<void> _handleVerifyEmailOtp() async {
     final otpCode = _otpControllers.map((c) => c.text.trim()).join();
     if (otpCode.length < 6) {
@@ -219,7 +222,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       setState(() => _isLoading = false);
 
       if (res['success'] == true) {
-        _showSuccess(res['message'] ?? 'Email verified successfully!');
+        _showSuccess('Email verified successfully!');
         widget.onLoginSuccess();
       } else {
         _showError(res['message'] ?? 'Invalid or expired code.');
@@ -227,7 +230,6 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     }
   }
 
-  /// Resend Email OTP
   Future<void> _handleResendOtp() async {
     if (_resendCountdown > 0 || _isLoading) return;
 
@@ -236,7 +238,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     final res = await _authService.sendEmailOtp(
       email: _pendingOtpEmail,
       name: _pendingOtpName,
-      type: _otpType,
+      type: 'signup',
     );
 
     if (mounted) {
@@ -250,11 +252,10 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     }
   }
 
-  /// Forgot Password Flow
-  Future<void> _handleForgotPassword() async {
-    final email = _signInEmailController.text.trim();
+  Future<void> _handleSendResetLink() async {
+    final email = _forgotEmailController.text.trim();
     if (email.isEmpty || !email.contains('@')) {
-      _showError('Please enter your email above to reset password.');
+      _showError('Please enter a valid email address.');
       return;
     }
 
@@ -262,8 +263,10 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     try {
       await _authService.sendPasswordReset(email);
       if (mounted) {
-        setState(() => _isLoading = false);
-        _showSuccess('Password reset link sent to $email. Please check your inbox.');
+        setState(() {
+          _isLoading = false;
+          _resetLinkSent = true;
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -273,7 +276,6 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     }
   }
 
-  /// Google 1-Tap Sign-In
   Future<void> _handleGoogleSignIn() async {
     setState(() => _isLoading = true);
     try {
@@ -314,55 +316,50 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF0B1F3A)),
-          onPressed: () {
-            if (_isVerifyingOtp) {
-              setState(() => _isVerifyingOtp = false);
-            } else {
-              widget.onBack();
-            }
-          },
-        ),
-      ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 440),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // App Branding Header
-                  _buildHeader(),
-                  const SizedBox(height: 24),
-
-                  // Main Card
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF0F172A).withValues(alpha: 0.05),
-                          blurRadius: 16,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.05),
+                      blurRadius: 20,
+                      offset: const Offset(0, 6),
                     ),
-                    padding: const EdgeInsets.all(24),
-                    child: _isVerifyingOtp
-                        ? _buildEmailOtpVerificationView()
-                        : _buildAuthFormView(),
-                  ),
+                  ],
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Brand Logo + Tagline Header
+                    _buildBrandHeader(),
+                    const SizedBox(height: 24),
 
-                  const SizedBox(height: 24),
-                ],
+                    // Main Active View
+                    if (_screenState == AuthScreenState.signIn) ...[
+                      _buildSignInView(),
+                    ] else if (_screenState == AuthScreenState.signUp) ...[
+                      _buildSignUpView(),
+                    ] else if (_screenState == AuthScreenState.verifyOtp) ...[
+                      _buildVerifyOtpView(),
+                    ] else if (_screenState == AuthScreenState.forgotPassword) ...[
+                      _buildForgotPasswordView(),
+                    ],
+
+                    const SizedBox(height: 24),
+
+                    // Footer Terms - STRICTLY ONE LINE
+                    _buildFooterTerms(),
+                  ],
+                ),
               ),
             ),
           ),
@@ -371,198 +368,239 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     );
   }
 
-  /// App Logo & Tagline Header
-  Widget _buildHeader() {
-    return Column(
+  /// 1. Top Brand Header (Logo Icon + "Career360" + "Find. Apply. Grow.")
+  Widget _buildBrandHeader() {
+    final showBack = _screenState == AuthScreenState.verifyOtp ||
+        _screenState == AuthScreenState.forgotPassword;
+
+    return Stack(
+      alignment: Alignment.center,
       children: [
-        Container(
-          width: 56,
-          height: 56,
-          decoration: BoxDecoration(
-            color: const Color(0xFFEFF4FF),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFD1E0FF), width: 1.2),
-          ),
-          child: const Center(
-            child: Icon(
-              Icons.work_outline_rounded,
-              color: AppTheme.primary,
-              size: 28,
+        if (showBack)
+          Positioned(
+            left: 0,
+            child: IconButton(
+              icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF0B1F3A), size: 22),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () {
+                setState(() {
+                  _resetLinkSent = false;
+                  _screenState = AuthScreenState.signIn;
+                });
+              },
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        const Text(
-          'Career360',
-          style: TextStyle(
-            fontSize: 26,
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF0B1F3A),
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Find Your Next Career Move',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w400,
-            color: Color(0xFF64748B),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Main View: Tab Selector + Form
-  Widget _buildAuthFormView() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Tab Selector: [ Sign In ] | [ Sign Up ]
-        _buildTabSelector(),
-        const SizedBox(height: 20),
-
-        if (_authMode == AuthMode.signIn) ...[
-          _buildSignInForm(),
-        ] else ...[
-          _buildSignUpForm(),
-        ],
-
-        const SizedBox(height: 20),
-        _buildDivider(),
-        const SizedBox(height: 16),
-        _buildGoogleButton(),
-        const SizedBox(height: 20),
-        _buildFooterTerms(),
-      ],
-    );
-  }
-
-  /// Tab Selector Widget
-  Widget _buildTabSelector() {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildTabButton(
-              title: 'Sign In',
-              icon: Icons.lock_outline_rounded,
-              isSelected: _authMode == AuthMode.signIn,
-              onTap: () => setState(() => _authMode = AuthMode.signIn),
-            ),
-          ),
-          Expanded(
-            child: _buildTabButton(
-              title: 'Sign Up',
-              icon: Icons.person_add_alt_1_outlined,
-              isSelected: _authMode == AuthMode.signUp,
-              onTap: () => setState(() => _authMode = AuthMode.signUp),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabButton({
-    required String title,
-    required IconData icon,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 4,
-                    offset: const Offset(0, 1),
-                  ),
-                ]
-              : null,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 16,
-              color: isSelected ? AppTheme.primary : const Color(0xFF64748B),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Circular Blue Badge with Briefcase
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF0D6EFD),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Center(
+                    child: Icon(
+                      Icons.work_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  'Career360',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0D6EFD),
+                    letterSpacing: -0.4,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 6),
-            Text(
-              title,
+            const SizedBox(height: 4),
+            const Text(
+              'Find. Apply. Grow.',
               style: TextStyle(
-                fontSize: 14,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                color: isSelected ? const Color(0xFF0B1F3A) : const Color(0xFF64748B),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF64748B),
+                letterSpacing: 0.2,
               ),
             ),
           ],
         ),
+      ],
+    );
+  }
+
+  /// 2. Segmented Pill Tab Switcher: [ Sign In ] | [ Sign Up ]
+  Widget _buildSegmentedSwitcher({required bool isSignIn}) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _screenState = AuthScreenState.signIn;
+                });
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: isSignIn ? const Color(0xFF0D6EFD) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: isSignIn
+                      ? [
+                          BoxShadow(
+                            color: const Color(0xFF0D6EFD).withValues(alpha: 0.2),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Center(
+                  child: Text(
+                    'Sign In',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isSignIn ? Colors.white : const Color(0xFF475467),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _screenState = AuthScreenState.signUp;
+                });
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: !isSignIn ? const Color(0xFF0D6EFD) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: !isSignIn
+                      ? [
+                          BoxShadow(
+                            color: const Color(0xFF0D6EFD).withValues(alpha: 0.2),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Center(
+                  child: Text(
+                    'Sign Up',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: !isSignIn ? Colors.white : const Color(0xFF475467),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  /// Sign In Form Fields
-  Widget _buildSignInForm() {
+  // ==========================================
+  // VIEW 1: SIGN IN ("Welcome Back")
+  // ==========================================
+  Widget _buildSignInView() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const Text(
+          'Welcome Back',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF0F172A),
+            letterSpacing: -0.3,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Sign in to your Career360 account.',
+          style: TextStyle(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w400,
+            color: Color(0xFF64748B),
+          ),
+        ),
+        const SizedBox(height: 18),
+
+        // Pill Switcher
+        _buildSegmentedSwitcher(isSignIn: true),
+        const SizedBox(height: 20),
+
         _buildFieldLabel('Email Address'),
         const SizedBox(height: 6),
-        _buildTextField(
+        _buildInputField(
           controller: _signInEmailController,
-          hint: 'alex.turner@example.com',
-          prefixIcon: Icons.email_outlined,
+          hint: 'Enter your email address',
+          prefixIcon: Icons.mail_outline_rounded,
           keyboardType: TextInputType.emailAddress,
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
 
         _buildFieldLabel('Password'),
         const SizedBox(height: 6),
-        _buildTextField(
+        _buildInputField(
           controller: _signInPasswordController,
-          hint: '••••••••••••••••',
+          hint: 'Enter your password',
           prefixIcon: Icons.lock_outline_rounded,
           obscureText: _obscureSignInPassword,
           suffixIcon: IconButton(
             icon: Icon(
-              _obscureSignInPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+              _obscureSignInPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
               color: const Color(0xFF94A3B8),
-              size: 18,
+              size: 19,
             ),
             onPressed: () => setState(() => _obscureSignInPassword = !_obscureSignInPassword),
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
 
-        // Remember Me & Forgot Password
+        // Remember me & Forgot password
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Row(
               children: [
                 SizedBox(
-                  width: 20,
-                  height: 20,
+                  width: 18,
+                  height: 18,
                   child: Checkbox(
                     value: _rememberMe,
-                    activeColor: AppTheme.primary,
+                    activeColor: const Color(0xFF0D6EFD),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                    side: const BorderSide(color: Color(0xFFCBD5E1), width: 1.4),
                     onChanged: (val) => setState(() => _rememberMe = val ?? false),
                   ),
                 ),
@@ -574,155 +612,19 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
               ],
             ),
             GestureDetector(
-              onTap: _handleForgotPassword,
+              onTap: () {
+                setState(() {
+                  _forgotEmailController.text = _signInEmailController.text;
+                  _resetLinkSent = false;
+                  _screenState = AuthScreenState.forgotPassword;
+                });
+              },
               child: const Text(
                 'Forgot password?',
                 style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w600,
-                  color: AppTheme.primary,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 18),
-
-        // Sign In Button
-        _buildPrimaryButton(
-          label: 'Sign In  ➔',
-          onPressed: _handleSignIn,
-        ),
-      ],
-    );
-  }
-
-  /// Sign Up Form Fields
-  Widget _buildSignUpForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _buildFieldLabel('Full Name'),
-        const SizedBox(height: 6),
-        _buildTextField(
-          controller: _signUpNameController,
-          hint: 'Alex Turner',
-          prefixIcon: Icons.person_outline_rounded,
-          textCapitalization: TextCapitalization.words,
-        ),
-        const SizedBox(height: 14),
-
-        _buildFieldLabel('Email Address'),
-        const SizedBox(height: 6),
-        _buildTextField(
-          controller: _signUpEmailController,
-          hint: 'alex.turner@example.com',
-          prefixIcon: Icons.email_outlined,
-          keyboardType: TextInputType.emailAddress,
-        ),
-        const SizedBox(height: 14),
-
-        _buildFieldLabel('Create Password'),
-        const SizedBox(height: 6),
-        _buildTextField(
-          controller: _signUpPasswordController,
-          hint: 'At least 6 characters',
-          prefixIcon: Icons.lock_outline_rounded,
-          obscureText: _obscureSignUpPassword,
-          suffixIcon: IconButton(
-            icon: Icon(
-              _obscureSignUpPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-              color: const Color(0xFF94A3B8),
-              size: 18,
-            ),
-            onPressed: () => setState(() => _obscureSignUpPassword = !_obscureSignUpPassword),
-          ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'Must be at least 6 characters',
-          style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
-        ),
-        const SizedBox(height: 18),
-
-        // Create Account & Send OTP Button
-        _buildPrimaryButton(
-          label: 'Create Account & Send OTP  ➔',
-          onPressed: _handleInitiateSignUp,
-        ),
-      ],
-    );
-  }
-
-  /// 6-Digit Email OTP Verification View
-  Widget _buildEmailOtpVerificationView() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            GestureDetector(
-              onTap: () => setState(() => _isVerifyingOtp = false),
-              child: const Row(
-                children: [
-                  Icon(Icons.arrow_back_rounded, size: 16, color: AppTheme.primary),
-                  SizedBox(width: 4),
-                  Text(
-                    'Back to form',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.primary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-
-        const Text(
-          'Verify Your Email Address',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF0B1F3A),
-          ),
-        ),
-        const SizedBox(height: 6),
-
-        Row(
-          children: [
-            Expanded(
-              child: RichText(
-                text: TextSpan(
-                  style: const TextStyle(fontSize: 13, color: Color(0xFF475467)),
-                  children: [
-                    const TextSpan(text: 'We sent a 6-digit code to: '),
-                    TextSpan(
-                      text: _pendingOtpEmail,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF0B1F3A),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            GestureDetector(
-              onTap: () => setState(() => _isVerifyingOtp = false),
-              child: const Padding(
-                padding: EdgeInsets.only(left: 4),
-                child: Text(
-                  'Edit',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.primary,
-                    decoration: TextDecoration.underline,
-                  ),
+                  color: Color(0xFF0D6EFD),
                 ),
               ),
             ),
@@ -730,50 +632,225 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         ),
         const SizedBox(height: 20),
 
+        // Primary Blue Button
+        _buildPrimaryButton(
+          label: 'Sign In  ➔',
+          onPressed: _handleSignIn,
+        ),
+        const SizedBox(height: 20),
+
+        _buildDivider('or'),
+        const SizedBox(height: 16),
+
+        _buildGoogleButton(),
+      ],
+    );
+  }
+
+  // ==========================================
+  // VIEW 2: SIGN UP ("Create Your Account")
+  // ==========================================
+  Widget _buildSignUpView() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
         const Text(
-          'Enter 6-Digit Code',
+          'Create Your Account',
           style: TextStyle(
-            fontSize: 13,
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF0F172A),
+            letterSpacing: -0.3,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Join Career360 and take the next step in your career.',
+          style: TextStyle(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w400,
+            color: Color(0xFF64748B),
+          ),
+        ),
+        const SizedBox(height: 18),
+
+        // Pill Switcher
+        _buildSegmentedSwitcher(isSignIn: false),
+        const SizedBox(height: 20),
+
+        _buildFieldLabel('Full Name'),
+        const SizedBox(height: 6),
+        _buildInputField(
+          controller: _signUpNameController,
+          hint: 'Enter your full name',
+          prefixIcon: Icons.person_outline_rounded,
+          textCapitalization: TextCapitalization.words,
+        ),
+        const SizedBox(height: 16),
+
+        _buildFieldLabel('Email Address'),
+        const SizedBox(height: 6),
+        _buildInputField(
+          controller: _signUpEmailController,
+          hint: 'Enter your email address',
+          prefixIcon: Icons.mail_outline_rounded,
+          keyboardType: TextInputType.emailAddress,
+        ),
+        const SizedBox(height: 16),
+
+        _buildFieldLabel('Password'),
+        const SizedBox(height: 6),
+        _buildInputField(
+          controller: _signUpPasswordController,
+          hint: 'Create a password',
+          prefixIcon: Icons.lock_outline_rounded,
+          obscureText: _obscureSignUpPassword,
+          suffixIcon: IconButton(
+            icon: Icon(
+              _obscureSignUpPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+              color: const Color(0xFF94A3B8),
+              size: 19,
+            ),
+            onPressed: () => setState(() => _obscureSignUpPassword = !_obscureSignUpPassword),
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Use at least 8 characters with a mix of letters, numbers and symbols.',
+          style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B), height: 1.3),
+        ),
+        const SizedBox(height: 20),
+
+        // Primary Blue Button
+        _buildPrimaryButton(
+          label: 'Create Account & Send OTP  ➔',
+          onPressed: _handleInitiateSignUp,
+        ),
+        const SizedBox(height: 20),
+
+        _buildDivider('or'),
+        const SizedBox(height: 16),
+
+        _buildGoogleButton(),
+      ],
+    );
+  }
+
+  // ==========================================
+  // VIEW 3: VERIFY EMAIL OTP
+  // ==========================================
+  Widget _buildVerifyOtpView() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Verify Your Email',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF0F172A),
+            letterSpacing: -0.3,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'We\'ve sent a 6-digit verification code to your email address.',
+          style: TextStyle(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w400,
+            color: Color(0xFF64748B),
+          ),
+        ),
+        const SizedBox(height: 18),
+
+        // Email Badge Box with [ Edit ]
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.mail_outline_rounded, size: 18, color: Color(0xFF0D6EFD)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _pendingOtpEmail.isNotEmpty ? _pendingOtpEmail : 'dhinesh.v@example.com',
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF0F172A),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _screenState = AuthScreenState.signUp;
+                  });
+                },
+                child: const Text(
+                  'Edit',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0D6EFD),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 22),
+
+        const Text(
+          'Enter 6-digit code',
+          style: TextStyle(
+            fontSize: 13.5,
             fontWeight: FontWeight.w600,
             color: Color(0xFF334155),
           ),
         ),
         const SizedBox(height: 10),
 
-        // 6 OTP Digit Boxes
+        // Six OTP Digit Boxes
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: List.generate(6, (index) => _buildOtpDigitBox(index)),
+          children: List.generate(6, (index) => _buildOtpBox(index)),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
 
-        // Countdown Timer & Resend
+        // Countdown Row
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            const Icon(Icons.access_time_rounded, size: 15, color: Color(0xFF64748B)),
+            const SizedBox(width: 6),
             Text(
               _resendCountdown > 0
-                  ? 'Didn\'t receive code? Resend in 00:${_resendCountdown.toString().padLeft(2, '0')}'
+                  ? 'Resend in 00:${_resendCountdown.toString().padLeft(2, '0')}'
                   : 'Didn\'t receive code? ',
-              style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+              style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
             ),
             if (_resendCountdown == 0)
               GestureDetector(
                 onTap: _handleResendOtp,
                 child: const Text(
-                  'Resend Code',
+                  'Resend',
                   style: TextStyle(
-                    fontSize: 12.5,
+                    fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: AppTheme.primary,
+                    color: Color(0xFF0D6EFD),
                   ),
                 ),
               ),
           ],
         ),
-        const SizedBox(height: 22),
+        const SizedBox(height: 24),
 
-        // Verify Button
         _buildPrimaryButton(
           label: 'Verify Code & Complete Sign Up  ➔',
           onPressed: _handleVerifyEmailOtp,
@@ -782,10 +859,175 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     );
   }
 
-  /// 6-Digit OTP Box with Auto-Advance & Backspace
-  Widget _buildOtpDigitBox(int index) {
+  // ==========================================
+  // VIEW 4: FORGOT PASSWORD?
+  // ==========================================
+  Widget _buildForgotPasswordView() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Forgot Password?',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF0F172A),
+            letterSpacing: -0.3,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Enter your email address and we\'ll send you a link to reset your password.',
+          style: TextStyle(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w400,
+            color: Color(0xFF64748B),
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        _buildFieldLabel('Email Address'),
+        const SizedBox(height: 6),
+        _buildInputField(
+          controller: _forgotEmailController,
+          hint: 'Enter your email address',
+          prefixIcon: Icons.mail_outline_rounded,
+          keyboardType: TextInputType.emailAddress,
+        ),
+        const SizedBox(height: 20),
+
+        _buildPrimaryButton(
+          label: 'Send Reset Link',
+          onPressed: _handleSendResetLink,
+        ),
+
+        // Success Card (When link is sent)
+        if (_resetLinkSent) ...[
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFECFDF5),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFA7F3D0), width: 1.2),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 20),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Reset link sent!',
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF065F46),
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'If the email is registered, you\'ll receive a password reset link shortly.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF047857),
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
+        const SizedBox(height: 22),
+
+        // Back to Sign In Link
+        Center(
+          child: GestureDetector(
+            onTap: () {
+              setState(() {
+                _resetLinkSent = false;
+                _screenState = AuthScreenState.signIn;
+              });
+            },
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.arrow_back_rounded, size: 16, color: Color(0xFF0D6EFD)),
+                SizedBox(width: 6),
+                Text(
+                  'Back to Sign In',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF0D6EFD),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // --- Reusable Component Helpers ---
+
+  Widget _buildFieldLabel(String label) {
+    return Text(
+      label,
+      style: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: Color(0xFF1E293B),
+      ),
+    );
+  }
+
+  Widget _buildInputField({
+    required TextEditingController controller,
+    required String hint,
+    required IconData prefixIcon,
+    bool obscureText = false,
+    Widget? suffixIcon,
+    TextInputType keyboardType = TextInputType.text,
+    TextCapitalization textCapitalization = TextCapitalization.none,
+  }) {
+    return TextFormField(
+      controller: controller,
+      obscureText: obscureText,
+      keyboardType: keyboardType,
+      textCapitalization: textCapitalization,
+      style: const TextStyle(fontSize: 14, color: Color(0xFF0F172A)),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(fontSize: 14, color: Color(0xFF94A3B8)),
+        prefixIcon: Icon(prefixIcon, color: const Color(0xFF94A3B8), size: 19),
+        suffixIcon: suffixIcon,
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.2),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFF0D6EFD), width: 1.8),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOtpBox(int index) {
     return SizedBox(
-      width: 44,
+      width: 46,
       height: 52,
       child: TextFormField(
         controller: _otpControllers[index],
@@ -796,20 +1038,20 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         style: const TextStyle(
           fontSize: 20,
           fontWeight: FontWeight.w700,
-          color: Color(0xFF0B1F3A),
+          color: Color(0xFF0F172A),
         ),
         decoration: InputDecoration(
           counterText: '',
           contentPadding: EdgeInsets.zero,
           filled: true,
-          fillColor: const Color(0xFFF8FAFC),
+          fillColor: Colors.white,
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
             borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: AppTheme.primary, width: 2),
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFF0D6EFD), width: 2),
           ),
         ),
         onChanged: (value) {
@@ -828,55 +1070,6 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     );
   }
 
-  /// Helper: Field Label
-  Widget _buildFieldLabel(String label) {
-    return Text(
-      label,
-      style: const TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w600,
-        color: Color(0xFF334155),
-      ),
-    );
-  }
-
-  /// Helper: Text Field
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String hint,
-    required IconData prefixIcon,
-    bool obscureText = false,
-    Widget? suffixIcon,
-    TextInputType keyboardType = TextInputType.text,
-    TextCapitalization textCapitalization = TextCapitalization.none,
-  }) {
-    return TextFormField(
-      controller: controller,
-      obscureText: obscureText,
-      keyboardType: keyboardType,
-      textCapitalization: textCapitalization,
-      style: const TextStyle(fontSize: 14, color: Color(0xFF0F172A)),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: const TextStyle(fontSize: 14, color: Color(0xFF94A3B8)),
-        prefixIcon: Icon(prefixIcon, color: const Color(0xFF94A3B8), size: 18),
-        suffixIcon: suffixIcon,
-        filled: true,
-        fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppTheme.primary, width: 2),
-        ),
-      ),
-    );
-  }
-
-  /// Helper: Primary Blue Button
   Widget _buildPrimaryButton({
     required String label,
     required VoidCallback onPressed,
@@ -886,11 +1079,11 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       child: ElevatedButton(
         onPressed: _isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppTheme.primary,
+          backgroundColor: const Color(0xFF0D6EFD),
           foregroundColor: Colors.white,
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
           ),
         ),
         child: _isLoading
@@ -913,28 +1106,26 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     );
   }
 
-  /// Helper: Divider ("or continue with")
-  Widget _buildDivider() {
-    return const Row(
+  Widget _buildDivider(String text) {
+    return Row(
       children: [
-        Expanded(child: Divider(color: Color(0xFFE2E8F0), thickness: 1)),
+        const Expanded(child: Divider(color: Color(0xFFE2E8F0), thickness: 1)),
         Padding(
-          padding: EdgeInsets.symmetric(horizontal: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Text(
-            'or continue with',
-            style: TextStyle(
+            text,
+            style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w500,
               color: Color(0xFF94A3B8),
             ),
           ),
         ),
-        Expanded(child: Divider(color: Color(0xFFE2E8F0), thickness: 1)),
+        const Expanded(child: Divider(color: Color(0xFFE2E8F0), thickness: 1)),
       ],
     );
   }
 
-  /// Helper: Google 1-Tap Sign-In Button
   Widget _buildGoogleButton() {
     return SizedBox(
       height: 48,
@@ -944,7 +1135,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
           backgroundColor: Colors.white,
           side: const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
           ),
         ),
         child: Row(
@@ -975,7 +1166,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     );
   }
 
-  /// Helper: Footer Terms - STRICTLY ON ONE SINGLE LINE
+  /// Single Line Terms & Policy Footer with Shield Icon
   Widget _buildFooterTerms() {
     return FittedBox(
       fit: BoxFit.scaleDown,
@@ -985,7 +1176,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
           const Icon(
             Icons.shield_outlined,
             size: 14,
-            color: AppTheme.primary,
+            color: Color(0xFF0D6EFD),
           ),
           const SizedBox(width: 6),
           RichText(
@@ -996,15 +1187,11 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                 fontWeight: FontWeight.w400,
               ),
               children: [
-                TextSpan(
-                  text: _authMode == AuthMode.signIn
-                      ? 'By continuing, you agree to our '
-                      : 'By signing up, you agree to our ',
-                ),
+                const TextSpan(text: 'By continuing, you agree to our '),
                 TextSpan(
                   text: 'Terms of Service',
                   style: const TextStyle(
-                    color: AppTheme.primary,
+                    color: Color(0xFF0D6EFD),
                     fontWeight: FontWeight.w600,
                     decoration: TextDecoration.underline,
                   ),
@@ -1014,7 +1201,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                 TextSpan(
                   text: 'Privacy Policy.',
                   style: const TextStyle(
-                    color: AppTheme.primary,
+                    color: Color(0xFF0D6EFD),
                     fontWeight: FontWeight.w600,
                     decoration: TextDecoration.underline,
                   ),
