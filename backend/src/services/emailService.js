@@ -2,9 +2,18 @@ import nodemailer from 'nodemailer';
 
 let transporter = null;
 
-// Initialize mail transporter
+// Initialize mail transporter (Prioritizes Gmail SMTP when credentials are provided)
 const initTransporter = () => {
-  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
+    transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD.replace(/\s+/g, ''),
+      },
+    });
+    console.log('[EmailService] Gmail transporter configured for:', process.env.GMAIL_USER);
+  } else if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
     transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT || '465', 10),
@@ -15,15 +24,6 @@ const initTransporter = () => {
       },
     });
     console.log('[EmailService] SMTP transporter configured with host:', process.env.SMTP_HOST);
-  } else if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
-    transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD,
-      },
-    });
-    console.log('[EmailService] Gmail transporter configured for:', process.env.GMAIL_USER);
   } else if (!process.env.RESEND_API_KEY) {
     console.warn('[EmailService] No SMTP credentials configured. OTPs will be logged to console in development mode.');
   }
@@ -128,18 +128,20 @@ export async function sendOtpEmail({ to, otp, type = 'verification', name = null
         return { success: true, delivered: true, id: data.id };
       } else {
         lastError = data.message || 'Resend delivery rejected';
-        console.error(`[EmailService - Resend API Error]:`, data);
+        console.warn(`[EmailService - Resend API Warning]: ${lastError}. Attempting SMTP fallback...`);
       }
     } catch (apiErr) {
       lastError = apiErr.message;
-      console.error(`[EmailService - Resend API Exception]:`, apiErr.message);
+      console.warn(`[EmailService - Resend API Exception]: ${apiErr.message}. Attempting SMTP fallback...`);
     }
   }
 
-  // 2. SMTP Transporter Fallback
+  // 2. SMTP Transporter (Gmail / Custom SMTP)
   if (transporter) {
     try {
-      const from = process.env.EMAIL_FROM || '"Career360 Security" <onboarding@resend.dev>';
+      const from = process.env.GMAIL_USER
+        ? `"Career360" <${process.env.GMAIL_USER}>`
+        : (process.env.EMAIL_FROM || '"Career360 Security" <onboarding@resend.dev>');
       const info = await transporter.sendMail({
         from,
         to,
@@ -147,7 +149,7 @@ export async function sendOtpEmail({ to, otp, type = 'verification', name = null
         html: htmlContent,
       });
       console.log(`[EmailService - SMTP] OTP successfully emailed to ${to}:`, info.messageId);
-      return { success: true, delivered: true };
+      return { success: true, delivered: true, provider: 'smtp' };
     } catch (err) {
       lastError = err.message;
       console.error(`[EmailService - SMTP Error] delivering to ${to}:`, err.message);
