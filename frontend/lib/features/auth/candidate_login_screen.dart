@@ -65,6 +65,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   String _pendingOtpEmail = '';
   String _pendingOtpName = '';
   String _pendingOtpPassword = '';
+  String? _pendingVerificationToken;
   final List<TextEditingController> _otpControllers =
       List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _otpFocusNodes = List.generate(6, (_) => FocusNode());
@@ -206,6 +207,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         _pendingOtpEmail = email;
         _pendingOtpName = name;
         _pendingOtpPassword = password;
+        _pendingVerificationToken = res['verificationToken'] as String?;
         _screenState = AuthScreenState.verifyOtp;
 
         for (final c in _otpControllers) {
@@ -233,6 +235,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     final res = await _authService.verifyEmailOtp(
       email: _pendingOtpEmail,
       otp: otpCode,
+      verificationToken: _pendingVerificationToken,
       name: _pendingOtpName,
       password: _pendingOtpPassword,
     );
@@ -263,6 +266,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     if (mounted) {
       setState(() => _isLoading = false);
       if (res['success'] == true) {
+        _pendingVerificationToken = res['verificationToken'] as String?;
         _startResendTimer(res['resendWaitSeconds'] ?? 45);
         _showSuccess('New verification code sent to your email.');
       } else {

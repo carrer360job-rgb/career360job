@@ -75,6 +75,7 @@ class FirebaseAuthService {
   Future<Map<String, dynamic>> verifyEmailOtp({
     required String email,
     required String otp,
+    String? verificationToken,
     String? name,
     String? password,
   }) async {
@@ -86,6 +87,7 @@ class FirebaseAuthService {
         body: jsonEncode({
           'email': email.trim(),
           'otp': otp.trim(),
+          'verificationToken': verificationToken,
           'name': name?.trim(),
           'password': password,
         }),
@@ -288,6 +290,7 @@ class FirebaseAuthService {
   Future<Map<String, dynamic>> resetPasswordWithOtp({
     required String email,
     required String otp,
+    String? verificationToken,
     required String newPassword,
   }) async {
     final url = Uri.parse('${AppConstants.apiBaseUrl}/api/auth/forgot-password/verify-reset');
@@ -298,6 +301,7 @@ class FirebaseAuthService {
         body: jsonEncode({
           'email': email.trim(),
           'otp': otp.trim(),
+          'verificationToken': verificationToken,
           'newPassword': newPassword,
         }),
       );

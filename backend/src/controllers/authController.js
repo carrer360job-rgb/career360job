@@ -1,8 +1,55 @@
+import crypto from 'crypto';
 import { auth } from '../config/firebase.js';
 import { syncCandidateProfile, prisma } from '../config/db.js';
 import { sendOtpEmail } from '../services/emailService.js';
 
-// In-memory OTP store (email -> { otp, expiresAt, name, password, type, createdAt })
+const OTP_SECRET = process.env.JWT_ACCESS_SECRET || 'career360_secure_otp_secret_key_2026';
+
+/**
+ * Generate a cryptographically signed, stateless verification token.
+ * Guarantees zero-failure verification on stateless serverless functions (e.g. Vercel).
+ */
+function generateVerificationToken({ email, otp, expiresAt, name, type }) {
+  const payload = `${email}:${otp}:${expiresAt}`;
+  const hash = crypto.createHmac('sha256', OTP_SECRET).update(payload).digest('hex');
+  const tokenData = JSON.stringify({ email, expiresAt, hash, name, type });
+  return Buffer.from(tokenData).toString('base64url');
+}
+
+/**
+ * Verify a stateless verification token with constant-time equality.
+ */
+function verifyVerificationToken({ token, email, otp, expectedType }) {
+  try {
+    const jsonStr = Buffer.from(token, 'base64url').toString('utf8');
+    const { email: tokenEmail, expiresAt, hash, name, type } = JSON.parse(jsonStr);
+
+    if (tokenEmail !== email.toLowerCase().trim()) {
+      return { valid: false, message: 'Verification email mismatch.' };
+    }
+    if (Date.now() > expiresAt) {
+      return { valid: false, message: 'Verification code has expired. Please request a new one.' };
+    }
+    if (expectedType && type && type !== expectedType) {
+      return { valid: false, message: 'Invalid verification session type.' };
+    }
+
+    const payload = `${tokenEmail}:${otp.trim()}:${expiresAt}`;
+    const expectedHash = crypto.createHmac('sha256', OTP_SECRET).update(payload).digest('hex');
+
+    const a = Buffer.from(hash, 'hex');
+    const b = Buffer.from(expectedHash, 'hex');
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      return { valid: false, message: 'Invalid verification code. Please check your inbox and try again.' };
+    }
+
+    return { valid: true, name, type };
+  } catch (err) {
+    return { valid: false, message: 'Invalid or malformed verification session.' };
+  }
+}
+
+// In-memory fallback OTP store (email -> { otp, expiresAt, name, password, type, createdAt })
 const otpStore = new Map();
 
 /**
@@ -74,10 +121,19 @@ export async function sendEmailOtp(req, res) {
       });
     }
 
+    const verificationToken = generateVerificationToken({
+      email: normalizedEmail,
+      otp,
+      expiresAt,
+      name: name || existing?.name || null,
+      type,
+    });
+
     return res.status(200).json({
       success: true,
       message: 'Verification code sent to your email.',
       email: normalizedEmail,
+      verificationToken,
       expiresInMinutes: 10,
       resendWaitSeconds: 45,
     });
@@ -97,7 +153,7 @@ export async function sendEmailOtp(req, res) {
  */
 export async function verifyEmailOtp(req, res) {
   try {
-    const { email, otp, name, password } = req.body;
+    const { email, otp, verificationToken, name, password } = req.body;
 
     if (!email || !otp) {
       return res.status(400).json({
@@ -107,32 +163,55 @@ export async function verifyEmailOtp(req, res) {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const record = otpStore.get(normalizedEmail);
+    let resolvedName = name || normalizedEmail.split('@')[0];
+    let resolvedPassword = password;
 
-    if (!record) {
-      return res.status(400).json({
-        success: false,
-        message: 'No active verification session found. Please request a new code.',
+    if (verificationToken) {
+      const tokenResult = verifyVerificationToken({
+        token: verificationToken,
+        email: normalizedEmail,
+        otp,
       });
-    }
 
-    if (Date.now() > record.expiresAt) {
-      otpStore.delete(normalizedEmail);
-      return res.status(400).json({
-        success: false,
-        message: 'Verification code has expired. Please request a new one.',
-      });
-    }
+      if (!tokenResult.valid) {
+        return res.status(400).json({
+          success: false,
+          message: tokenResult.message,
+        });
+      }
 
-    if (record.otp !== otp.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid verification code. Please check your inbox and try again.',
-      });
-    }
+      if (tokenResult.name && !name) {
+        resolvedName = tokenResult.name;
+      }
+    } else {
+      // Fallback: Check in-memory store
+      const record = otpStore.get(normalizedEmail);
 
-    const resolvedName = name || record.name || normalizedEmail.split('@')[0];
-    const resolvedPassword = password || record.password;
+      if (!record) {
+        return res.status(400).json({
+          success: false,
+          message: 'No active verification session found. Please request a new code.',
+        });
+      }
+
+      if (Date.now() > record.expiresAt) {
+        otpStore.delete(normalizedEmail);
+        return res.status(400).json({
+          success: false,
+          message: 'Verification code has expired. Please request a new one.',
+        });
+      }
+
+      if (record.otp !== otp.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid verification code. Please check your inbox and try again.',
+        });
+      }
+
+      resolvedName = name || record.name || resolvedName;
+      resolvedPassword = password || record.password;
+    }
 
     // Clean up OTP session
     otpStore.delete(normalizedEmail);
@@ -397,10 +476,18 @@ export async function sendForgotPasswordOtp(req, res) {
       });
     }
 
+    const verificationToken = generateVerificationToken({
+      email: normalizedEmail,
+      otp,
+      expiresAt,
+      type: 'password_reset',
+    });
+
     return res.status(200).json({
       success: true,
       message: 'Password reset code sent to your email.',
       email: normalizedEmail,
+      verificationToken,
       resendWaitSeconds: 45,
     });
   } catch (error) {
@@ -419,7 +506,7 @@ export async function sendForgotPasswordOtp(req, res) {
  */
 export async function resetPasswordWithOtp(req, res) {
   try {
-    const { email, otp, newPassword } = req.body;
+    const { email, otp, verificationToken, newPassword } = req.body;
 
     if (!email || !otp || !newPassword) {
       return res.status(400).json({
@@ -436,28 +523,45 @@ export async function resetPasswordWithOtp(req, res) {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const record = otpStore.get(normalizedEmail);
 
-    if (!record || record.type !== 'password_reset') {
-      return res.status(400).json({
-        success: false,
-        message: 'No password reset session found. Please request a new code.',
+    if (verificationToken) {
+      const tokenResult = verifyVerificationToken({
+        token: verificationToken,
+        email: normalizedEmail,
+        otp,
+        expectedType: 'password_reset',
       });
-    }
 
-    if (Date.now() > record.expiresAt) {
-      otpStore.delete(normalizedEmail);
-      return res.status(400).json({
-        success: false,
-        message: 'Password reset code has expired. Please request a new code.',
-      });
-    }
+      if (!tokenResult.valid) {
+        return res.status(400).json({
+          success: false,
+          message: tokenResult.message,
+        });
+      }
+    } else {
+      const record = otpStore.get(normalizedEmail);
 
-    if (record.otp !== otp.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid verification code. Please check your email and try again.',
-      });
+      if (!record || record.type !== 'password_reset') {
+        return res.status(400).json({
+          success: false,
+          message: 'No password reset session found. Please request a new code.',
+        });
+      }
+
+      if (Date.now() > record.expiresAt) {
+        otpStore.delete(normalizedEmail);
+        return res.status(400).json({
+          success: false,
+          message: 'Password reset code has expired. Please request a new code.',
+        });
+      }
+
+      if (record.otp !== otp.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid verification code. Please check your email and try again.',
+        });
+      }
     }
 
     // Code verified! Remove from store
