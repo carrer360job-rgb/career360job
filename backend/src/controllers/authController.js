@@ -4,6 +4,33 @@ import { syncCandidateProfile, prisma } from '../config/db.js';
 import { sendOtpEmail } from '../services/emailService.js';
 
 const OTP_SECRET = process.env.JWT_ACCESS_SECRET || 'career360_secure_otp_secret_key_2026';
+const OTP_WINDOW_MS = 10 * 60 * 1000; // 10-minute valid window
+
+/**
+ * Deterministically derive an HMAC-based 6-digit OTP from email and time-window slot.
+ * Guarantees zero-database, serverless-safe verification even if client does not return a token.
+ */
+function deriveOtp(email, slot) {
+  const h = crypto
+    .createHmac('sha256', OTP_SECRET)
+    .update(`${email.toLowerCase().trim()}:${slot}`)
+    .digest('hex');
+  const num = (parseInt(h.substring(0, 8), 16) % 900000) + 100000;
+  return num.toString();
+}
+
+/**
+ * Verify derived OTP against current and previous time window (up to 20 mins total grace period).
+ */
+function verifyDerivedOtp(email, candidateOtp) {
+  if (!candidateOtp) return false;
+  const normalized = email.toLowerCase().trim();
+  const currentSlot = Math.floor(Date.now() / OTP_WINDOW_MS);
+  const trimmed = candidateOtp.toString().trim();
+
+  // Check current window and previous window (clock skew tolerance)
+  return trimmed === deriveOtp(normalized, currentSlot) || trimmed === deriveOtp(normalized, currentSlot - 1);
+}
 
 /**
  * Generate a cryptographically signed, stateless verification token.
@@ -92,9 +119,10 @@ export async function sendEmailOtp(req, res) {
       });
     }
 
-    // Generate random 6-digit numeric OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+    // Generate cryptographically derived 6-digit numeric OTP (stateless)
+    const currentSlot = Math.floor(Date.now() / OTP_WINDOW_MS);
+    const otp = deriveOtp(normalizedEmail, currentSlot);
+    const expiresAt = Date.now() + OTP_WINDOW_MS;
 
     otpStore.set(normalizedEmail, {
       otp,
@@ -166,6 +194,9 @@ export async function verifyEmailOtp(req, res) {
     let resolvedName = name || normalizedEmail.split('@')[0];
     let resolvedPassword = password;
 
+    const isCryptoMatch = verifyDerivedOtp(normalizedEmail, otp);
+    let isTokenMatch = false;
+
     if (verificationToken) {
       const tokenResult = verifyVerificationToken({
         token: verificationToken,
@@ -173,44 +204,26 @@ export async function verifyEmailOtp(req, res) {
         otp,
       });
 
-      if (!tokenResult.valid) {
-        return res.status(400).json({
-          success: false,
-          message: tokenResult.message,
-        });
+      if (tokenResult.valid) {
+        isTokenMatch = true;
+        if (tokenResult.name && !name) {
+          resolvedName = tokenResult.name;
+        }
       }
+    }
 
-      if (tokenResult.name && !name) {
-        resolvedName = tokenResult.name;
-      }
-    } else {
-      // Fallback: Check in-memory store
-      const record = otpStore.get(normalizedEmail);
-
-      if (!record) {
-        return res.status(400).json({
-          success: false,
-          message: 'No active verification session found. Please request a new code.',
-        });
-      }
-
-      if (Date.now() > record.expiresAt) {
-        otpStore.delete(normalizedEmail);
-        return res.status(400).json({
-          success: false,
-          message: 'Verification code has expired. Please request a new one.',
-        });
-      }
-
-      if (record.otp !== otp.trim()) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid verification code. Please check your inbox and try again.',
-        });
-      }
-
+    const record = otpStore.get(normalizedEmail);
+    const isStoreMatch = record && record.otp === otp.trim() && Date.now() <= record.expiresAt;
+    if (record) {
       resolvedName = name || record.name || resolvedName;
       resolvedPassword = password || record.password;
+    }
+
+    if (!isCryptoMatch && !isTokenMatch && !isStoreMatch) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired verification code. Please check your inbox or request a new one.',
+      });
     }
 
     // Clean up OTP session
@@ -304,8 +317,9 @@ export async function registerWithOtp(req, res) {
     const normalizedEmail = email.trim().toLowerCase();
 
     // Generate OTP & store registration payload
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 10 * 60 * 1000;
+    const currentSlot = Math.floor(Date.now() / OTP_WINDOW_MS);
+    const otp = deriveOtp(normalizedEmail, currentSlot);
+    const expiresAt = Date.now() + OTP_WINDOW_MS;
 
     otpStore.set(normalizedEmail, {
       otp,
@@ -452,8 +466,9 @@ export async function sendForgotPasswordOtp(req, res) {
       }
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 10 * 60 * 1000;
+    const currentSlot = Math.floor(Date.now() / OTP_WINDOW_MS);
+    const otp = deriveOtp(normalizedEmail, currentSlot);
+    const expiresAt = Date.now() + OTP_WINDOW_MS;
 
     otpStore.set(normalizedEmail, {
       otp,
@@ -524,6 +539,9 @@ export async function resetPasswordWithOtp(req, res) {
 
     const normalizedEmail = email.trim().toLowerCase();
 
+    const isCryptoMatch = verifyDerivedOtp(normalizedEmail, otp);
+    let isTokenMatch = false;
+
     if (verificationToken) {
       const tokenResult = verifyVerificationToken({
         token: verificationToken,
@@ -532,36 +550,19 @@ export async function resetPasswordWithOtp(req, res) {
         expectedType: 'password_reset',
       });
 
-      if (!tokenResult.valid) {
-        return res.status(400).json({
-          success: false,
-          message: tokenResult.message,
-        });
+      if (tokenResult.valid) {
+        isTokenMatch = true;
       }
-    } else {
-      const record = otpStore.get(normalizedEmail);
+    }
 
-      if (!record || record.type !== 'password_reset') {
-        return res.status(400).json({
-          success: false,
-          message: 'No password reset session found. Please request a new code.',
-        });
-      }
+    const record = otpStore.get(normalizedEmail);
+    const isStoreMatch = record && record.type === 'password_reset' && record.otp === otp.trim() && Date.now() <= record.expiresAt;
 
-      if (Date.now() > record.expiresAt) {
-        otpStore.delete(normalizedEmail);
-        return res.status(400).json({
-          success: false,
-          message: 'Password reset code has expired. Please request a new code.',
-        });
-      }
-
-      if (record.otp !== otp.trim()) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid verification code. Please check your email and try again.',
-        });
-      }
+    if (!isCryptoMatch && !isTokenMatch && !isStoreMatch) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired verification code. Please request a new code.',
+      });
     }
 
     // Code verified! Remove from store
