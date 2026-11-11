@@ -2,30 +2,49 @@ import nodemailer from 'nodemailer';
 
 let transporter = null;
 
-// Initialize mail transporter (Prioritizes Gmail SMTP when credentials are provided)
+/**
+ * Initialize Mail Transporter
+ * Prioritizes Gmail SMTP for universal delivery to any candidate email address.
+ * Automatically rejects any stale Resend SMTP configs.
+ */
 const initTransporter = () => {
-  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
+  // Guard: Detect and discard any stale Resend configurations
+  const isResendSmtp =
+    process.env.SMTP_HOST?.includes('resend') ||
+    process.env.SMTP_USER === 'resend' ||
+    process.env.SMTP_PASS?.startsWith('re_');
+
+  const user =
+    process.env.GMAIL_USER ||
+    (!isResendSmtp ? process.env.SMTP_USER : null) ||
+    'carrer360job@gmail.com';
+
+  const rawPass =
+    process.env.GMAIL_APP_PASSWORD ||
+    (!isResendSmtp ? process.env.SMTP_PASS : null) ||
+    'yrlcbfqfzjoglxno';
+
+  const pass = rawPass.replace(/\s+/g, '');
+
+  if (user && pass) {
     transporter = nodemailer.createTransport({
       service: 'gmail',
-      auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD.replace(/\s+/g, ''),
-      },
+      auth: { user, pass },
     });
-    console.log('[EmailService] Gmail transporter configured for:', process.env.GMAIL_USER);
-  } else if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+    console.log('[EmailService] Gmail SMTP transporter active for:', user);
+  } else if (!isResendSmtp && process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
     transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT || '465', 10),
       secure: process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465',
       auth: {
         user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
+        pass: process.env.SMTP_PASS.replace(/\s+/g, ''),
       },
     });
-    console.log('[EmailService] SMTP transporter configured with host:', process.env.SMTP_HOST);
-  } else if (!process.env.RESEND_API_KEY) {
-    console.warn('[EmailService] No SMTP credentials configured. OTPs will be logged to console in development mode.');
+    console.log('[EmailService] Custom SMTP transporter active for host:', process.env.SMTP_HOST);
+  } else {
+    console.warn('[EmailService] No email credentials configured. Operating in development mode.');
   }
 };
 
@@ -103,69 +122,34 @@ export async function sendOtpEmail({ to, otp, type = 'verification', name = null
     </html>
   `;
 
-  // 1. Direct Resend REST API (Ultra-fast & serverless native)
-  let lastError = null;
-  if (process.env.RESEND_API_KEY) {
-    try {
-      const from = process.env.EMAIL_FROM || 'Career360 <onboarding@resend.dev>';
-      const response = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from,
-          to: [to],
-          subject,
-          html: htmlContent,
-        }),
-      });
-
-      const data = await response.json();
-      if (response.ok) {
-        console.log(`[EmailService - Resend API] OTP successfully delivered to ${to} (ID: ${data.id})`);
-        return { success: true, delivered: true, id: data.id };
-      } else {
-        lastError = data.message || 'Resend delivery rejected';
-        console.warn(`[EmailService - Resend API Warning]: ${lastError}. Attempting SMTP fallback...`);
-      }
-    } catch (apiErr) {
-      lastError = apiErr.message;
-      console.warn(`[EmailService - Resend API Exception]: ${apiErr.message}. Attempting SMTP fallback...`);
-    }
+  // 1. Direct Delivery via SMTP (Gmail)
+  if (!transporter) {
+    initTransporter();
   }
 
-  // 2. SMTP Transporter (Gmail / Custom SMTP)
   if (transporter) {
     try {
-      const from = process.env.GMAIL_USER
-        ? `"Career360" <${process.env.GMAIL_USER}>`
-        : (process.env.EMAIL_FROM || '"Career360 Security" <onboarding@resend.dev>');
+      const from = process.env.EMAIL_FROM || `"Career360" <${process.env.GMAIL_USER || 'carrer360job@gmail.com'}>`;
       const info = await transporter.sendMail({
         from,
         to,
         subject,
         html: htmlContent,
       });
-      console.log(`[EmailService - SMTP] OTP successfully emailed to ${to}:`, info.messageId);
-      return { success: true, delivered: true, provider: 'smtp' };
+
+      console.log(`[EmailService] OTP successfully delivered to ${to} (MessageId: ${info.messageId})`);
+      return { success: true, delivered: true, id: info.messageId };
     } catch (err) {
-      lastError = err.message;
-      console.error(`[EmailService - SMTP Error] delivering to ${to}:`, err.message);
+      console.error(`[EmailService Error] Failed delivering to ${to}:`, err.message);
+      return {
+        success: false,
+        delivered: false,
+        error: `Email delivery failed: ${err.message}`,
+      };
     }
   }
 
-  // 3. If delivery failed in production
-  if (process.env.NODE_ENV === 'production' || process.env.RESEND_API_KEY) {
-    return {
-      success: false,
-      delivered: false,
-      error: lastError || 'Email delivery failed. Please verify recipient address.',
-    };
-  }
-
-  // 4. Local Development Fallback
+  // 2. Local Development Fallback if no credentials provided
   console.log(`[DEV MODE - NO SMTP] ---------------------------------`);
   console.log(`[DEV MODE] OTP Code for ${to} (${type}): [ ${otp} ]`);
   console.log(`[DEV MODE] ---------------------------------`);

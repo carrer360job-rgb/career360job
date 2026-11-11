@@ -1,14 +1,16 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import '../constants/app_constants.dart';
 
 /// Full-Stack Authentication Service
-/// Bridges Flutter client, Firebase Authentication, and Serverless Backend API
+/// Bridges Flutter client, Firebase Authentication, Cloud Firestore, and Serverless Backend API
 class FirebaseAuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     serverClientId: '91724152546-vtc0vna61drcpn0as33hsbkh7pq118k9.apps.googleusercontent.com',
   );
@@ -105,6 +107,15 @@ class FirebaseAuthService {
           }
         } else if (password != null && password.isNotEmpty) {
           await _fallbackEmailAuth(email: email, password: password, name: name);
+        }
+
+        final currentUser = _auth.currentUser;
+        if (currentUser != null) {
+          syncUserProfileToFirestore(
+            uid: currentUser.uid,
+            email: email,
+            displayName: name ?? currentUser.displayName,
+          );
         }
 
         return {
@@ -304,9 +315,44 @@ class FirebaseAuthService {
     }
   }
 
-  /// 9. Background profile synchronization with PostgreSQL via Backend
+  /// 9. Sync Candidate Profile Directly to Cloud Firestore
+  Future<void> syncUserProfileToFirestore({
+    required String uid,
+    required String email,
+    String? displayName,
+    String? photoUrl,
+    String role = 'candidate',
+  }) async {
+    try {
+      final docRef = _firestore.collection('users').doc(uid);
+      await docRef.set({
+        'uid': uid,
+        'email': email.toLowerCase().trim(),
+        'displayName': displayName ?? email.split('@')[0],
+        'photoUrl': photoUrl,
+        'role': role,
+        'updatedAt': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      debugPrint('[FirebaseAuthService] Firestore profile synced for $uid');
+    } catch (e) {
+      debugPrint('[FirebaseAuthService] Firestore sync notice: $e');
+    }
+  }
+
+  /// 10. Background profile synchronization via Backend
   void _syncUserProfileInBackground() async {
     try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        syncUserProfileToFirestore(
+          uid: user.uid,
+          email: user.email ?? '',
+          displayName: user.displayName,
+          photoUrl: user.photoURL,
+        );
+      }
+
       final token = await getIdToken();
       if (token == null) return;
 
@@ -323,9 +369,19 @@ class FirebaseAuthService {
     }
   }
 
-  /// 10. Background Google profile synchronization
+  /// 11. Background Google profile synchronization
   void _syncGoogleProfile(String idToken) async {
     try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        syncUserProfileToFirestore(
+          uid: user.uid,
+          email: user.email ?? '',
+          displayName: user.displayName,
+          photoUrl: user.photoURL,
+        );
+      }
+
       final url = Uri.parse('${AppConstants.apiBaseUrl}/api/auth/google-sync');
       await http.post(
         url,
@@ -337,7 +393,7 @@ class FirebaseAuthService {
     }
   }
 
-  /// 11. Sign Out
+  /// 12. Sign Out
   Future<void> signOut() async {
     await Future.wait([
       _auth.signOut(),
