@@ -1,33 +1,41 @@
 {
   "project_info": {
-    "project_number": "1068640600773",
-    "project_id": "career360-95daa",
-    "storage_bucket": "career360-95daa.firebasestorage.app"
+    "project_number": "91724152546",
+    "project_id": "career360-7f60f",
+    "storage_bucket": "career360-7f60f.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1068640600773:android:d27c99cf74368b7cb6a6ac",
+        "mobilesdk_app_id": "1:91724152546:android:3e5c539b78fc603ba328bb",
         "android_client_info": {
-          "package_name": "com.jobportal.candidate_app"
+          "package_name": "com.career360.candidate"
         }
       },
       "oauth_client": [
         {
-          "client_id": "1068640600773-c5mtr8vuheuu5eku6rse5ggt8v2u565t.apps.googleusercontent.com",
+          "client_id": "91724152546-3k8t915o8u6lljt9vi68c12jp19lggq2.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.career360.candidate",
+            "certificate_hash": "9815ae65f9106682d08227b1830b7fc7e85b125c"
+          }
+        },
+        {
+          "client_id": "91724152546-vtc0vna61drcpn0as33hsbkh7pq118k9.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyBsap5-h88dZW3ckUMvhdbi9x56Yxc9_Gk"
+          "current_key": "AIzaSyDIRLQgyXnV-QljBHb3rwJaqAYls0ZUbx8"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "1068640600773-c5mtr8vuheuu5eku6rse5ggt8v2u565t.apps.googleusercontent.com",
+              "client_id": "91724152546-vtc0vna61drcpn0as33hsbkh7pq118k9.apps.googleusercontent.com",
               "client_type": 3
             }
           ]

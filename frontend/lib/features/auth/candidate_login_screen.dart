@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/services/firebase_auth_service.dart';
 import '../legal/privacy_policy_screen.dart';
@@ -71,6 +72,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   Timer? _timer;
 
   bool _isLoading = false;
+  bool _isGoogleLoading = false;
 
   late final TapGestureRecognizer _termsRecognizer;
   late final TapGestureRecognizer _privacyRecognizer;
@@ -306,11 +308,12 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   }
 
   Future<void> _handleGoogleSignIn() async {
-    setState(() => _isLoading = true);
+    HapticFeedback.lightImpact();
+    setState(() => _isGoogleLoading = true);
     try {
       final cred = await _authService.signInWithGoogle();
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() => _isGoogleLoading = false);
         if (cred != null) {
           _showSuccess('Welcome back, ${cred.user?.displayName ?? "Candidate"}!');
           widget.onLoginSuccess();
@@ -318,8 +321,16 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _isLoading = false);
-        _showError('Google sign-in was cancelled or encountered an error.');
+        setState(() => _isGoogleLoading = false);
+        debugPrint('[Google Sign-In Error]: $e');
+        String errMsg = e.toString();
+        if (errMsg.contains('sign_in_canceled') ||
+            errMsg.contains('canceled') ||
+            errMsg.contains('cancelled') ||
+            errMsg.contains('web-context-cancelled')) {
+          return; // User dismissed picker
+        }
+        _showError('Google sign-in error: $errMsg');
       }
     }
   }
@@ -1153,7 +1164,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     return SizedBox(
       height: _buttonHeight,
       child: OutlinedButton(
-        onPressed: _isLoading ? null : _handleGoogleSignIn,
+        onPressed: (_isLoading || _isGoogleLoading) ? null : _handleGoogleSignIn,
         style: OutlinedButton.styleFrom(
           backgroundColor: Colors.white,
           side: const BorderSide(color: _inputBorder, width: 1.2),
@@ -1164,30 +1175,53 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         ),
         child: FittedBox(
           fit: BoxFit.scaleDown,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Image.asset(
-                'assets/images/google_logo.png',
-                width: 20,
-                height: 20,
-                errorBuilder: (context, error, stackTrace) => const Icon(
-                  Icons.g_mobiledata_rounded,
-                  size: 26,
-                  color: Color(0xFF4285F4),
+          child: _isGoogleLoading
+              ? const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        valueColor: AlwaysStoppedAnimation<Color>(_primaryBlue),
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Text(
+                      'Connecting to Google...',
+                      style: TextStyle(
+                        fontSize: 15.0,
+                        fontWeight: FontWeight.w600,
+                        color: _navyText,
+                      ),
+                    ),
+                  ],
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Image.asset(
+                      'assets/images/google_logo.png',
+                      width: 20,
+                      height: 20,
+                      errorBuilder: (context, error, stackTrace) => const Icon(
+                        Icons.g_mobiledata_rounded,
+                        size: 26,
+                        color: Color(0xFF4285F4),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Continue with Google',
+                      style: TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w600,
+                        color: _navyText,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 12),
-              const Text(
-                'Continue with Google',
-                style: TextStyle(
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w600,
-                  color: _navyText,
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );

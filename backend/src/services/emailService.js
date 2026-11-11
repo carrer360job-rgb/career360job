@@ -104,6 +104,7 @@ export async function sendOtpEmail({ to, otp, type = 'verification', name = null
   `;
 
   // 1. Direct Resend REST API (Ultra-fast & serverless native)
+  let lastError = null;
   if (process.env.RESEND_API_KEY) {
     try {
       const from = process.env.EMAIL_FROM || 'Career360 <onboarding@resend.dev>';
@@ -126,9 +127,11 @@ export async function sendOtpEmail({ to, otp, type = 'verification', name = null
         console.log(`[EmailService - Resend API] OTP successfully delivered to ${to} (ID: ${data.id})`);
         return { success: true, delivered: true, id: data.id };
       } else {
+        lastError = data.message || 'Resend delivery rejected';
         console.error(`[EmailService - Resend API Error]:`, data);
       }
     } catch (apiErr) {
+      lastError = apiErr.message;
       console.error(`[EmailService - Resend API Exception]:`, apiErr.message);
     }
   }
@@ -146,13 +149,21 @@ export async function sendOtpEmail({ to, otp, type = 'verification', name = null
       console.log(`[EmailService - SMTP] OTP successfully emailed to ${to}:`, info.messageId);
       return { success: true, delivered: true };
     } catch (err) {
+      lastError = err.message;
       console.error(`[EmailService - SMTP Error] delivering to ${to}:`, err.message);
-      console.log(`[DEV OTP FALLBACK] Code for ${to}: [${otp}]`);
-      return { success: true, delivered: false, error: err.message };
     }
   }
 
-  // 3. Development Fallback
+  // 3. If delivery failed in production
+  if (process.env.NODE_ENV === 'production' || process.env.RESEND_API_KEY) {
+    return {
+      success: false,
+      delivered: false,
+      error: lastError || 'Email delivery failed. Please verify recipient address.',
+    };
+  }
+
+  // 4. Local Development Fallback
   console.log(`[DEV MODE - NO SMTP] ---------------------------------`);
   console.log(`[DEV MODE] OTP Code for ${to} (${type}): [ ${otp} ]`);
   console.log(`[DEV MODE] ---------------------------------`);

@@ -59,12 +59,20 @@ export async function sendEmailOtp(req, res) {
     });
 
     // Send email
-    await sendOtpEmail({
+    const emailRes = await sendOtpEmail({
       to: normalizedEmail,
       otp,
       type,
       name: name || existing?.name || null,
     });
+
+    if (emailRes.success === false && !emailRes.devMode) {
+      otpStore.delete(normalizedEmail);
+      return res.status(400).json({
+        success: false,
+        message: emailRes.error || 'Failed to deliver verification email.',
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -229,12 +237,20 @@ export async function registerWithOtp(req, res) {
       createdAt: Date.now(),
     });
 
-    await sendOtpEmail({
+    const emailRes = await sendOtpEmail({
       to: normalizedEmail,
       otp,
       type: 'signup',
       name: name.trim(),
     });
+
+    if (emailRes.success === false && !emailRes.devMode) {
+      otpStore.delete(normalizedEmail);
+      return res.status(400).json({
+        success: false,
+        message: emailRes.error || 'Failed to deliver verification email.',
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -367,11 +383,19 @@ export async function sendForgotPasswordOtp(req, res) {
       createdAt: Date.now(),
     });
 
-    await sendOtpEmail({
+    const emailRes = await sendOtpEmail({
       to: normalizedEmail,
       otp,
       type: 'password_reset',
     });
+
+    if (emailRes.success === false && !emailRes.devMode) {
+      otpStore.delete(normalizedEmail);
+      return res.status(400).json({
+        success: false,
+        message: emailRes.error || 'Failed to deliver password reset code.',
+      });
+    }
 
     return res.status(200).json({
       success: true,

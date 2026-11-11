@@ -1,4 +1,4 @@
-package com.jobportal.candidate_app
+package com.career360.candidate
 
 import io.flutter.embedding.android.FlutterActivity
 
