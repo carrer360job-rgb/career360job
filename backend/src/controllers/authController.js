@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { auth } from '../config/firebase.js';
-import { syncCandidateProfile, prisma } from '../config/db.js';
+import { syncCandidateProfile } from '../config/db.js';
 import { sendOtpEmail } from '../services/emailService.js';
 
 const OTP_SECRET = process.env.JWT_ACCESS_SECRET || 'career360_secure_otp_secret_key_2026';
@@ -263,7 +263,7 @@ export async function verifyEmailOtp(req, res) {
       }
     }
 
-    // Sync to PostgreSQL DB (Prisma)
+    // Sync profile to database
     const dbSync = await syncCandidateProfile({
       firebaseUid: firebaseUser?.uid || null,
       email: normalizedEmail,
@@ -407,7 +407,7 @@ export async function googleSync(req, res) {
       });
     }
 
-    // Sync to PostgreSQL DB (Prisma)
+    // Sync profile to database
     const dbSync = await syncCandidateProfile({
       firebaseUid,
       email,

@@ -13,10 +13,10 @@ export const verifyFirebaseToken = async (req, res, next) => {
 
   const token = authHeader.split('Bearer ')[1];
 
-  if (!firebaseApp) {
+  if (!admin || !firebaseApp) {
     return res.status(503).json({
       error: {
-        message: 'Firebase Admin is not configured. Please supply firebase-service-account.json.'
+        message: 'Firebase Authentication service is currently unavailable.'
       }
     });
   }
