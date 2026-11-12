@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/responsive/responsive_layout.dart';
+import '../../core/widgets/bouncy_button.dart';
 import '../../main.dart';
 
 class RoleSelectionScreen extends StatelessWidget {
@@ -276,21 +277,26 @@ class RoleSelectionScreen extends StatelessWidget {
           ),
           const SizedBox(height: 20),
 
-          // Action Button
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton(
-              onPressed: onTap,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: buttonColor,
-                foregroundColor: Colors.white,
-                elevation: 2,
-                shadowColor: buttonColor.withValues(alpha: 0.3),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+          // Action Button with Visual Click Color Animation
+          BouncyButton(
+            onPressed: onTap,
+            borderRadius: BorderRadius.circular(12),
+            pressOverlayColor: Colors.black.withValues(alpha: 0.20),
+            child: Container(
+              width: double.infinity,
+              height: 48,
+              decoration: BoxDecoration(
+                color: buttonColor,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: buttonColor.withValues(alpha: 0.32),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
+              alignment: Alignment.center,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -300,8 +306,9 @@ class RoleSelectionScreen extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
                         letterSpacing: 0.2,
+                        color: Colors.white,
                       ),
                     ),
                   ),

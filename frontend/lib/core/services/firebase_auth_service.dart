@@ -55,6 +55,7 @@ class FirebaseAuthService {
           'success': true,
           'message': data['message'] ?? 'Verification code sent to your email.',
           'resendWaitSeconds': data['resendWaitSeconds'] ?? 45,
+          'verificationToken': data['verificationToken'],
         };
       } else {
         return {
@@ -80,8 +81,9 @@ class FirebaseAuthService {
     String? password,
   }) async {
     final url = Uri.parse('${AppConstants.apiBaseUrl}/api/auth/email-otp/verify');
+    http.Response response;
     try {
-      final response = await http.post(
+      response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -92,17 +94,31 @@ class FirebaseAuthService {
           'password': password,
         }),
       );
+    } catch (netErr) {
+      debugPrint('[verifyEmailOtp Network Error]: $netErr');
+      return {
+        'success': false,
+        'message': 'Unable to connect to verification server. Please check your internet connection.',
+      };
+    }
 
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final customToken = data['customToken'] as String?;
+    Map<String, dynamic> data = {};
+    try {
+      data = jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (jsonErr) {
+      debugPrint('[verifyEmailOtp json error]: $jsonErr');
+    }
 
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final customToken = data['customToken'] as String?;
+
+      // Attempt Firebase client session in isolated try-catch so secondary auth errors never block verified users
+      try {
         if (customToken != null && customToken.isNotEmpty) {
           try {
             await _auth.signInWithCustomToken(customToken);
           } catch (customTokenErr) {
             debugPrint('[Firebase Custom Token Notice]: $customTokenErr');
-            // If custom token isn't accepted locally, fallback to email & password
             if (password != null && password.isNotEmpty) {
               await _fallbackEmailAuth(email: email, password: password, name: name);
             }
@@ -119,23 +135,22 @@ class FirebaseAuthService {
             displayName: name ?? currentUser.displayName,
           );
         }
-
-        return {
-          'success': true,
-          'message': data['message'] ?? 'Email verified successfully!',
-          'user': data['user'],
-        };
-      } else {
-        return {
-          'success': false,
-          'message': data['message'] ?? 'Invalid or expired verification code.',
-        };
+      } catch (authErr) {
+        debugPrint('[verifyEmailOtp Local Firebase Session Notice]: $authErr');
       }
-    } catch (e) {
-      debugPrint('[verifyEmailOtp Network Error]: $e');
+
+      return {
+        'success': true,
+        'message': data['message'] ?? 'Email verified successfully!',
+        'user': data['user'],
+      };
+    } else {
+      final errMsg = data['message'] ??
+          (data['error'] is Map ? data['error']['message'] : data['error']) ??
+          'Invalid or expired verification code.';
       return {
         'success': false,
-        'message': 'Verification service temporarily unavailable. Please retry.',
+        'message': errMsg.toString(),
       };
     }
   }
@@ -156,11 +171,19 @@ class FirebaseAuthService {
       }
     } on FirebaseAuthException catch (e) {
       if (e.code == 'email-already-in-use') {
-        await _auth.signInWithEmailAndPassword(
-          email: email.trim(),
-          password: password,
-        );
+        try {
+          await _auth.signInWithEmailAndPassword(
+            email: email.trim(),
+            password: password,
+          );
+        } catch (signInErr) {
+          debugPrint('[Firebase Fallback Sign In Notice]: $signInErr');
+        }
+      } else {
+        debugPrint('[Firebase Fallback Create Notice]: $e');
       }
+    } catch (generalErr) {
+      debugPrint('[Firebase Fallback General Notice]: $generalErr');
     }
   }
 
@@ -180,7 +203,7 @@ class FirebaseAuthService {
     return cred;
   }
 
-  /// 4. Email & Password Direct Sign Up + Backend Sync
+  /// 4. Email & Password Direct Sign Up + Direct Cloud Firestore Profile Creation
   Future<UserCredential> signUpWithEmail({
     required String name,
     required String email,
@@ -194,7 +217,17 @@ class FirebaseAuthService {
       await cred.user?.updateDisplayName(name.trim());
     }
 
-    // Sync profile to database asynchronously
+    // Direct synchronous Firestore document creation
+    final uid = cred.user?.uid;
+    if (uid != null) {
+      await syncUserProfileToFirestore(
+        uid: uid,
+        email: email,
+        displayName: name.isNotEmpty ? name.trim() : null,
+      );
+    }
+
+    // Optional background backend sync if configured
     _syncUserProfileInBackground();
 
     return cred;
@@ -341,6 +374,36 @@ class FirebaseAuthService {
       debugPrint('[FirebaseAuthService] Firestore profile synced for $uid');
     } catch (e) {
       debugPrint('[FirebaseAuthService] Firestore sync notice: $e');
+    }
+  }
+
+  /// 9.1 Save Candidate Complete Onboarding Profile to Cloud Firestore
+  Future<void> saveCandidateOnboardingProfile({
+    required String uid,
+    required Map<String, dynamic> onboardingData,
+  }) async {
+    try {
+      final docRef = _firestore.collection('candidates').doc(uid);
+      await docRef.set({
+        'uid': uid,
+        ...onboardingData,
+        'onboardingCompleted': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      final userRef = _firestore.collection('users').doc(uid);
+      await userRef.set({
+        'uid': uid,
+        'displayName': onboardingData['fullName'],
+        'phone': onboardingData['phone'],
+        'location': onboardingData['city'] ?? onboardingData['district'],
+        'onboardingCompleted': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      debugPrint('[FirebaseAuthService] Candidate onboarding profile saved for $uid');
+    } catch (e) {
+      debugPrint('[FirebaseAuthService] Firestore candidate profile notice: $e');
     }
   }
 

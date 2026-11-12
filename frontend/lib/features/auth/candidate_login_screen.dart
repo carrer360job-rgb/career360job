@@ -2,15 +2,14 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/services/firebase_auth_service.dart';
+import '../../core/widgets/bouncy_button.dart';
 import '../legal/privacy_policy_screen.dart';
 
 enum AuthScreenState {
   signIn,
   signUp,
-  verifyOtp,
   forgotPassword,
 }
 
@@ -61,17 +60,6 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   final TextEditingController _forgotEmailController = TextEditingController();
   bool _resetLinkSent = false;
 
-  // OTP Verification State
-  String _pendingOtpEmail = '';
-  String _pendingOtpName = '';
-  String _pendingOtpPassword = '';
-  String? _pendingVerificationToken;
-  final List<TextEditingController> _otpControllers =
-      List.generate(6, (_) => TextEditingController());
-  final List<FocusNode> _otpFocusNodes = List.generate(6, (_) => FocusNode());
-  int _resendCountdown = 45;
-  Timer? _timer;
-
   bool _isLoading = false;
   bool _isGoogleLoading = false;
 
@@ -95,32 +83,9 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     _signUpEmailController.dispose();
     _signUpPasswordController.dispose();
     _forgotEmailController.dispose();
-    for (final c in _otpControllers) {
-      c.dispose();
-    }
-    for (final f in _otpFocusNodes) {
-      f.dispose();
-    }
-    _timer?.cancel();
     _termsRecognizer.dispose();
     _privacyRecognizer.dispose();
     super.dispose();
-  }
-
-  void _startResendTimer([int seconds = 45]) {
-    _timer?.cancel();
-    setState(() {
-      _resendCountdown = seconds;
-    });
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_resendCountdown > 0) {
-        setState(() {
-          _resendCountdown--;
-        });
-      } else {
-        timer.cancel();
-      }
-    });
   }
 
   // --- Handlers ---
@@ -194,86 +159,39 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
 
     setState(() => _isLoading = true);
 
-    final res = await _authService.sendEmailOtp(
-      email: email,
-      name: name,
-      type: 'signup',
-    );
+    try {
+      await _authService.signUpWithEmail(
+        name: name,
+        email: email,
+        password: password,
+      );
 
-    if (mounted) {
-      setState(() => _isLoading = false);
-
-      if (res['success'] == true) {
-        _pendingOtpEmail = email;
-        _pendingOtpName = name;
-        _pendingOtpPassword = password;
-        _pendingVerificationToken = res['verificationToken'] as String?;
-        _screenState = AuthScreenState.verifyOtp;
-
-        for (final c in _otpControllers) {
-          c.clear();
-        }
-        _startResendTimer(res['resendWaitSeconds'] ?? 45);
-        _otpFocusNodes[0].requestFocus();
-
-        _showSuccess('Verification code sent to your email.');
-      } else {
-        _showError(res['message'] ?? 'Failed to send verification code.');
-      }
-    }
-  }
-
-  Future<void> _handleVerifyEmailOtp() async {
-    final otpCode = _otpControllers.map((c) => c.text.trim()).join();
-    if (otpCode.length < 6) {
-      _showError('Please enter the full 6-digit verification code.');
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    final res = await _authService.verifyEmailOtp(
-      email: _pendingOtpEmail,
-      otp: otpCode,
-      verificationToken: _pendingVerificationToken,
-      name: _pendingOtpName,
-      password: _pendingOtpPassword,
-    );
-
-    if (mounted) {
-      setState(() => _isLoading = false);
-
-      if (res['success'] == true) {
-        _showSuccess('Email verified successfully!');
+      if (mounted) {
+        setState(() => _isLoading = false);
+        _showSuccess('Account created successfully!');
         widget.onLoginSuccess();
-      } else {
-        _showError(res['message'] ?? 'Invalid or expired code.');
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        String message = 'Sign up failed. Please try again.';
+        if (e.code == 'email-already-in-use') {
+          message = 'An account already exists with this email. Please sign in.';
+        } else if (e.code == 'weak-password') {
+          message = 'Password is too weak. Please use a stronger password.';
+        } else if (e.code == 'invalid-email') {
+          message = 'Invalid email address format.';
+        }
+        _showError(message);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        _showError('Sign up failed: ${e.toString()}');
       }
     }
   }
 
-  Future<void> _handleResendOtp() async {
-    if (_resendCountdown > 0 || _isLoading) return;
-
-    setState(() => _isLoading = true);
-
-    final res = await _authService.sendEmailOtp(
-      email: _pendingOtpEmail,
-      name: _pendingOtpName,
-      type: 'signup',
-    );
-
-    if (mounted) {
-      setState(() => _isLoading = false);
-      if (res['success'] == true) {
-        _pendingVerificationToken = res['verificationToken'] as String?;
-        _startResendTimer(res['resendWaitSeconds'] ?? 45);
-        _showSuccess('New verification code sent to your email.');
-      } else {
-        _showError(res['message'] ?? 'Failed to resend code.');
-      }
-    }
-  }
 
   Future<void> _handleSendResetLink() async {
     final email = _forgotEmailController.text.trim();
@@ -285,34 +203,33 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     setState(() => _isLoading = true);
     try {
       await _authService.sendPasswordReset(email);
-      // Also request backend OTP delivery for complementary reliability
-      _authService.sendPasswordResetOtp(email);
       if (mounted) {
         setState(() {
           _isLoading = false;
           _resetLinkSent = true;
         });
-        _showSuccess('Password reset link sent to your email.');
+        _showSuccess('Password reset link sent to your email via Firebase.');
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        String message = 'Failed to send password reset email.';
+        if (e.code == 'user-not-found') {
+          message = 'No account found with this email address.';
+        } else if (e.code == 'invalid-email') {
+          message = 'Invalid email address format.';
+        }
+        _showError(message);
       }
     } catch (e) {
-      // Fallback to backend OTP reset service
-      final res = await _authService.sendPasswordResetOtp(email);
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _resetLinkSent = true;
-        });
-        if (res['success'] == true) {
-          _showSuccess('Password reset code sent to your email.');
-        } else {
-          _showSuccess('If this email is registered, reset instructions were sent.');
-        }
+        setState(() => _isLoading = false);
+        _showError('Unable to send reset link: ${e.toString()}');
       }
     }
   }
 
   Future<void> _handleGoogleSignIn() async {
-    HapticFeedback.lightImpact();
     setState(() => _isGoogleLoading = true);
     try {
       final cred = await _authService.signInWithGoogle();
@@ -358,10 +275,13 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   }
 
   void _handleBackNavigation() {
-    if (_screenState == AuthScreenState.verifyOtp ||
-        _screenState == AuthScreenState.forgotPassword) {
+    if (_screenState == AuthScreenState.forgotPassword) {
       setState(() {
         _resetLinkSent = false;
+        _screenState = AuthScreenState.signIn;
+      });
+    } else if (_screenState == AuthScreenState.signUp) {
+      setState(() {
         _screenState = AuthScreenState.signIn;
       });
     } else {
@@ -422,15 +342,27 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                           const SizedBox(height: 24),
                         ],
 
-                        if (_screenState == AuthScreenState.signIn) ...[
-                          _buildSignInForm(),
-                        ] else if (_screenState == AuthScreenState.signUp) ...[
-                          _buildSignUpForm(),
-                        ] else if (_screenState == AuthScreenState.verifyOtp) ...[
-                          _buildVerifyOtpForm(),
-                        ] else if (_screenState == AuthScreenState.forgotPassword) ...[
-                          _buildForgotPasswordForm(),
-                        ],
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 280),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          transitionBuilder: (child, animation) {
+                            return FadeTransition(
+                              opacity: animation,
+                              child: SlideTransition(
+                                position: Tween<Offset>(
+                                  begin: const Offset(0.04, 0),
+                                  end: Offset.zero,
+                                ).animate(animation),
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: KeyedSubtree(
+                            key: ValueKey(_screenState),
+                            child: _buildCurrentForm(),
+                          ),
+                        ),
 
                         const SizedBox(height: 22),
 
@@ -518,11 +450,6 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       badgeIcon = Icons.person_add_alt_1_outlined;
       heading = 'Create Your Account';
       description = 'Join Career360 and take the next step in your career.';
-    } else if (_screenState == AuthScreenState.verifyOtp) {
-      badgeText = 'Two-Step Email Verification';
-      badgeIcon = Icons.verified_user_outlined;
-      heading = 'Verify Your Email';
-      description = 'We\'ve sent a 6-digit verification code to your email address.';
     } else if (_screenState == AuthScreenState.forgotPassword) {
       badgeText = 'Account Security';
       badgeIcon = Icons.lock_reset_rounded;
@@ -543,66 +470,75 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         ),
       ),
       padding: const EdgeInsets.fromLTRB(24, 30, 24, 68),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Security Status Chip (Stripe / Apple Style)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.22),
-                width: 1.0,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 260),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, animation) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        child: Column(
+          key: ValueKey(_screenState),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Security Status Chip (Stripe / Apple Style)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.22),
+                  width: 1.0,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    badgeIcon,
+                    size: 13,
+                    color: const Color(0xFF93C5FD),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    badgeText,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ],
               ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  badgeIcon,
-                  size: 13,
-                  color: const Color(0xFF93C5FD),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  badgeText,
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
+            const SizedBox(height: 14),
 
-          // Authoritative Heading
-          Text(
-            heading,
-            style: const TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.w800,
-              color: Colors.white,
-              letterSpacing: -0.5,
-              height: 1.2,
+            // Authoritative Heading
+            Text(
+              heading,
+              style: const TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                letterSpacing: -0.5,
+                height: 1.2,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
+            const SizedBox(height: 8),
 
-          // Subtitle
-          Text(
-            description,
-            style: const TextStyle(
-              fontSize: 14,
-              color: Color(0xFFE0E7FF),
-              height: 1.45,
+            // Subtitle
+            Text(
+              description,
+              style: const TextStyle(
+                fontSize: 14,
+                color: Color(0xFFE0E7FF),
+                height: 1.45,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -614,9 +550,9 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         Row(
           children: [
             Expanded(
-              child: GestureDetector(
-                onTap: () => setState(() => _screenState = AuthScreenState.signIn),
-                behavior: HitTestBehavior.opaque,
+              child: BouncyButton(
+                scaleDown: 0.97,
+                onPressed: () => setState(() => _screenState = AuthScreenState.signIn),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Center(
@@ -634,9 +570,9 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
               ),
             ),
             Expanded(
-              child: GestureDetector(
-                onTap: () => setState(() => _screenState = AuthScreenState.signUp),
-                behavior: HitTestBehavior.opaque,
+              child: BouncyButton(
+                scaleDown: 0.97,
+                onPressed: () => setState(() => _screenState = AuthScreenState.signUp),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Center(
@@ -682,6 +618,16 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         ),
       ],
     );
+  }
+
+  Widget _buildCurrentForm() {
+    if (_screenState == AuthScreenState.signIn) {
+      return _buildSignInForm();
+    } else if (_screenState == AuthScreenState.signUp) {
+      return _buildSignUpForm();
+    } else {
+      return _buildForgotPasswordForm();
+    }
   }
 
   // ==========================================
@@ -745,20 +691,24 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                 ],
               ),
             ),
-            GestureDetector(
-              onTap: () {
+            BouncyButton(
+              scaleDown: 0.95,
+              onPressed: () {
                 setState(() {
                   _forgotEmailController.text = _signInEmailController.text;
                   _resetLinkSent = false;
                   _screenState = AuthScreenState.forgotPassword;
                 });
               },
-              child: const Text(
-                'Forgot password?',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: _primaryBlue,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                child: Text(
+                  'Forgot password?',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: _primaryBlue,
+                  ),
                 ),
               ),
             ),
@@ -841,104 +791,6 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     );
   }
 
-  // ==========================================
-  // VIEW 3: VERIFY EMAIL OTP FORM
-  // ==========================================
-  Widget _buildVerifyOtpForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Email Badge Card
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.mail_outline_rounded, size: 18, color: _primaryBlue),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  _pendingOtpEmail.isNotEmpty ? _pendingOtpEmail : 'dhinesh.v@example.com',
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: _navyText,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              GestureDetector(
-                onTap: () => setState(() => _screenState = AuthScreenState.signUp),
-                child: const Text(
-                  'Edit',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: _primaryBlue,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-
-        const Text(
-          'Enter 6-digit code',
-          style: TextStyle(
-            fontSize: 13.5,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF334155),
-          ),
-        ),
-        const SizedBox(height: 10),
-
-        // 6 OTP Digit Boxes (56px)
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: List.generate(6, (index) => _buildOtpDigitBox(index)),
-        ),
-        const SizedBox(height: 16),
-
-        // Resend Timer Row
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.access_time_rounded, size: 15, color: _secondaryText),
-            const SizedBox(width: 6),
-            Text(
-              _resendCountdown > 0
-                  ? 'Resend in 00:${_resendCountdown.toString().padLeft(2, '0')}'
-                  : 'Didn\'t receive code? ',
-              style: const TextStyle(fontSize: 13, color: _secondaryText),
-            ),
-            if (_resendCountdown == 0)
-              GestureDetector(
-                onTap: _handleResendOtp,
-                child: const Text(
-                  'Resend',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: _primaryBlue,
-                  ),
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 22),
-
-        _buildPrimaryButton(
-          label: 'Verify Code & Complete Sign Up  ➔',
-          onPressed: _handleVerifyEmailOtp,
-        ),
-      ],
-    );
-  }
 
   // ==========================================
   // VIEW 4: FORGOT PASSWORD FORM
@@ -1008,27 +860,31 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         const SizedBox(height: 22),
 
         Center(
-          child: GestureDetector(
-            onTap: () {
+          child: BouncyButton(
+            scaleDown: 0.95,
+            onPressed: () {
               setState(() {
                 _resetLinkSent = false;
                 _screenState = AuthScreenState.signIn;
               });
             },
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.arrow_back_rounded, size: 16, color: _primaryBlue),
-                SizedBox(width: 6),
-                Text(
-                  'Back to Sign In',
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: _primaryBlue,
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.arrow_back_rounded, size: 16, color: _primaryBlue),
+                  SizedBox(width: 6),
+                  Text(
+                    'Back to Sign In',
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      color: _primaryBlue,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -1125,107 +981,138 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     );
   }
 
-  /// Component 6: PrimaryButton (52px Height, 10px Radius, Electric Blue #155EEF)
+  /// Component 6: PrimaryButton (Visual Click Color Animation, 52px Height, 10px Radius, Electric Blue #155EEF)
   Widget _buildPrimaryButton({
     required String label,
     required VoidCallback onPressed,
   }) {
-    return SizedBox(
-      height: _buttonHeight,
-      child: ElevatedButton(
-        onPressed: _isLoading ? null : onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _primaryBlue,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(_inputRadius),
-          ),
+    final bool isEnabled = !_isLoading;
+    return BouncyButton(
+      onPressed: isEnabled ? onPressed : null,
+      borderRadius: BorderRadius.circular(_inputRadius),
+      pressOverlayColor: const Color(0xFF0C3E9E).withValues(alpha: 0.35),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        height: _buttonHeight,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: isEnabled ? _primaryBlue : _primaryBlue.withValues(alpha: 0.65),
+          borderRadius: BorderRadius.circular(_inputRadius),
+          boxShadow: isEnabled
+              ? [
+                  BoxShadow(
+                    color: _primaryBlue.withValues(alpha: 0.30),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : null,
         ),
-        child: _isLoading
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+        alignment: Alignment.center,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          child: _isLoading
+              ? const SizedBox(
+                  key: ValueKey('loading'),
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : Text(
+                  label,
+                  key: ValueKey(label),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.1,
+                    color: Colors.white,
+                  ),
                 ),
-              )
-            : Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.1,
-                ),
-              ),
+        ),
       ),
     );
   }
 
-  /// Component 7: GoogleSignInButton (52px Height, Neutral Border #D0D5DD)
+  /// Component 7: GoogleSignInButton (Visual Click Color Animation, 52px Height, Neutral Border #D0D5DD)
   Widget _buildGoogleSignInButton() {
-    return SizedBox(
-      height: _buttonHeight,
-      child: OutlinedButton(
-        onPressed: (_isLoading || _isGoogleLoading) ? null : _handleGoogleSignIn,
-        style: OutlinedButton.styleFrom(
-          backgroundColor: Colors.white,
-          side: const BorderSide(color: _inputBorder, width: 1.2),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(_inputRadius),
-          ),
-          elevation: 0,
+    final bool isEnabled = !_isLoading && !_isGoogleLoading;
+    return BouncyButton(
+      onPressed: isEnabled ? _handleGoogleSignIn : null,
+      borderRadius: BorderRadius.circular(_inputRadius),
+      pressOverlayColor: const Color(0xFF155EEF).withValues(alpha: 0.10),
+      child: Container(
+        height: _buttonHeight,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(_inputRadius),
+          border: Border.all(color: _inputBorder, width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
+        alignment: Alignment.center,
         child: FittedBox(
           fit: BoxFit.scaleDown,
-          child: _isGoogleLoading
-              ? const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.2,
-                        valueColor: AlwaysStoppedAnimation<Color>(_primaryBlue),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: _isGoogleLoading
+                ? const Row(
+                    key: ValueKey('google_loading'),
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.2,
+                          valueColor: AlwaysStoppedAnimation<Color>(_primaryBlue),
+                        ),
                       ),
-                    ),
-                    SizedBox(width: 12),
-                    Text(
-                      'Connecting to Google...',
-                      style: TextStyle(
-                        fontSize: 15.0,
-                        fontWeight: FontWeight.w600,
-                        color: _navyText,
+                      SizedBox(width: 12),
+                      Text(
+                        'Connecting to Google...',
+                        style: TextStyle(
+                          fontSize: 15.0,
+                          fontWeight: FontWeight.w600,
+                          color: _navyText,
+                        ),
                       ),
-                    ),
-                  ],
-                )
-              : Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Image.asset(
-                      'assets/images/google_logo.png',
-                      width: 20,
-                      height: 20,
-                      errorBuilder: (context, error, stackTrace) => const Icon(
-                        Icons.g_mobiledata_rounded,
-                        size: 26,
-                        color: Color(0xFF4285F4),
+                    ],
+                  )
+                : Row(
+                    key: const ValueKey('google_idle'),
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Image.asset(
+                        'assets/images/google_logo.png',
+                        width: 20,
+                        height: 20,
+                        errorBuilder: (context, error, stackTrace) => const Icon(
+                          Icons.g_mobiledata_rounded,
+                          size: 26,
+                          color: Color(0xFF4285F4),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      'Continue with Google',
-                      style: TextStyle(
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w600,
-                        color: _navyText,
+                      const SizedBox(width: 12),
+                      const Text(
+                        'Continue with Google',
+                        style: TextStyle(
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w600,
+                          color: _navyText,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+          ),
         ),
       ),
     );
@@ -1278,50 +1165,6 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     );
   }
 
-  Widget _buildOtpDigitBox(int index) {
-    return SizedBox(
-      width: 48,
-      height: _inputHeight,
-      child: TextFormField(
-        controller: _otpControllers[index],
-        focusNode: _otpFocusNodes[index],
-        keyboardType: TextInputType.number,
-        textAlign: TextAlign.center,
-        maxLength: 1,
-        style: const TextStyle(
-          fontSize: 22,
-          fontWeight: FontWeight.w700,
-          color: _navyText,
-        ),
-        decoration: InputDecoration(
-          counterText: '',
-          contentPadding: EdgeInsets.zero,
-          filled: true,
-          fillColor: Colors.white,
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(_inputRadius),
-            borderSide: const BorderSide(color: _inputBorder, width: 1.2),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(_inputRadius),
-            borderSide: const BorderSide(color: _primaryBlue, width: 2),
-          ),
-        ),
-        onChanged: (value) {
-          if (value.isNotEmpty) {
-            if (index < 5) {
-              _otpFocusNodes[index + 1].requestFocus();
-            } else {
-              _otpFocusNodes[index].unfocus();
-              _handleVerifyEmailOtp();
-            }
-          } else if (value.isEmpty && index > 0) {
-            _otpFocusNodes[index - 1].requestFocus();
-          }
-        },
-      ),
-    );
-  }
 
   Widget _buildDivider(String text) {
     return Row(

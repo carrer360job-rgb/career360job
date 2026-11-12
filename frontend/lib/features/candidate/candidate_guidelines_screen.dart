@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/responsive/responsive_layout.dart';
+import '../../core/widgets/bouncy_button.dart';
 
 class CandidateGuidelinesScreen extends StatefulWidget {
   final VoidCallback onAccepted;
@@ -508,10 +509,14 @@ class _CandidateGuidelinesScreenState extends State<CandidateGuidelinesScreen> {
 
   // --- Action Button ---
   Widget _buildActionButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: DecoratedBox(
+    return BouncyButton(
+      onPressed: _hasAgreed ? _handleAccept : null,
+      borderRadius: BorderRadius.circular(14),
+      pressOverlayColor: const Color(0xFF0C3E9E).withValues(alpha: 0.35),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: double.infinity,
+        height: 52,
         decoration: BoxDecoration(
           gradient: _hasAgreed
               ? const LinearGradient(
@@ -535,37 +540,25 @@ class _CandidateGuidelinesScreenState extends State<CandidateGuidelinesScreen> {
                 ]
               : null,
         ),
-        child: ElevatedButton(
-          onPressed: _handleAccept,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.transparent,
-            foregroundColor: Colors.white,
-            disabledBackgroundColor: Colors.transparent,
-            disabledForegroundColor: const Color(0xFF94A3B8),
-            shadowColor: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'Accept & Continue',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: _hasAgreed ? Colors.white : const Color(0xFF94A3B8),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Icon(
-                Icons.arrow_forward_rounded,
-                size: 18,
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'Accept & Continue',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
                 color: _hasAgreed ? Colors.white : const Color(0xFF94A3B8),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              Icons.arrow_forward_rounded,
+              size: 18,
+              color: _hasAgreed ? Colors.white : const Color(0xFF94A3B8),
+            ),
+          ],
         ),
       ),
     );
