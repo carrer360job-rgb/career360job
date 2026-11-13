@@ -1,0 +1,73 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function verified() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+
+    function owns(uid) {
+      return verified() && request.auth.uid == uid;
+    }
+
+    // Job listings are public. Client-side creation and moderation are disabled
+    // until employer roles and verification are assigned by trusted server code.
+    match /jobs/{jobId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // A user can access only their own account document. Role and identity fields
+    // are immutable from clients; privileged claims must be set by trusted code.
+    match /users/{uid} {
+      allow read: if owns(uid);
+      allow create: if owns(uid)
+        && request.resource.data.uid == uid
+        && (!('role' in request.resource.data) || request.resource.data.role == 'candidate')
+        && !('isAdmin' in request.resource.data)
+        && !('employerVerified' in request.resource.data);
+      allow update: if owns(uid)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.role == resource.data.role
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'isAdmin', 'employerVerified', 'companyVerified', 'subscription', 'plan'
+        ]);
+      allow delete: if false;
+    }
+
+    // Candidate profile documents contain personal information.
+    match /candidates/{uid} {
+      allow read, create, update: if owns(uid)
+        && request.resource.data.uid == uid;
+      allow delete: if false;
+    }
+
+    // Candidates may create an application only for themselves and a real job.
+    // Applicants and the owning employer may read it. Employer status changes
+    // remain disabled until employer identity is managed by trusted code.
+    match /applications/{applicationId} {
+      allow create: if verified()
+        && request.resource.data.candidateUid == request.auth.uid
+        && request.resource.data.status == 'Applied'
+        && request.resource.data.jobId is string
+        && exists(/databases/$(database)/documents/jobs/$(request.resource.data.jobId))
+        && request.resource.data.employerUid == get(
+          /databases/$(database)/documents/jobs/$(request.resource.data.jobId)
+        ).data.employerUid;
+      allow read: if verified()
+        && (resource.data.candidateUid == request.auth.uid
+          || (resource.data.employerUid is string
+            && resource.data.employerUid == request.auth.uid));
+      allow update, delete: if false;
+    }
+
+    // Deny access to collections that do not yet have an explicit policy.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

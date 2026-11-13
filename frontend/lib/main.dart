@@ -1,7 +1,9 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
 import 'core/theme/app_theme.dart';
 import 'core/constants/app_constants.dart';
 import 'core/responsive/responsive_layout.dart';
@@ -16,12 +18,67 @@ import 'features/candidate/candidate_onboarding_wizard_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  Object? firebaseInitializationError;
   try {
     await Firebase.initializeApp();
   } catch (e) {
-    debugPrint('Firebase initialization notice: $e');
+    firebaseInitializationError = e;
   }
-  runApp(const Career360App());
+  runApp(
+    firebaseInitializationError == null
+        ? const Career360App()
+        : FirebaseConfigurationFailure(
+            error: firebaseInitializationError.toString(),
+          ),
+  );
+}
+
+class FirebaseConfigurationFailure extends StatelessWidget {
+  final String error;
+
+  const FirebaseConfigurationFailure({super.key, required this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.cloud_off_rounded,
+                    size: 40,
+                    color: Color(0xFF155EEF),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Career360 could not connect to its services',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Firebase is not configured for this platform. Please try again later.',
+                    textAlign: TextAlign.center,
+                  ),
+                  if (kDebugMode) ...[
+                    const SizedBox(height: 16),
+                    SelectableText(error, textAlign: TextAlign.center),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 enum AppUserRole { candidate, employer, admin }
@@ -163,19 +220,16 @@ class _Career360AppState extends State<Career360App> {
         switchInCurve: Curves.easeOutCubic,
         switchOutCurve: Curves.easeInCubic,
         transitionBuilder: (child, animation) {
-          final slide = Tween<Offset>(
-            begin: const Offset(0.04, 0.0),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-          ));
+          final slide =
+              Tween<Offset>(
+                begin: const Offset(0.04, 0.0),
+                end: Offset.zero,
+              ).animate(
+                CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+              );
           return SlideTransition(
             position: slide,
-            child: FadeTransition(
-              opacity: animation,
-              child: child,
-            ),
+            child: FadeTransition(opacity: animation, child: child),
           );
         },
         child: _buildCurrentScreen(),
@@ -202,7 +256,8 @@ class MainShellScreen extends StatefulWidget {
 
 class _MainShellScreenState extends State<MainShellScreen> {
   final FirestoreService _firestoreService = FirestoreService();
-  String get _currentUid => FirebaseAuth.instance.currentUser?.uid ?? 'guest_candidate';
+  String get _currentUid =>
+      FirebaseAuth.instance.currentUser?.uid ?? 'guest_candidate';
 
   int _selectedTabIndex = 0;
   String _selectedLocation = 'All Locations';
@@ -218,7 +273,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
   final TextEditingController _postTitleController = TextEditingController();
   final TextEditingController _postCompanyController = TextEditingController();
   final TextEditingController _postSalaryController = TextEditingController();
-  final TextEditingController _postVacanciesController = TextEditingController();
+  final TextEditingController _postVacanciesController =
+      TextEditingController();
   final TextEditingController _postDescController = TextEditingController();
   String _postCategory = 'IT & Software';
   String _postLocation = 'Chennai';
@@ -231,12 +287,23 @@ class _MainShellScreenState extends State<MainShellScreen> {
   @override
   void initState() {
     super.initState();
-    _firestoreService.seedInitialLiveJobsIfEmpty();
     _savedSub = _firestoreService.streamSavedJobIds(_currentUid).listen((ids) {
-      if (mounted) setState(() => _savedJobIds..clear()..addAll(ids));
+      if (mounted)
+        setState(
+          () => _savedJobIds
+            ..clear()
+            ..addAll(ids),
+        );
     });
-    _appliedSub = _firestoreService.streamAppliedJobIds(_currentUid).listen((ids) {
-      if (mounted) setState(() => _appliedJobIds..clear()..addAll(ids));
+    _appliedSub = _firestoreService.streamAppliedJobIds(_currentUid).listen((
+      ids,
+    ) {
+      if (mounted)
+        setState(
+          () => _appliedJobIds
+            ..clear()
+            ..addAll(ids),
+        );
     });
   }
 
@@ -289,7 +356,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
     final user = FirebaseAuth.instance.currentUser;
     Map<String, dynamic>? profile;
     try {
-      profile = await _firestoreService.streamCandidateProfile(_currentUid).first;
+      profile = await _firestoreService
+          .streamCandidateProfile(_currentUid)
+          .first;
     } catch (_) {}
 
     await _firestoreService.applyToJob(
@@ -300,7 +369,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
         'fullName': profile?['fullName'] ?? user?.displayName ?? 'Applicant',
         'email': user?.email ?? '',
         'phone': profile?['phone'] ?? '',
-        'qualification': profile?['qualification'] ?? profile?['educationLevel'] ?? '',
+        'qualification':
+            profile?['qualification'] ?? profile?['educationLevel'] ?? '',
         'experienceYears': profile?['experienceYears'] ?? '0',
       },
     );
@@ -322,18 +392,30 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 color: Color(0xFFDCFCE7),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.check_circle, color: AppTheme.success, size: 36),
+              child: const Icon(
+                Icons.check_circle,
+                color: AppTheme.success,
+                size: 36,
+              ),
             ),
             const SizedBox(height: 16),
             const Text(
               'Application Submitted!',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textPrimary,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               'Your profile and verified resume have been forwarded directly to the hiring team at ${job.companyName}.',
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary, height: 1.4),
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppTheme.textSecondary,
+                height: 1.4,
+              ),
             ),
             const SizedBox(height: 20),
             SizedBox(
@@ -394,12 +476,20 @@ class _MainShellScreenState extends State<MainShellScreen> {
                           children: [
                             Text(
                               job.title,
-                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.textPrimary,
+                              ),
                             ),
                             const SizedBox(height: 4),
                             Text(
                               job.companyName,
-                              style: const TextStyle(fontSize: 14, color: AppTheme.primary, fontWeight: FontWeight.w600),
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: AppTheme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ],
                         ),
@@ -407,7 +497,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
                       IconButton(
                         icon: Icon(
                           isSaved ? Icons.bookmark : Icons.bookmark_border,
-                          color: isSaved ? AppTheme.primary : AppTheme.textSecondary,
+                          color: isSaved
+                              ? AppTheme.primary
+                              : AppTheme.textSecondary,
                         ),
                         onPressed: () {
                           _toggleSaveJob(job.id);
@@ -423,25 +515,51 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     children: [
                       _buildChip(Icons.location_on_outlined, job.locationCity),
                       _buildChip(Icons.access_time_outlined, job.workMode),
-                      _buildChip(Icons.currency_rupee, job.salaryText, isPrimary: true),
+                      _buildChip(
+                        Icons.currency_rupee,
+                        job.salaryText,
+                        isPrimary: true,
+                      ),
                       if (job.isVerified)
-                        _buildChip(Icons.verified, 'Verified Recruiter', isSuccess: true),
+                        _buildChip(
+                          Icons.verified,
+                          'Verified Recruiter',
+                          isSuccess: true,
+                        ),
                     ],
                   ),
                   const Divider(height: 32),
-                  const Text('Job Description', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Job Description',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 8),
                   Text(
                     job.description,
-                    style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary, height: 1.5),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AppTheme.textSecondary,
+                      height: 1.5,
+                    ),
                   ),
                   const SizedBox(height: 20),
-                  const Text('Key Requirements & Responsibilities', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Key Requirements & Responsibilities',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 8),
-                  _buildRequirementBullet('Minimum 2+ years of verified industry experience in relevant technology stack.'),
-                  _buildRequirementBullet('Strong communication skills, ability to collaborate across distributed teams.'),
-                  _buildRequirementBullet('Bachelor’s degree or proven equivalent project portfolio demonstration.'),
-                  _buildRequirementBullet('Demonstrated ownership of production-grade deliverable solutions.'),
+                  _buildRequirementBullet(
+                    'Minimum 2+ years of verified industry experience in relevant technology stack.',
+                  ),
+                  _buildRequirementBullet(
+                    'Strong communication skills, ability to collaborate across distributed teams.',
+                  ),
+                  _buildRequirementBullet(
+                    'Bachelor’s degree or proven equivalent project portfolio demonstration.',
+                  ),
+                  _buildRequirementBullet(
+                    'Demonstrated ownership of production-grade deliverable solutions.',
+                  ),
                   const SizedBox(height: 32),
                   SizedBox(
                     width: double.infinity,
@@ -453,12 +571,17 @@ class _MainShellScreenState extends State<MainShellScreen> {
                               _applyToJob(job);
                             },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: isApplied ? Colors.grey.shade400 : AppTheme.primary,
+                        backgroundColor: isApplied
+                            ? Colors.grey.shade400
+                            : AppTheme.primary,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                       ),
                       child: Text(
                         isApplied ? 'Already Applied' : 'Apply for this Job ➔',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
@@ -478,11 +601,22 @@ class _MainShellScreenState extends State<MainShellScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('• ', style: TextStyle(color: AppTheme.primary, fontSize: 16, fontWeight: FontWeight.bold)),
+          const Text(
+            '• ',
+            style: TextStyle(
+              color: AppTheme.primary,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4),
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppTheme.textSecondary,
+                height: 1.4,
+              ),
             ),
           ),
         ],
@@ -490,7 +624,12 @@ class _MainShellScreenState extends State<MainShellScreen> {
     );
   }
 
-  Widget _buildChip(IconData icon, String label, {bool isPrimary = false, bool isSuccess = false}) {
+  Widget _buildChip(
+    IconData icon,
+    String label, {
+    bool isPrimary = false,
+    bool isSuccess = false,
+  }) {
     Color bg = const Color(0xFFF1F5F9);
     Color fg = AppTheme.textPrimary;
     if (isPrimary) {
@@ -511,7 +650,14 @@ class _MainShellScreenState extends State<MainShellScreen> {
         children: [
           Icon(icon, size: 14, color: fg),
           const SizedBox(width: 4),
-          Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg)),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: fg,
+            ),
+          ),
         ],
       ),
     );
@@ -536,7 +682,13 @@ class _MainShellScreenState extends State<MainShellScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Filter Jobs', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      const Text(
+                        'Filter Jobs',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                       TextButton(
                         onPressed: () {
                           setState(() {
@@ -553,13 +705,21 @@ class _MainShellScreenState extends State<MainShellScreen> {
                   ),
                   const Divider(),
                   const SizedBox(height: 8),
-                  const Text('Preferred Location', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  const Text(
+                    'Preferred Location',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
                     initialValue: _selectedLocation,
                     decoration: InputDecoration(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                     items: AppConstants.jobLocations.map((loc) {
                       return DropdownMenuItem(value: loc, child: Text(loc));
@@ -572,29 +732,45 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     },
                   ),
                   const SizedBox(height: 16),
-                  const Text('Job Category', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  const Text(
+                    'Job Category',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: ['All', 'IT', 'Marketing', 'Finance', 'Design', 'Healthcare', 'Education'].map((cat) {
-                      final isSelected = (_selectedCategory == cat) || (_selectedCategory == null && cat == 'All');
-                      return ChoiceChip(
-                        label: Text(cat),
-                        selected: isSelected,
-                        selectedColor: AppTheme.primary,
-                        labelStyle: TextStyle(
-                          color: isSelected ? Colors.white : AppTheme.textPrimary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        onSelected: (selected) {
-                          setState(() {
-                            _selectedCategory = cat == 'All' ? null : cat;
-                          });
-                          setModalState(() {});
-                        },
-                      );
-                    }).toList(),
+                    children:
+                        [
+                          'All',
+                          'IT',
+                          'Marketing',
+                          'Finance',
+                          'Design',
+                          'Healthcare',
+                          'Education',
+                        ].map((cat) {
+                          final isSelected =
+                              (_selectedCategory == cat) ||
+                              (_selectedCategory == null && cat == 'All');
+                          return ChoiceChip(
+                            label: Text(cat),
+                            selected: isSelected,
+                            selectedColor: AppTheme.primary,
+                            labelStyle: TextStyle(
+                              color: isSelected
+                                  ? Colors.white
+                                  : AppTheme.textPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            onSelected: (selected) {
+                              setState(() {
+                                _selectedCategory = cat == 'All' ? null : cat;
+                              });
+                              setModalState(() {});
+                            },
+                          );
+                        }).toList(),
                   ),
                   const SizedBox(height: 24),
                   SizedBox(
@@ -634,9 +810,18 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 backgroundColor: AppTheme.primaryLight,
                 child: Icon(Icons.business, color: AppTheme.primary),
               ),
-              title: const Text('Google Technologies', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              subtitle: const Text('Viewed your application for Senior UI/UX Designer', style: TextStyle(fontSize: 12)),
-              trailing: const Text('2h ago', style: TextStyle(fontSize: 11, color: Colors.grey)),
+              title: const Text(
+                'Google Technologies',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              subtitle: const Text(
+                'Viewed your application for Senior UI/UX Designer',
+                style: TextStyle(fontSize: 12),
+              ),
+              trailing: const Text(
+                '2h ago',
+                style: TextStyle(fontSize: 11, color: Colors.grey),
+              ),
             ),
             const Divider(),
             ListTile(
@@ -645,9 +830,18 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 backgroundColor: Color(0xFFDCFCE7),
                 child: Icon(Icons.new_releases, color: AppTheme.success),
               ),
-              title: const Text('New Matching Job Alert', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              subtitle: const Text('Full Stack Flutter Developer in Bengaluru', style: TextStyle(fontSize: 12)),
-              trailing: const Text('5h ago', style: TextStyle(fontSize: 11, color: Colors.grey)),
+              title: const Text(
+                'New Matching Job Alert',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              subtitle: const Text(
+                'Full Stack Flutter Developer in Bengaluru',
+                style: TextStyle(fontSize: 12),
+              ),
+              trailing: const Text(
+                '5h ago',
+                style: TextStyle(fontSize: 11, color: Colors.grey),
+              ),
             ),
           ],
         ),
@@ -677,81 +871,101 @@ class _MainShellScreenState extends State<MainShellScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-        title: Row(
-          children: [
+          title: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Image.asset(
+                  'assets/images/career360_icon.png',
+                  fit: BoxFit.contain,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Row(
+                children: const [
+                  Text(
+                    'Career',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: AppTheme.primaryDark,
+                    ),
+                  ),
+                  Text(
+                    '360',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: AppTheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              tooltip: 'Notifications',
+              icon: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  const Icon(
+                    Icons.notifications_none,
+                    color: AppTheme.textPrimary,
+                  ),
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: const BoxDecoration(
+                        color: AppTheme.error,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Text(
+                        '2',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              onPressed: _showNotificationsDialog,
+            ),
+            IconButton(
+              tooltip: 'Switch Mode',
+              icon: const Icon(Icons.swap_horiz, color: AppTheme.primary),
+              onPressed: widget.onSwitchRoleRequested,
+            ),
             Container(
-              width: 32,
-              height: 32,
+              margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
+                color: AppTheme.primaryLight,
+                borderRadius: BorderRadius.circular(20),
               ),
-              clipBehavior: Clip.antiAlias,
-              child: Image.asset(
-                'assets/images/career360_icon.png',
-                fit: BoxFit.contain,
+              child: Text(
+                _getRoleBadgeText(),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.primary,
+                ),
               ),
             ),
-            const SizedBox(width: 8),
-            Row(
-              children: const [
-                Text(
-                  'Career',
-                  style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.primaryDark),
-                ),
-                Text(
-                  '360',
-                  style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.primary),
-                ),
-              ],
-            ),
+            const SizedBox(width: 4),
           ],
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Notifications',
-            icon: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                const Icon(Icons.notifications_none, color: AppTheme.textPrimary),
-                Positioned(
-                  right: -2,
-                  top: -2,
-                  child: Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: const BoxDecoration(
-                      color: AppTheme.error,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Text('2', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ],
-            ),
-            onPressed: _showNotificationsDialog,
-          ),
-          IconButton(
-            tooltip: 'Switch Mode',
-            icon: const Icon(Icons.swap_horiz, color: AppTheme.primary),
-            onPressed: widget.onSwitchRoleRequested,
-          ),
-          Container(
-            margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppTheme.primaryLight,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              _getRoleBadgeText(),
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
-            ),
-          ),
-          const SizedBox(width: 4),
-        ],
+        body: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
+        bottomNavigationBar: isDesktop ? null : _buildMobileBottomNav(),
       ),
-      body: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
-      bottomNavigationBar: isDesktop ? null : _buildMobileBottomNav(),
-    ),
     );
   }
 
@@ -801,10 +1015,14 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     item['label'] as String,
                     style: TextStyle(
                       color: isSelected ? Colors.white : Colors.white70,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                     ),
                   ),
-                  tileColor: isSelected ? Colors.white.withValues(alpha: 0.1) : null,
+                  tileColor: isSelected
+                      ? Colors.white.withValues(alpha: 0.1)
+                      : null,
                   onTap: () {
                     setState(() {
                       _selectedTabIndex = idx;
@@ -832,7 +1050,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     return FadeTransition(opacity: animation, child: child);
                   },
                   child: KeyedSubtree(
-                    key: ValueKey('${widget.currentRole.name}_$_selectedTabIndex'),
+                    key: ValueKey(
+                      '${widget.currentRole.name}_$_selectedTabIndex',
+                    ),
                     child: _getActiveScreen(),
                   ),
                 ),
@@ -902,22 +1122,62 @@ class _MainShellScreenState extends State<MainShellScreen> {
     switch (widget.currentRole) {
       case AppUserRole.candidate:
         return [
-          {'icon': Icons.home_filled, 'label': 'Home Discovery', 'shortLabel': 'Home'},
-          {'icon': Icons.search, 'label': 'Search Jobs', 'shortLabel': 'Search'},
-          {'icon': Icons.bookmark_outline, 'label': 'Saved Jobs', 'shortLabel': 'Saved'},
-          {'icon': Icons.person_outline, 'label': 'Candidate Profile', 'shortLabel': 'Profile'},
+          {
+            'icon': Icons.home_filled,
+            'label': 'Home Discovery',
+            'shortLabel': 'Home',
+          },
+          {
+            'icon': Icons.search,
+            'label': 'Search Jobs',
+            'shortLabel': 'Search',
+          },
+          {
+            'icon': Icons.bookmark_outline,
+            'label': 'Saved Jobs',
+            'shortLabel': 'Saved',
+          },
+          {
+            'icon': Icons.person_outline,
+            'label': 'Candidate Profile',
+            'shortLabel': 'Profile',
+          },
         ];
       case AppUserRole.employer:
         return [
-          {'icon': Icons.dashboard_outlined, 'label': 'Dashboard & Quota', 'shortLabel': 'Overview'},
-          {'icon': Icons.post_add, 'label': 'Post a Job', 'shortLabel': 'Post Job'},
-          {'icon': Icons.people_outline, 'label': 'Candidate Applicants', 'shortLabel': 'Applicants'},
+          {
+            'icon': Icons.dashboard_outlined,
+            'label': 'Dashboard & Quota',
+            'shortLabel': 'Overview',
+          },
+          {
+            'icon': Icons.post_add,
+            'label': 'Post a Job',
+            'shortLabel': 'Post Job',
+          },
+          {
+            'icon': Icons.people_outline,
+            'label': 'Candidate Applicants',
+            'shortLabel': 'Applicants',
+          },
         ];
       case AppUserRole.admin:
         return [
-          {'icon': Icons.analytics_outlined, 'label': 'Platform Analytics', 'shortLabel': 'Stats'},
-          {'icon': Icons.verified_user_outlined, 'label': 'Verify Employers', 'shortLabel': 'Verify'},
-          {'icon': Icons.fact_check_outlined, 'label': 'Job Moderation', 'shortLabel': 'Moderate'},
+          {
+            'icon': Icons.analytics_outlined,
+            'label': 'Platform Analytics',
+            'shortLabel': 'Stats',
+          },
+          {
+            'icon': Icons.verified_user_outlined,
+            'label': 'Verify Employers',
+            'shortLabel': 'Verify',
+          },
+          {
+            'icon': Icons.fact_check_outlined,
+            'label': 'Job Moderation',
+            'shortLabel': 'Moderate',
+          },
         ];
     }
   }
@@ -950,7 +1210,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
       ),
       builder: (context, snapshot) {
         final jobs = snapshot.data ?? [];
-        final isLoading = snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData;
+        final isLoading =
+            snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData;
 
         return ListView(
           controller: _feedScrollController,
@@ -961,9 +1223,18 @@ class _MainShellScreenState extends State<MainShellScreen> {
               stream: _firestoreService.streamCandidateProfile(_currentUid),
               builder: (context, profileSnap) {
                 final profile = profileSnap.data;
-                final fullName = profile?['fullName'] ?? FirebaseAuth.instance.currentUser?.displayName ?? 'Candidate';
+                final fullName =
+                    profile?['fullName'] ??
+                    FirebaseAuth.instance.currentUser?.displayName ??
+                    'Candidate';
                 final initials = fullName.trim().isNotEmpty
-                    ? fullName.trim().split(' ').map((p) => p.isNotEmpty ? p[0] : '').take(2).join().toUpperCase()
+                    ? fullName
+                          .trim()
+                          .split(' ')
+                          .map((p) => p.isNotEmpty ? p[0] : '')
+                          .take(2)
+                          .join()
+                          .toUpperCase()
                     : 'C3';
 
                 return Row(
@@ -974,7 +1245,11 @@ class _MainShellScreenState extends State<MainShellScreen> {
                       children: [
                         Text(
                           'Hello, $fullName 👋',
-                          style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: AppTheme.textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                         const SizedBox(height: 2),
                         const Text(
@@ -997,7 +1272,11 @@ class _MainShellScreenState extends State<MainShellScreen> {
                         backgroundColor: AppTheme.primaryLight,
                         child: Text(
                           initials.isNotEmpty ? initials : 'C3',
-                          style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold, fontSize: 13),
+                          style: const TextStyle(
+                            color: AppTheme.primary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     ),
@@ -1005,256 +1284,345 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 );
               },
             ),
-        const SizedBox(height: 16),
+            const SizedBox(height: 16),
 
-        // Search Input & Filter Button
-        Row(
-          children: [
-            Expanded(
-              child: Container(
-                height: 48,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppTheme.border),
-                ),
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: (val) {
-                    setState(() => _searchQuery = val);
-                  },
-                  decoration: const InputDecoration(
-                    hintText: 'Search jobs, skills, companies...',
-                    hintStyle: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
-                    prefixIcon: Icon(Icons.search, color: AppTheme.primary, size: 20),
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(vertical: 14),
+            // Search Input & Filter Button
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: (val) {
+                        setState(() => _searchQuery = val);
+                      },
+                      decoration: const InputDecoration(
+                        hintText: 'Search jobs, skills, companies...',
+                        hintStyle: TextStyle(
+                          fontSize: 14,
+                          color: AppTheme.textSecondary,
+                        ),
+                        prefixIcon: Icon(
+                          Icons.search,
+                          color: AppTheme.primary,
+                          size: 20,
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
                   ),
                 ),
-              ),
+                const SizedBox(width: 10),
+                Container(
+                  height: 48,
+                  width: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: IconButton(
+                    icon: const Icon(
+                      Icons.tune,
+                      color: AppTheme.primary,
+                      size: 20,
+                    ),
+                    onPressed: _showFilterModal,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 10),
-            Container(
-              height: 48,
-              width: 48,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.border),
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.tune, color: AppTheme.primary, size: 20),
-                onPressed: _showFilterModal,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
+            const SizedBox(height: 16),
 
-        // Featured Promo Card (Better Career, Brighter Future)
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [AppTheme.primary, Color(0xFF1D4ED8)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.primary.withValues(alpha: 0.25),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
+            // Featured Promo Card (Better Career, Brighter Future)
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [AppTheme.primary, Color(0xFF1D4ED8)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.primary.withValues(alpha: 0.25),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
               ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Better Career\nBrighter Future',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                            height: 1.25,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Apply today and grow faster!',
+                          style: TextStyle(fontSize: 12, color: Colors.white70),
+                        ),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: () {
+                            _feedScrollController.animateTo(
+                              420,
+                              duration: const Duration(milliseconds: 500),
+                              curve: Curves.easeOut,
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: AppTheme.primary,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Explore Jobs',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              SizedBox(width: 4),
+                              Icon(Icons.arrow_forward, size: 14),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.business_center_rounded,
+                      color: Colors.white,
+                      size: 40,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 22),
+
+            // Top Categories Section
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Top Categories',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _selectedCategory = null;
+                    });
+                  },
+                  child: const Text(
+                    'See All ➔',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _buildCategoryGrid(),
+            const SizedBox(height: 22),
+
+            // Recent Jobs Section Header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
                   children: [
                     const Text(
-                      'Better Career\nBrighter Future',
+                      'Recent Jobs',
                       style: TextStyle(
                         fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        height: 1.25,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Apply today and grow faster!',
-                      style: TextStyle(fontSize: 12, color: Colors.white70),
-                    ),
-                    const SizedBox(height: 12),
-                    ElevatedButton(
-                      onPressed: () {
-                        _feedScrollController.animateTo(
-                          420,
-                          duration: const Duration(milliseconds: 500),
-                          curve: Curves.easeOut,
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: AppTheme.primary,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
                       ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text('Explore Jobs', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                          SizedBox(width: 4),
-                          Icon(Icons.arrow_forward, size: 14),
-                        ],
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryLight,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${jobs.length}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.primary,
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ),
+                if (_selectedCategory != null ||
+                    _selectedLocation != 'All Locations')
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedCategory = null;
+                        _selectedLocation = 'All Locations';
+                      });
+                    },
+                    child: const Text(
+                      'Clear Filters',
+                      style: TextStyle(fontSize: 12, color: AppTheme.error),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Jobs Feed Cards
+            if (isLoading)
+              const Padding(
+                padding: EdgeInsets.all(40),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (jobs.isEmpty)
               Container(
-                width: 72,
-                height: 72,
+                padding: const EdgeInsets.all(36),
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.business_center_rounded,
                   color: Colors.white,
-                  size: 40,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppTheme.border),
                 ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 22),
-
-        // Top Categories Section
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'Top Categories',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-            ),
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _selectedCategory = null;
-                });
-              },
-              child: const Text('See All ➔', style: TextStyle(fontSize: 13, color: AppTheme.primary, fontWeight: FontWeight.bold)),
-            ),
+                child: Column(
+                  children: [
+                    const Icon(
+                      Icons.search_off_rounded,
+                      size: 48,
+                      color: AppTheme.textSecondary,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'No live jobs found',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'There are no matching live jobs in Firestore for this filter. Reset filters to see all available vacancies.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    OutlinedButton(
+                      onPressed: () {
+                        setState(() {
+                          _selectedLocation = 'All Locations';
+                          _selectedCategory = null;
+                          _searchQuery = '';
+                          _searchController.clear();
+                        });
+                      },
+                      child: const Text('Reset All Filters'),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ...jobs.map((job) => _buildReferenceJobCard(job)),
           ],
-        ),
-        const SizedBox(height: 10),
-        _buildCategoryGrid(),
-        const SizedBox(height: 22),
-
-        // Recent Jobs Section Header
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                const Text(
-                  'Recent Jobs',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryLight,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '${jobs.length}',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.primary),
-                  ),
-                ),
-              ],
-            ),
-            if (_selectedCategory != null || _selectedLocation != 'All Locations')
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedCategory = null;
-                    _selectedLocation = 'All Locations';
-                  });
-                },
-                child: const Text('Clear Filters', style: TextStyle(fontSize: 12, color: AppTheme.error)),
-              ),
-          ],
-        ),
-        const SizedBox(height: 12),
-
-        // Jobs Feed Cards
-        if (isLoading)
-          const Padding(
-            padding: EdgeInsets.all(40),
-            child: Center(child: CircularProgressIndicator()),
-          )
-        else if (jobs.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(36),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppTheme.border),
-            ),
-            child: Column(
-              children: [
-                const Icon(Icons.search_off_rounded, size: 48, color: AppTheme.textSecondary),
-                const SizedBox(height: 12),
-                const Text(
-                  'No live jobs found',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'There are no matching live jobs in Firestore for this filter. Reset filters to see all available vacancies.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
-                ),
-                const SizedBox(height: 16),
-                OutlinedButton(
-                  onPressed: () {
-                    setState(() {
-                      _selectedLocation = 'All Locations';
-                      _selectedCategory = null;
-                      _searchQuery = '';
-                      _searchController.clear();
-                    });
-                  },
-                  child: const Text('Reset All Filters'),
-                ),
-              ],
-            ),
-          )
-        else
-          ...jobs.map((job) => _buildReferenceJobCard(job)),
-      ],
-    );
+        );
       },
     );
   }
 
   Widget _buildCategoryGrid() {
     final categories = [
-      {'name': 'IT & Software', 'icon': Icons.code, 'color': const Color(0xFFEFF8FF), 'iconColor': AppTheme.primary},
-      {'name': 'Marketing', 'icon': Icons.campaign_outlined, 'color': const Color(0xFFFFF7ED), 'iconColor': const Color(0xFFEA580C)},
-      {'name': 'Finance', 'icon': Icons.bar_chart_rounded, 'color': const Color(0xFFF0FDF4), 'iconColor': const Color(0xFF16A34A)},
-      {'name': 'Design', 'icon': Icons.palette_outlined, 'color': const Color(0xFFFAF5FF), 'iconColor': const Color(0xFF9333EA)},
-      {'name': 'Healthcare', 'icon': Icons.favorite_outline, 'color': const Color(0xFFFEF2F2), 'iconColor': const Color(0xFFDC2626)},
-      {'name': 'Education', 'icon': Icons.school_outlined, 'color': const Color(0xFFFFFBEB), 'iconColor': const Color(0xFFD97706)},
+      {
+        'name': 'IT & Software',
+        'icon': Icons.code,
+        'color': const Color(0xFFEFF8FF),
+        'iconColor': AppTheme.primary,
+      },
+      {
+        'name': 'Marketing',
+        'icon': Icons.campaign_outlined,
+        'color': const Color(0xFFFFF7ED),
+        'iconColor': const Color(0xFFEA580C),
+      },
+      {
+        'name': 'Finance',
+        'icon': Icons.bar_chart_rounded,
+        'color': const Color(0xFFF0FDF4),
+        'iconColor': const Color(0xFF16A34A),
+      },
+      {
+        'name': 'Design',
+        'icon': Icons.palette_outlined,
+        'color': const Color(0xFFFAF5FF),
+        'iconColor': const Color(0xFF9333EA),
+      },
+      {
+        'name': 'Healthcare',
+        'icon': Icons.favorite_outline,
+        'color': const Color(0xFFFEF2F2),
+        'iconColor': const Color(0xFFDC2626),
+      },
+      {
+        'name': 'Education',
+        'icon': Icons.school_outlined,
+        'color': const Color(0xFFFFFBEB),
+        'iconColor': const Color(0xFFD97706),
+      },
     ];
 
     return GridView.builder(
@@ -1397,7 +1765,11 @@ class _MainShellScreenState extends State<MainShellScreen> {
                               ),
                               if (job.isVerified) ...[
                                 const SizedBox(width: 4),
-                                const Icon(Icons.verified, size: 14, color: AppTheme.primary),
+                                const Icon(
+                                  Icons.verified,
+                                  size: 14,
+                                  color: AppTheme.primary,
+                                ),
                               ],
                             ],
                           ),
@@ -1407,7 +1779,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     IconButton(
                       icon: Icon(
                         isSaved ? Icons.bookmark : Icons.bookmark_border,
-                        color: isSaved ? AppTheme.primary : AppTheme.textSecondary,
+                        color: isSaved
+                            ? AppTheme.primary
+                            : AppTheme.textSecondary,
                         size: 22,
                       ),
                       onPressed: () => _toggleSaveJob(job.id),
@@ -1419,14 +1793,21 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 // Location & Work Mode
                 Row(
                   children: [
-                    const Icon(Icons.location_on_outlined, size: 14, color: AppTheme.textSecondary),
+                    const Icon(
+                      Icons.location_on_outlined,
+                      size: 14,
+                      color: AppTheme.textSecondary,
+                    ),
                     const SizedBox(width: 4),
                     Flexible(
                       child: Text(
                         '${job.locationCity} • ${job.workMode}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary,
+                        ),
                       ),
                     ),
                   ],
@@ -1438,14 +1819,21 @@ class _MainShellScreenState extends State<MainShellScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: AppTheme.primaryLight,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.currency_rupee, size: 13, color: AppTheme.primary),
+                          const Icon(
+                            Icons.currency_rupee,
+                            size: 13,
+                            color: AppTheme.primary,
+                          ),
                           Text(
                             job.salaryText.replaceFirst('₹', ''),
                             style: const TextStyle(
@@ -1460,10 +1848,19 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     ElevatedButton(
                       onPressed: isApplied ? null : () => _applyToJob(job),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: isApplied ? const Color(0xFFDCFCE7) : AppTheme.primary,
-                        foregroundColor: isApplied ? AppTheme.success : Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        backgroundColor: isApplied
+                            ? const Color(0xFFDCFCE7)
+                            : AppTheme.primary,
+                        foregroundColor: isApplied
+                            ? AppTheme.success
+                            : Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -1473,7 +1870,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
-                              color: isApplied ? AppTheme.success : Colors.white,
+                              color: isApplied
+                                  ? AppTheme.success
+                                  : Colors.white,
                             ),
                           ),
                           if (!isApplied) ...[
@@ -1541,14 +1940,20 @@ class _MainShellScreenState extends State<MainShellScreen> {
       ),
       builder: (context, snapshot) {
         final jobs = snapshot.data ?? [];
-        final isLoading = snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData;
+        final isLoading =
+            snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData;
 
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
             const Text(
               'Explore All Opportunities',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textPrimary,
+              ),
             ),
             const SizedBox(height: 6),
             const Text(
@@ -1565,7 +1970,10 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     onChanged: (val) => setState(() => _searchQuery = val),
                     decoration: InputDecoration(
                       hintText: 'Search roles, skills, or companies...',
-                      prefixIcon: const Icon(Icons.search, color: AppTheme.primary),
+                      prefixIcon: const Icon(
+                        Icons.search,
+                        color: AppTheme.primary,
+                      ),
                       contentPadding: const EdgeInsets.symmetric(vertical: 12),
                       filled: true,
                       fillColor: Colors.white,
@@ -1592,7 +2000,12 @@ class _MainShellScreenState extends State<MainShellScreen> {
             ),
             const SizedBox(height: 16),
             if (isLoading)
-              const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: CircularProgressIndicator(),
+                ),
+              )
             else if (jobs.isEmpty)
               Container(
                 padding: const EdgeInsets.all(32),
@@ -1604,16 +2017,39 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 ),
                 child: Column(
                   children: [
-                    const Icon(Icons.search_off_rounded, size: 48, color: AppTheme.textSecondary),
+                    const Icon(
+                      Icons.search_off_rounded,
+                      size: 48,
+                      color: AppTheme.textSecondary,
+                    ),
                     const SizedBox(height: 12),
-                    const Text('No matching live jobs found', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    const Text(
+                      'No matching live jobs found',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(height: 6),
-                    const Text('Try adjusting your search terms or filters.', style: TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+                    const Text(
+                      'Try adjusting your search terms or filters.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
                   ],
                 ),
               )
             else ...[
-              Text('${jobs.length} Results Found', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textSecondary)),
+              Text(
+                '${jobs.length} Results Found',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
               const SizedBox(height: 10),
               ...jobs.map((job) => _buildReferenceJobCard(job)),
             ],
@@ -1629,7 +2065,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
       stream: _firestoreService.streamJobs(),
       builder: (context, snapshot) {
         final allJobs = snapshot.data ?? [];
-        final savedJobs = allJobs.where((j) => _savedJobIds.contains(j.id)).toList();
+        final savedJobs = allJobs
+            .where((j) => _savedJobIds.contains(j.id))
+            .toList();
 
         if (savedJobs.isEmpty) {
           return Center(
@@ -1638,14 +2076,24 @@ class _MainShellScreenState extends State<MainShellScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.bookmark_border_rounded, size: 64, color: AppTheme.textSecondary),
+                  const Icon(
+                    Icons.bookmark_border_rounded,
+                    size: 64,
+                    color: AppTheme.textSecondary,
+                  ),
                   const SizedBox(height: 16),
-                  const Text('No Saved Jobs Yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'No Saved Jobs Yet',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 8),
                   const Text(
                     'Bookmark live opportunities while browsing to review and apply to them later.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.textSecondary,
+                    ),
                   ),
                   const SizedBox(height: 20),
                   ElevatedButton(
@@ -1666,9 +2114,19 @@ class _MainShellScreenState extends State<MainShellScreen> {
               children: [
                 const Text(
                   'Saved Jobs',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textPrimary,
+                  ),
                 ),
-                Text('${savedJobs.length} Bookmarked', style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+                Text(
+                  '${savedJobs.length} Bookmarked',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -1685,20 +2143,32 @@ class _MainShellScreenState extends State<MainShellScreen> {
       stream: _firestoreService.streamCandidateProfile(_currentUid),
       builder: (context, snapshot) {
         final profile = snapshot.data;
-        final fullName = profile?['fullName'] ?? FirebaseAuth.instance.currentUser?.displayName ?? 'New Candidate';
+        final fullName =
+            profile?['fullName'] ??
+            FirebaseAuth.instance.currentUser?.displayName ??
+            'New Candidate';
         final phone = profile?['phone'] ?? 'No phone added';
-        final qualification = profile?['qualification'] ?? profile?['educationLevel'] ?? '';
+        final qualification =
+            profile?['qualification'] ?? profile?['educationLevel'] ?? '';
         final district = profile?['district'] ?? '';
         final city = profile?['city'] ?? '';
         final locationDisplay = district.isNotEmpty && city.isNotEmpty
             ? '$city, $district'
-            : (district.isNotEmpty ? district : (city.isNotEmpty ? city : 'Tamil Nadu'));
+            : (district.isNotEmpty
+                  ? district
+                  : (city.isNotEmpty ? city : 'Tamil Nadu'));
         final hasExperience = profile?['hasExperience'] == true;
         final expText = hasExperience
             ? '${profile?['experienceYears'] ?? '1 Year'} • ${profile?['lastJobTitle'] ?? 'Experienced'}'
             : 'Fresher';
         final initials = fullName.trim().isNotEmpty
-            ? fullName.trim().split(' ').map((p) => p.isNotEmpty ? p[0] : '').take(2).join().toUpperCase()
+            ? fullName
+                  .trim()
+                  .split(' ')
+                  .map((p) => p.isNotEmpty ? p[0] : '')
+                  .take(2)
+                  .join()
+                  .toUpperCase()
             : 'C3';
 
         return ListView(
@@ -1719,34 +2189,55 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     backgroundColor: AppTheme.primaryLight,
                     child: Text(
                       initials.isNotEmpty ? initials : 'C3',
-                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: AppTheme.primary),
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                        color: AppTheme.primary,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
                   Text(
                     fullName,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.textPrimary,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     '$expText • $locationDisplay',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.textSecondary,
+                    ),
                   ),
                   if (qualification.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text(
                       qualification,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 12, color: AppTheme.primary, fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                   const SizedBox(height: 16),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      _ProfileStat(label: 'Applied', value: '${_appliedJobIds.length}'),
-                      _ProfileStat(label: 'Saved', value: '${_savedJobIds.length}'),
+                      _ProfileStat(
+                        label: 'Applied',
+                        value: '${_appliedJobIds.length}',
+                      ),
+                      _ProfileStat(
+                        label: 'Saved',
+                        value: '${_savedJobIds.length}',
+                      ),
                       _ProfileStat(
                         label: 'Status',
                         value: profile != null ? 'Active' : 'Incomplete',
@@ -1775,16 +2266,32 @@ class _MainShellScreenState extends State<MainShellScreen> {
                       color: AppTheme.primaryLight,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.edit_note_rounded, color: AppTheme.primary, size: 24),
+                    child: const Icon(
+                      Icons.edit_note_rounded,
+                      color: AppTheme.primary,
+                      size: 24,
+                    ),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Candidate Details & Preferences', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        const Text(
+                          'Candidate Details & Preferences',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
                         const SizedBox(height: 2),
-                        Text('Phone: $phone', style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                        Text(
+                          'Phone: $phone',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -1817,16 +2324,37 @@ class _MainShellScreenState extends State<MainShellScreen> {
               child: Column(
                 children: [
                   ListTile(
-                    leading: const Icon(Icons.switch_account_outlined, color: AppTheme.primary),
-                    title: const Text('Switch Role Mode', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                    subtitle: const Text('Access Employer ATS or Admin Control Panel', style: TextStyle(fontSize: 12)),
+                    leading: const Icon(
+                      Icons.switch_account_outlined,
+                      color: AppTheme.primary,
+                    ),
+                    title: const Text(
+                      'Switch Role Mode',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      'Access Employer ATS or Admin Control Panel',
+                      style: TextStyle(fontSize: 12),
+                    ),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: widget.onSwitchRoleRequested,
                   ),
                   const Divider(height: 1),
                   ListTile(
-                    leading: const Icon(Icons.privacy_tip_outlined, color: AppTheme.textPrimary),
-                    title: const Text('Candidate Guidelines & Safety', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                    leading: const Icon(
+                      Icons.privacy_tip_outlined,
+                      color: AppTheme.textPrimary,
+                    ),
+                    title: const Text(
+                      'Candidate Guidelines & Safety',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
                       Navigator.push(
@@ -1874,20 +2402,38 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     children: [
                       const Text(
                         'Recruiter ATS Dashboard',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 6),
                       const Text(
                         'Live Firestore Integration • Real-Time Candidate Applications',
-                        style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w600, fontSize: 13),
+                        style: TextStyle(
+                          color: AppTheme.primary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
                       ),
                       const Divider(height: 24),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
-                          _MetricItem(label: 'Live Jobs', value: '$jobCount', highlight: true),
-                          _MetricItem(label: 'Total Applicants', value: '$appCount', highlight: true),
-                          const _MetricItem(label: 'ATS Status', value: 'Active'),
+                          _MetricItem(
+                            label: 'Live Jobs',
+                            value: '$jobCount',
+                            highlight: true,
+                          ),
+                          _MetricItem(
+                            label: 'Total Applicants',
+                            value: '$appCount',
+                            highlight: true,
+                          ),
+                          const _MetricItem(
+                            label: 'ATS Status',
+                            value: 'Active',
+                          ),
                         ],
                       ),
                     ],
@@ -1904,29 +2450,47 @@ class _MainShellScreenState extends State<MainShellScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Quick Recruiter Actions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      const Text(
+                        'Quick Recruiter Actions',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
                       const SizedBox(height: 12),
                       Row(
                         children: [
                           Expanded(
                             child: ElevatedButton.icon(
-                              onPressed: () => setState(() => _selectedTabIndex = 1),
-                              icon: const Icon(Icons.add_circle_outline, size: 18),
+                              onPressed: () =>
+                                  setState(() => _selectedTabIndex = 1),
+                              icon: const Icon(
+                                Icons.add_circle_outline,
+                                size: 18,
+                              ),
                               label: const Text('Post Job'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: AppTheme.primary,
-                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
                               ),
                             ),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: () => setState(() => _selectedTabIndex = 2),
-                              icon: const Icon(Icons.people_alt_outlined, size: 18),
+                              onPressed: () =>
+                                  setState(() => _selectedTabIndex = 2),
+                              icon: const Icon(
+                                Icons.people_alt_outlined,
+                                size: 18,
+                              ),
                               label: const Text('Applicants'),
                               style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
                               ),
                             ),
                           ),
@@ -1954,7 +2518,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           backgroundColor: AppTheme.error,
-          content: Text('Please fill in Job Title, Company Name, and Salary Range.'),
+          content: Text(
+            'Please fill in Job Title, Company Name, and Salary Range.',
+          ),
         ),
       );
       return;
@@ -2027,7 +2593,11 @@ class _MainShellScreenState extends State<MainShellScreen> {
             children: [
               const Text(
                 'Create New Job Vacancy',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.textPrimary,
+                ),
               ),
               const SizedBox(height: 4),
               const Text(
@@ -2037,27 +2607,43 @@ class _MainShellScreenState extends State<MainShellScreen> {
               const Divider(height: 24),
 
               // Job Title
-              const Text('Job Title*', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+              const Text(
+                'Job Title*',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 6),
               TextField(
                 controller: _postTitleController,
                 decoration: InputDecoration(
                   hintText: 'e.g. Senior Flutter Developer',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
 
               // Company Name
-              const Text('Company Name*', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+              const Text(
+                'Company Name*',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 6),
               TextField(
                 controller: _postCompanyController,
                 decoration: InputDecoration(
                   hintText: 'e.g. Zoho Corporation',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -2069,24 +2655,72 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Category*', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                        const Text(
+                          'Category*',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                         const SizedBox(height: 6),
                         DropdownButtonFormField<String>(
                           initialValue: _postCategory,
                           decoration: InputDecoration(
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 10,
+                            ),
                           ),
                           items: const [
-                            DropdownMenuItem(value: 'IT & Software', child: Text('IT & Software', style: TextStyle(fontSize: 12))),
-                            DropdownMenuItem(value: 'Marketing', child: Text('Marketing', style: TextStyle(fontSize: 12))),
-                            DropdownMenuItem(value: 'Finance', child: Text('Finance', style: TextStyle(fontSize: 12))),
-                            DropdownMenuItem(value: 'Design', child: Text('Design', style: TextStyle(fontSize: 12))),
-                            DropdownMenuItem(value: 'Healthcare', child: Text('Healthcare', style: TextStyle(fontSize: 12))),
-                            DropdownMenuItem(value: 'Education', child: Text('Education', style: TextStyle(fontSize: 12))),
+                            DropdownMenuItem(
+                              value: 'IT & Software',
+                              child: Text(
+                                'IT & Software',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Marketing',
+                              child: Text(
+                                'Marketing',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Finance',
+                              child: Text(
+                                'Finance',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Design',
+                              child: Text(
+                                'Design',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Healthcare',
+                              child: Text(
+                                'Healthcare',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Education',
+                              child: Text(
+                                'Education',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
                           ],
                           onChanged: (val) {
-                            if (val != null) setState(() => _postCategory = val);
+                            if (val != null)
+                              setState(() => _postCategory = val);
                           },
                         ),
                       ],
@@ -2097,21 +2731,51 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Work Mode*', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                        const Text(
+                          'Work Mode*',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                         const SizedBox(height: 6),
                         DropdownButtonFormField<String>(
                           initialValue: _postWorkMode,
                           decoration: InputDecoration(
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 10,
+                            ),
                           ),
                           items: const [
-                            DropdownMenuItem(value: 'Hybrid', child: Text('Hybrid', style: TextStyle(fontSize: 12))),
-                            DropdownMenuItem(value: 'Remote', child: Text('Remote', style: TextStyle(fontSize: 12))),
-                            DropdownMenuItem(value: 'On-Site', child: Text('On-Site', style: TextStyle(fontSize: 12))),
+                            DropdownMenuItem(
+                              value: 'Hybrid',
+                              child: Text(
+                                'Hybrid',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Remote',
+                              child: Text(
+                                'Remote',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'On-Site',
+                              child: Text(
+                                'On-Site',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
                           ],
                           onChanged: (val) {
-                            if (val != null) setState(() => _postWorkMode = val);
+                            if (val != null)
+                              setState(() => _postWorkMode = val);
                           },
                         ),
                       ],
@@ -2128,24 +2792,72 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Location City*', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                        const Text(
+                          'Location City*',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                         const SizedBox(height: 6),
                         DropdownButtonFormField<String>(
                           initialValue: _postLocation,
                           decoration: InputDecoration(
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 10,
+                            ),
                           ),
                           items: const [
-                            DropdownMenuItem(value: 'Chennai', child: Text('Chennai', style: TextStyle(fontSize: 12))),
-                            DropdownMenuItem(value: 'Coimbatore', child: Text('Coimbatore', style: TextStyle(fontSize: 12))),
-                            DropdownMenuItem(value: 'Bengaluru', child: Text('Bengaluru', style: TextStyle(fontSize: 12))),
-                            DropdownMenuItem(value: 'Erode', child: Text('Erode', style: TextStyle(fontSize: 12))),
-                            DropdownMenuItem(value: 'Salem', child: Text('Salem', style: TextStyle(fontSize: 12))),
-                            DropdownMenuItem(value: 'Madurai', child: Text('Madurai', style: TextStyle(fontSize: 12))),
+                            DropdownMenuItem(
+                              value: 'Chennai',
+                              child: Text(
+                                'Chennai',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Coimbatore',
+                              child: Text(
+                                'Coimbatore',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Bengaluru',
+                              child: Text(
+                                'Bengaluru',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Erode',
+                              child: Text(
+                                'Erode',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Salem',
+                              child: Text(
+                                'Salem',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Madurai',
+                              child: Text(
+                                'Madurai',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
                           ],
                           onChanged: (val) {
-                            if (val != null) setState(() => _postLocation = val);
+                            if (val != null)
+                              setState(() => _postLocation = val);
                           },
                         ),
                       ],
@@ -2156,14 +2868,25 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Salary Text*', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                        const Text(
+                          'Salary Text*',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                         const SizedBox(height: 6),
                         TextField(
                           controller: _postSalaryController,
                           decoration: InputDecoration(
                             hintText: 'e.g. ₹8 - 14 LPA',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 12,
+                            ),
                           ),
                         ),
                       ],
@@ -2174,28 +2897,41 @@ class _MainShellScreenState extends State<MainShellScreen> {
               const SizedBox(height: 16),
 
               // Vacancies Count
-              const Text('Vacancies Available', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+              const Text(
+                'Vacancies Available',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 6),
               TextField(
                 controller: _postVacanciesController,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   hintText: 'e.g. 2',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
 
               // Description
-              const Text('Job Description', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+              const Text(
+                'Job Description',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 6),
               TextField(
                 controller: _postDescController,
                 maxLines: 4,
                 decoration: InputDecoration(
                   hintText: 'Key responsibilities, stack requirements, and candidate qualifications...',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                   contentPadding: const EdgeInsets.all(14),
                 ),
               ),
@@ -2215,11 +2951,18 @@ class _MainShellScreenState extends State<MainShellScreen> {
                       ? const SizedBox(
                           width: 22,
                           height: 22,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.2),
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.2,
+                          ),
                         )
                       : const Text(
                           'Publish Job to Firestore ➔',
-                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
                         ),
                 ),
               ),
@@ -2234,7 +2977,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: _firestoreService.streamRecruiterApplicants(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
         final applicants = snapshot.data ?? [];
@@ -2246,14 +2990,24 @@ class _MainShellScreenState extends State<MainShellScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: const [
-                  Icon(Icons.inbox_rounded, size: 60, color: AppTheme.textSecondary),
+                  Icon(
+                    Icons.inbox_rounded,
+                    size: 60,
+                    color: AppTheme.textSecondary,
+                  ),
                   SizedBox(height: 14),
-                  Text('No Applicants Yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text(
+                    'No Applicants Yet',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
                   SizedBox(height: 6),
                   Text(
                     'When candidates apply to live jobs, their profiles will appear here instantly.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.textSecondary,
+                    ),
                   ),
                 ],
               ),
@@ -2297,18 +3051,29 @@ class _MainShellScreenState extends State<MainShellScreen> {
                       Expanded(
                         child: Text(
                           name,
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.textPrimary,
+                          ),
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFDCFCE7),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
                           status,
-                          style: const TextStyle(color: AppTheme.success, fontWeight: FontWeight.bold, fontSize: 11),
+                          style: const TextStyle(
+                            color: AppTheme.success,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                          ),
                         ),
                       ),
                     ],
@@ -2316,19 +3081,29 @@ class _MainShellScreenState extends State<MainShellScreen> {
                   const SizedBox(height: 4),
                   Text(
                     'Applied for: $jobTitle',
-                    style: const TextStyle(fontSize: 13, color: AppTheme.primary, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   if (phone.isNotEmpty || email.isNotEmpty)
                     Text(
                       'Contact: ${phone.isNotEmpty ? phone : ''} ${email.isNotEmpty ? '• $email' : ''}',
-                      style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary,
+                      ),
                     ),
                   if (education.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
                       'Education: $education',
-                      style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary,
+                      ),
                     ),
                   ],
                 ],
@@ -2363,14 +3138,31 @@ class _MainShellScreenState extends State<MainShellScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Platform Governance & Master Analytics', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      const Text(
+                        'Platform Governance & Master Analytics',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                       const SizedBox(height: 16),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
-                          _MetricItem(label: 'Live Jobs', value: '$totalJobs', highlight: true),
-                          _MetricItem(label: 'Applications', value: '$totalApps', highlight: true),
-                          const _MetricItem(label: 'System Status', value: 'Live 100%'),
+                          _MetricItem(
+                            label: 'Live Jobs',
+                            value: '$totalJobs',
+                            highlight: true,
+                          ),
+                          _MetricItem(
+                            label: 'Applications',
+                            value: '$totalApps',
+                            highlight: true,
+                          ),
+                          const _MetricItem(
+                            label: 'System Status',
+                            value: 'Live 100%',
+                          ),
                         ],
                       ),
                     ],
@@ -2390,15 +3182,29 @@ class _MetricItem extends StatelessWidget {
   final String value;
   final bool highlight;
 
-  const _MetricItem({required this.label, required this.value, this.highlight = false});
+  const _MetricItem({
+    required this.label,
+    required this.value,
+    this.highlight = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: highlight ? AppTheme.primary : AppTheme.primaryDark)),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: highlight ? AppTheme.primary : AppTheme.primaryDark,
+          ),
+        ),
         const SizedBox(height: 4),
-        Text(label, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+        ),
       ],
     );
   }
@@ -2414,9 +3220,19 @@ class _ProfileStat extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.primaryDark)),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: AppTheme.primaryDark,
+          ),
+        ),
         const SizedBox(height: 2),
-        Text(label, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+        ),
       ],
     );
   }

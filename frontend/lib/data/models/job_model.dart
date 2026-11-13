@@ -3,7 +3,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class JobModel {
   final String id;
   final String title;
-  final String? titleTamil;
   final String companyName;
   final String locationCity;
   final String salaryText;
@@ -18,7 +17,6 @@ class JobModel {
   JobModel({
     required this.id,
     required this.title,
-    this.titleTamil,
     required this.companyName,
     required this.locationCity,
     required this.salaryText,
@@ -43,7 +41,6 @@ class JobModel {
     return JobModel(
       id: doc.id,
       title: data['title'] ?? 'Untitled Opportunity',
-      titleTamil: data['titleTamil'],
       companyName: data['companyName'] ?? 'Career360 Partner',
       locationCity: data['locationCity'] ?? 'Tamil Nadu / Remote',
       salaryText: data['salaryText'] ?? '₹3 - 5 LPA',
@@ -62,7 +59,6 @@ class JobModel {
   Map<String, dynamic> toMap() {
     return {
       'title': title,
-      'titleTamil': titleTamil,
       'companyName': companyName,
       'locationCity': locationCity,
       'salaryText': salaryText,

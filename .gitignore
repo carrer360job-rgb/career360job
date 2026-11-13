@@ -42,18 +42,6 @@ frontend/.pub/
 frontend/build/
 frontend/android/.gradle/
 frontend/android/local.properties
-mobile/.dart_tool/
-mobile/.flutter-plugins
-mobile/.flutter-plugins-dependencies
-mobile/.packages
-mobile/.pub-cache/
-mobile/.pub/
-mobile/build/
-mobile/android/.gradle
-mobile/android/local.properties
-mobile/android/app/google-services.json
-mobile/ios/Flutter/Generated.xcconfig
-mobile/ios/Flutter/flutter_export_environment.sh
 *.keystore
 *.jks
 

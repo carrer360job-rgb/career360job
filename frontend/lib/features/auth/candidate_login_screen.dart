@@ -1,17 +1,13 @@
-import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+
 import '../../core/theme/app_theme.dart';
 import '../../core/services/firebase_auth_service.dart';
 import '../../core/widgets/bouncy_button.dart';
 import '../legal/privacy_policy_screen.dart';
 
-enum AuthScreenState {
-  signIn,
-  signUp,
-  forgotPassword,
-}
+enum AuthScreenState { signIn, signUp, forgotPassword }
 
 class CandidateLoginScreen extends StatefulWidget {
   final VoidCallback onLoginSuccess;
@@ -46,14 +42,16 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
 
   // Sign In Form Controllers
   final TextEditingController _signInEmailController = TextEditingController();
-  final TextEditingController _signInPasswordController = TextEditingController();
+  final TextEditingController _signInPasswordController =
+      TextEditingController();
   bool _obscureSignInPassword = true;
   bool _rememberMe = false;
 
   // Sign Up Form Controllers
   final TextEditingController _signUpNameController = TextEditingController();
   final TextEditingController _signUpEmailController = TextEditingController();
-  final TextEditingController _signUpPasswordController = TextEditingController();
+  final TextEditingController _signUpPasswordController =
+      TextEditingController();
   bool _obscureSignUpPassword = true;
 
   // Forgot Password Controllers
@@ -106,10 +104,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await _authService.signInWithEmail(
-        email: email,
-        password: password,
-      );
+      await _authService.signInWithEmail(email: email, password: password);
       if (mounted) {
         setState(() => _isLoading = false);
         widget.onLoginSuccess();
@@ -120,14 +115,18 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         String message = 'Sign in failed. Please check credentials.';
         if (e.code == 'user-not-found') {
           message = 'No account found with this email. Please sign up.';
-        } else if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
+        } else if (e.code == 'wrong-password' ||
+            e.code == 'invalid-credential') {
           message = 'Incorrect password. Please try again.';
         } else if (e.code == 'invalid-email') {
           message = 'Invalid email address format.';
         } else if (e.code == 'user-disabled') {
           message = 'This account has been disabled. Please contact support.';
+        } else if (e.code == 'email-not-verified') {
+          message = 'We sent you a verification email. Verify your address, then sign in again.';
         } else if (e.code == 'too-many-requests') {
-          message = 'Too many failed attempts. Please wait a moment and try again.';
+          message =
+              'Too many failed attempts. Please wait a moment and try again.';
         }
         _showError(message);
       }
@@ -167,16 +166,23 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       );
 
       if (mounted) {
-        setState(() => _isLoading = false);
-        _showSuccess('Account created successfully!');
-        widget.onLoginSuccess();
+        setState(() {
+          _isLoading = false;
+          _screenState = AuthScreenState.signIn;
+          _signInEmailController.text = email;
+          _signInPasswordController.clear();
+        });
+        _showSuccess(
+          'Verification link sent. Verify your email, then sign in.',
+        );
       }
     } on FirebaseAuthException catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
         String message = 'Sign up failed. Please try again.';
         if (e.code == 'email-already-in-use') {
-          message = 'An account already exists with this email. Please sign in.';
+          message =
+              'An account already exists with this email. Please sign in.';
         } else if (e.code == 'weak-password') {
           message = 'Password is too weak. Please use a stronger password.';
         } else if (e.code == 'invalid-email') {
@@ -191,7 +197,6 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       }
     }
   }
-
 
   Future<void> _handleSendResetLink() async {
     final email = _forgotEmailController.text.trim();
@@ -236,7 +241,9 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       if (mounted) {
         setState(() => _isGoogleLoading = false);
         if (cred != null) {
-          _showSuccess('Welcome back, ${cred.user?.displayName ?? "Candidate"}!');
+          _showSuccess(
+            'Welcome back, ${cred.user?.displayName ?? "Candidate"}!',
+          );
           widget.onLoginSuccess();
         }
       }
@@ -258,19 +265,13 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: AppTheme.error,
-        content: Text(message),
-      ),
+      SnackBar(backgroundColor: AppTheme.error, content: Text(message)),
     );
   }
 
   void _showSuccess(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: _successGreen,
-        content: Text(message),
-      ),
+      SnackBar(backgroundColor: _successGreen, content: Text(message)),
     );
   }
 
@@ -338,7 +339,8 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                         if (_screenState == AuthScreenState.signIn ||
                             _screenState == AuthScreenState.signUp) ...[
                           _buildAuthTabs(
-                              isSignIn: _screenState == AuthScreenState.signIn),
+                            isSignIn: _screenState == AuthScreenState.signIn,
+                          ),
                           const SizedBox(height: 24),
                         ],
 
@@ -396,18 +398,13 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
           Container(
             width: 28,
             height: 28,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(6),
-            ),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(6)),
             clipBehavior: Clip.antiAlias,
             child: Image.asset(
               'assets/images/career360_icon.png',
               fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) => const Icon(
-                Icons.work_rounded,
-                color: _primaryBlue,
-                size: 24,
-              ),
+              errorBuilder: (context, error, stackTrace) =>
+                  const Icon(Icons.work_rounded, color: _primaryBlue, size: 24),
             ),
           ),
           const SizedBox(width: 8),
@@ -443,7 +440,8 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     String badgeText = 'Verified Candidate Portal';
     IconData badgeIcon = Icons.shield_outlined;
     String heading = 'Welcome Back';
-    String description = 'Sign in to your Career360 account to continue your journey.';
+    String description =
+        'Sign in to your Career360 account to continue your journey.';
 
     if (_screenState == AuthScreenState.signUp) {
       badgeText = 'Candidate Registration';
@@ -463,10 +461,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [
-            _deepNavy,
-            _secondaryBlue,
-          ],
+          colors: [_deepNavy, _secondaryBlue],
         ),
       ),
       padding: const EdgeInsets.fromLTRB(24, 30, 24, 68),
@@ -495,11 +490,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    badgeIcon,
-                    size: 13,
-                    color: const Color(0xFF93C5FD),
-                  ),
+                  Icon(badgeIcon, size: 13, color: const Color(0xFF93C5FD)),
                   const SizedBox(width: 6),
                   Text(
                     badgeText,
@@ -552,7 +543,8 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
             Expanded(
               child: BouncyButton(
                 scaleDown: 0.97,
-                onPressed: () => setState(() => _screenState = AuthScreenState.signIn),
+                onPressed: () =>
+                    setState(() => _screenState = AuthScreenState.signIn),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Center(
@@ -560,7 +552,9 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                       'Sign In',
                       style: TextStyle(
                         fontSize: 16.5,
-                        fontWeight: isSignIn ? FontWeight.w700 : FontWeight.w600,
+                        fontWeight: isSignIn
+                            ? FontWeight.w700
+                            : FontWeight.w600,
                         color: isSignIn ? _primaryBlue : _secondaryText,
                         letterSpacing: -0.2,
                       ),
@@ -572,7 +566,8 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
             Expanded(
               child: BouncyButton(
                 scaleDown: 0.97,
-                onPressed: () => setState(() => _screenState = AuthScreenState.signUp),
+                onPressed: () =>
+                    setState(() => _screenState = AuthScreenState.signUp),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Center(
@@ -580,7 +575,9 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                       'Sign Up',
                       style: TextStyle(
                         fontSize: 16.5,
-                        fontWeight: !isSignIn ? FontWeight.w700 : FontWeight.w600,
+                        fontWeight: !isSignIn
+                            ? FontWeight.w700
+                            : FontWeight.w600,
                         color: !isSignIn ? _primaryBlue : _secondaryText,
                         letterSpacing: -0.2,
                       ),
@@ -594,15 +591,14 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         Stack(
           children: [
             // Thin full-width baseline divider
-            Container(
-              height: 1.5,
-              color: _dividerColor,
-            ),
+            Container(height: 1.5, color: _dividerColor),
             // Blue underline indicator below the active tab
             AnimatedAlign(
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeInOut,
-              alignment: isSignIn ? Alignment.centerLeft : Alignment.centerRight,
+              alignment: isSignIn
+                  ? Alignment.centerLeft
+                  : Alignment.centerRight,
               child: FractionallySizedBox(
                 widthFactor: 0.5,
                 child: Container(
@@ -671,9 +667,12 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                     child: Checkbox(
                       value: _rememberMe,
                       activeColor: _primaryBlue,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                       side: const BorderSide(color: _inputBorder, width: 1.4),
-                      onChanged: (val) => setState(() => _rememberMe = val ?? false),
+                      onChanged: (val) =>
+                          setState(() => _rememberMe = val ?? false),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -717,10 +716,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         const SizedBox(height: 22),
 
         // Primary Button
-        _buildPrimaryButton(
-          label: 'Sign In  ➔',
-          onPressed: _handleSignIn,
-        ),
+        _buildPrimaryButton(label: 'Sign In  ➔', onPressed: _handleSignIn),
         const SizedBox(height: 20),
 
         _buildDivider('or'),
@@ -791,7 +787,6 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     );
   }
 
-
   // ==========================================
   // VIEW 4: FORGOT PASSWORD FORM
   // ==========================================
@@ -826,7 +821,11 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
             child: const Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 20),
+                Icon(
+                  Icons.check_circle_rounded,
+                  color: Color(0xFF10B981),
+                  size: 20,
+                ),
                 SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -926,7 +925,10 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
           prefixIcon: Icon(prefixIcon, color: _secondaryText, size: 20),
           filled: true,
           fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(_inputRadius),
             borderSide: const BorderSide(color: _inputBorder, width: 1.2),
@@ -956,10 +958,16 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: const TextStyle(fontSize: 14.5, color: Color(0xFF98A2B3)),
-          prefixIcon: const Icon(Icons.lock_outline_rounded, color: _secondaryText, size: 20),
+          prefixIcon: const Icon(
+            Icons.lock_outline_rounded,
+            color: _secondaryText,
+            size: 20,
+          ),
           suffixIcon: IconButton(
             icon: Icon(
-              obscureText ? Icons.visibility_off_outlined : Icons.remove_red_eye_outlined,
+              obscureText
+                  ? Icons.visibility_off_outlined
+                  : Icons.remove_red_eye_outlined,
               color: _secondaryText,
               size: 20,
             ),
@@ -967,7 +975,10 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
           ),
           filled: true,
           fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(_inputRadius),
             borderSide: const BorderSide(color: _inputBorder, width: 1.2),
@@ -996,7 +1007,9 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         height: _buttonHeight,
         width: double.infinity,
         decoration: BoxDecoration(
-          color: isEnabled ? _primaryBlue : _primaryBlue.withValues(alpha: 0.65),
+          color: isEnabled
+              ? _primaryBlue
+              : _primaryBlue.withValues(alpha: 0.65),
           borderRadius: BorderRadius.circular(_inputRadius),
           boxShadow: isEnabled
               ? [
@@ -1073,7 +1086,9 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                         height: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2.2,
-                          valueColor: AlwaysStoppedAnimation<Color>(_primaryBlue),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            _primaryBlue,
+                          ),
                         ),
                       ),
                       SizedBox(width: 12),
@@ -1095,11 +1110,12 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                         'assets/images/google_logo.png',
                         width: 20,
                         height: 20,
-                        errorBuilder: (context, error, stackTrace) => const Icon(
-                          Icons.g_mobiledata_rounded,
-                          size: 26,
-                          color: Color(0xFF4285F4),
-                        ),
+                        errorBuilder: (context, error, stackTrace) =>
+                            const Icon(
+                              Icons.g_mobiledata_rounded,
+                              size: 26,
+                              color: Color(0xFF4285F4),
+                            ),
                       ),
                       const SizedBox(width: 12),
                       const Text(
@@ -1125,11 +1141,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(
-            Icons.shield_outlined,
-            size: 15,
-            color: _primaryBlue,
-          ),
+          const Icon(Icons.shield_outlined, size: 15, color: _primaryBlue),
           const SizedBox(width: 6),
           RichText(
             text: TextSpan(
@@ -1165,7 +1177,6 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     );
   }
 
-
   Widget _buildDivider(String text) {
     return Row(
       children: [
@@ -1186,5 +1197,3 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     );
   }
 }
-
-

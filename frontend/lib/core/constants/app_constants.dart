@@ -5,9 +5,6 @@ class AppConstants {
   static const String heroTitle = 'Find Your Next Career Move';
   static const String heroSubtitle = 'Explore thousands of verified opportunities';
 
-  // Backend API Base URL (Live Vercel Serverless)
-  static const String apiBaseUrl = 'https://career360job-backend.vercel.app';
-
   // Major Job Locations
   static const List<String> jobLocations = [
     'All Locations',

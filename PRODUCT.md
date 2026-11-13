@@ -7,7 +7,7 @@
   1. **Job Seekers (Candidates):** Freshers and experienced professionals looking for transparent salary ranges, verified employer postings, and direct 1-tap applications.
   2. **Employers (Recruiters & HR):** Companies posting vacancies, tracking applications, and screening qualified talent.
   3. **Admins:** Platform operators ensuring employer legitimacy and scam-free listings.
-- **Context of use:** Mobile-first (Android phone users on 4G/5G, Vivo, Samsung, Xiaomi), tablet, and desktop web. High frequency daily check-ins for job updates.
+- **Context of use:** Android phones on mobile networks, with tablet layouts supported where practical. The current build target is Android.
 
 ## User Jobs
 - **Primary job to be done:** Find verified jobs matching skills and location, and apply immediately without deceptive fees.

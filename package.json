@@ -5,9 +5,7 @@
   "private": true,
   "scripts": {
     "dev:backend": "npm --prefix backend run dev",
-    "dev:frontend:web": "flutter run -d chrome --web-port=3000",
-    "build:frontend:web": "flutter build web --release",
-    "build:frontend:apk": "flutter build apk --release",
+    "build:frontend:apk": "cd frontend && flutter build apk --release",
     "prisma:generate": "npm --prefix backend run prisma:generate",
     "prisma:migrate": "npm --prefix backend run prisma:migrate"
   },
