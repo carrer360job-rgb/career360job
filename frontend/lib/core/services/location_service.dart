@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
@@ -8,14 +9,12 @@ import 'package:http/http.dart' as http;
 class LocationResult {
   final String state;
   final String district;
-  final String city;
   final double latitude;
   final double longitude;
 
   LocationResult({
     required this.state,
     required this.district,
-    required this.city,
     required this.latitude,
     required this.longitude,
   });
@@ -305,50 +304,6 @@ class LocationService {
     ],
   };
 
-  /// Common cities/towns/neighborhoods by district
-  static const Map<String, List<String>> citiesByDistrict = {
-    // Tamil Nadu
-    'Erode': ['Chennimalai', 'Perundurai', 'Bhavani', 'Gobichettipalayam', 'Erode Town', 'Sathyamangalam', 'Anthiyur', 'Kodumudi', 'Modakkurichi'],
-    'Coimbatore': ['Gandhipuram', 'RS Puram', 'Saravanampatti', 'Peelamedu', 'Pollachi', 'Singanallur', 'Kuniyamuthur', 'Mettupalayam', 'Thudiyalur', 'Sulur', 'Kinathukadavu'],
-    'Chennai': ['Guindy', 'OMR / Sholinganallur', 'T. Nagar', 'Velachery', 'Anna Nagar', 'Adyar', 'Tambaram', 'Porur', 'Perambur', 'Mylapore', 'Chromepet', 'Ambattur'],
-    'Tiruppur': ['Tiruppur City', 'Avinashi', 'Palladam', 'Udumalaipettai', 'Kangeyam', 'Dharapuram', 'Madathukulam', 'Vellakoil'],
-    'Salem': ['Salem South', 'Salem West', 'Attur', 'Mettur', 'Omalur', 'Edappadi', 'Sankagiri', 'Yercaud', 'Valapady'],
-    'Madurai': ['Mattuthavani', 'KK Nagar', 'Thirunagar', 'Anna Nagar', 'Simmakkal', 'Thiruparankundram', 'Usilampatti', 'Melur', 'Vadipatti'],
-    'Tiruchirappalli': ['Thillai Nagar', 'Cantonment', 'Srirangam', 'KK Nagar', 'Thuvakudi', 'Lalgudi', 'Manapparai', 'Musiri'],
-    'Tirunelveli': ['Palayamkottai', 'Tirunelveli Town', 'Ambasamudram', 'Nanguneri', 'Vallioor'],
-    'Vellore': ['Vellore Town', 'Katpadi', 'Gudiyatham', 'Anaicut', 'Kaniyambadi'],
-    'Dindigul': ['Dindigul Town', 'Palani', 'Kodaikanal', 'Oddanchatram', 'Natham'],
-    'Thanjavur': ['Thanjavur Town', 'Kumbakonam', 'Pattukkottai', 'Orathanadu', 'Thiruvaiyaru'],
-    'Kanchipuram': ['Kanchipuram Town', 'Sriperumbudur', 'Walajabad', 'Uthiramerur'],
-    'Chengalpattu': ['Chengalpattu Town', 'Tambaram South', 'Maraimalai Nagar', 'Mahabalipuram', 'Maduranthakam'],
-    'Namakkal': ['Namakkal Town', 'Tiruchengode', 'Rasipuram', 'Paramathi Velur', 'Kolli Hills'],
-    'Karur': ['Karur Town', 'Kulithalai', 'Aravakurichi', 'Krishnarayapuram'],
-    'Krishnagiri': ['Hosur', 'Krishnagiri Town', 'Pochampalli', 'Uthangarai', 'Denkanikottai'],
-    'Kanyakumari': ['Nagercoil', 'Kanyakumari Town', 'Thuckalay', 'Colachel', 'Marthandam'],
-
-    // Karnataka
-    'Bengaluru Urban': ['Koramangala', 'Whitefield', 'Indiranagar', 'HSR Layout', 'Electronic City', 'Marathahalli', 'Jayanagar', 'BTM Layout', 'Hebbal', 'Yelahanka', 'Banashankari', 'Rajajinagar'],
-    'Mysuru': ['Gokulam', 'Vijayanagar', 'Jayalakshmipuram', 'Hebbal 1st Stage', 'Kuvempunagar', 'Saraswathipuram'],
-    'Dakshina Kannada (Mangaluru)': ['Hampankatta', 'Kadri', 'Bejai', 'Kankanady', 'Surathkal', 'Ullal'],
-
-    // Maharashtra
-    'Mumbai Suburban': ['Andheri', 'Bandra', 'Borivali', 'Goregaon', 'Malad', 'Juhu', 'Kurla', 'Ghatkopar', 'Mulund', 'Powai'],
-    'Mumbai City': ['Colaba', 'Nariman Point', 'Fort', 'Marine Lines', 'Dadra', 'Worli', 'Lower Parel'],
-    'Pune': ['Hinjewadi', 'Kothrud', 'Viman Nagar', 'Koregaon Park', 'Shivajinagar', 'Hadapsar', 'Baner', 'Wakad', 'Magarpatta'],
-
-    // Telangana
-    'Hyderabad': ['Hitec City', 'Madhapur', 'Gachibowli', 'Jubilee Hills', 'Banjara Hills', 'Kondapur', 'Kukatpally', 'Ameerpet', 'Begumpet', 'Secunderabad'],
-
-    // Kerala
-    'Ernakulam (Kochi)': ['Fort Kochi', 'Marine Drive', 'Kaloor', 'Edapally', 'Kakkanad (Infopark)', 'Palarivattom', 'Vyttila', 'Aluva'],
-    'Thiruvananthapuram': ['Technopark', 'Kowdiar', 'Pattom', 'Palayam', 'Kazhakoottam', 'Vellayambalam'],
-
-    // Delhi
-    'New Delhi': ['Connaught Place', 'Chanakyapuri', 'Barakhamba Road', 'Janpath'],
-    'South Delhi': ['Hauz Khas', 'Saket', 'Greater Kailash', 'Lajpat Nagar', 'Vasant Kunj'],
-    'Gautam Buddha Nagar (Noida)': ['Sector 62', 'Sector 18', 'Sector 137', 'Greater Noida Knowledge Park', 'Sector 15'],
-  };
-
   /// Returns districts for the given state
   static List<String> getDistrictsForState(String state) {
     if (districtsByState.containsKey(state)) {
@@ -370,35 +325,7 @@ class LocationService {
     ];
   }
 
-  /// Returns cities/towns for the given district
-  static List<String> getCitiesForDistrict(String district) {
-    if (citiesByDistrict.containsKey(district)) {
-      return citiesByDistrict[district]!;
-    }
-    for (final entry in citiesByDistrict.entries) {
-      if (entry.key.toLowerCase() == district.toLowerCase() ||
-          entry.key.toLowerCase().contains(district.toLowerCase()) ||
-          district.toLowerCase().contains(entry.key.toLowerCase())) {
-        return entry.value;
-      }
-    }
-    return [
-      '$district Town',
-      'City Center',
-      'Main Market',
-      'Industrial Area',
-    ];
-  }
-
-  /// Returns the sensible default city/town for a given district
-  static String getDefaultCityForDistrict(String district) {
-    if (district.trim().isEmpty) return '';
-    final list = getCitiesForDistrict(district);
-    if (list.isNotEmpty) return list.first;
-    return '$district Town';
-  }
-
-  /// Checks and requests location permission, then detects current State, District, and City
+  /// Checks location permission, then detects the current state and district.
   Future<LocationResult?> detectCurrentLocation() async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -430,30 +357,37 @@ class LocationService {
 
       String detectedState = '';
       String detectedDistrict = '';
-      String detectedCity = '';
 
       // 1. Primary: High-accuracy free reverse geocoding via BigDataCloud client API
       try {
         final uri = Uri.parse(
           'https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${position.latitude}&longitude=${position.longitude}&localityLanguage=en',
         );
-        final response = await http.get(uri).timeout(const Duration(seconds: 4));
+        final response = await http
+            .get(uri)
+            .timeout(const Duration(seconds: 4));
         if (response.statusCode == 200) {
           final data = json.decode(response.body) as Map<String, dynamic>;
           final state = data['principalSubdivision']?.toString().trim() ?? '';
-          final city = data['city']?.toString().trim() ?? '';
-          final locality = data['locality']?.toString().trim() ?? '';
 
           String foundDistrict = '';
-          final localityInfo = data['localityInfo'] as Map<String, dynamic>? ?? {};
+          final localityInfo =
+              data['localityInfo'] as Map<String, dynamic>? ?? {};
           final adminList = localityInfo['administrative'] as List? ?? [];
           for (final item in adminList) {
             if (item is Map) {
               final name = item['name']?.toString().trim() ?? '';
               final desc = item['description']?.toString().toLowerCase() ?? '';
               final order = item['order'] as int? ?? 0;
-              if (desc.contains('district') || name.toLowerCase().contains('district') || order == 9) {
-                foundDistrict = name.replaceAll(RegExp(r'\s+district', caseSensitive: false), '').trim();
+              if (desc.contains('district') ||
+                  name.toLowerCase().contains('district') ||
+                  order == 9) {
+                foundDistrict = name
+                    .replaceAll(
+                      RegExp(r'\s+district', caseSensitive: false),
+                      '',
+                    )
+                    .trim();
                 break;
               }
             }
@@ -462,22 +396,16 @@ class LocationService {
           if (state.isNotEmpty) detectedState = state;
           if (foundDistrict.isNotEmpty) {
             detectedDistrict = foundDistrict;
-          } else if (city.isNotEmpty) {
-            detectedDistrict = city;
-          }
-
-          if (locality.isNotEmpty) {
-            detectedCity = locality;
-          } else if (city.isNotEmpty) {
-            detectedCity = city;
           }
         }
       } catch (netErr) {
-        debugPrint('[LocationService] BigDataCloud reverse geocoding fallback: $netErr');
+        debugPrint(
+          '[LocationService] BigDataCloud reverse geocoding fallback: $netErr',
+        );
       }
 
       // 2. Secondary: Device native CLGeocoder / Android Geocoder fallback
-      if (detectedCity.isEmpty || detectedDistrict.isEmpty) {
+      if (detectedState.isEmpty || detectedDistrict.isEmpty) {
         try {
           final geocoding = Geocoding();
           final placemarks = await geocoding.placemarkFromCoordinates(
@@ -487,21 +415,20 @@ class LocationService {
 
           if (placemarks.isNotEmpty) {
             final p = placemarks.first;
-            final locality = p.locality?.trim() ?? '';
             final subAdmin = p.subAdministrativeArea?.trim() ?? '';
             final admin = p.administrativeArea?.trim() ?? '';
-            final subLocality = p.subLocality?.trim() ?? '';
 
-            if (detectedState.isEmpty && admin.isNotEmpty) detectedState = admin;
-            if (detectedDistrict.isEmpty) {
-              detectedDistrict = subAdmin.isNotEmpty ? subAdmin : (locality.isNotEmpty ? locality : admin);
+            if (detectedState.isEmpty && admin.isNotEmpty) {
+              detectedState = admin;
             }
-            if (detectedCity.isEmpty) {
-              detectedCity = locality.isNotEmpty ? locality : (subLocality.isNotEmpty ? subLocality : subAdmin);
+            if (detectedDistrict.isEmpty && subAdmin.isNotEmpty) {
+              detectedDistrict = subAdmin;
             }
           }
         } catch (geoError) {
-          debugPrint('[LocationService] Native geocoding fallback error: $geoError');
+          debugPrint(
+            '[LocationService] Native geocoding fallback error: $geoError',
+          );
         }
       }
 
@@ -516,25 +443,22 @@ class LocationService {
 
       // 4. Match against known District names for that state to ensure exact casing
       final knownDistricts = getDistrictsForState(detectedState);
-      for (final d in knownDistricts) {
-        if (detectedDistrict.toLowerCase() == d.toLowerCase() ||
-            detectedDistrict.toLowerCase().contains(d.toLowerCase()) ||
-            d.toLowerCase().contains(detectedDistrict.toLowerCase())) {
-          detectedDistrict = d;
-          break;
+      if (detectedDistrict.isNotEmpty) {
+        for (final d in knownDistricts) {
+          if (detectedDistrict.toLowerCase() == d.toLowerCase() ||
+              detectedDistrict.toLowerCase().contains(d.toLowerCase()) ||
+              d.toLowerCase().contains(detectedDistrict.toLowerCase())) {
+            detectedDistrict = d;
+            break;
+          }
         }
       }
 
-      if (detectedState.isEmpty) detectedState = 'Tamil Nadu';
-      if (detectedDistrict.isEmpty) detectedDistrict = 'Erode';
-      if (detectedCity.isEmpty) {
-        detectedCity = getDefaultCityForDistrict(detectedDistrict);
-      }
+      if (detectedState.isEmpty || detectedDistrict.isEmpty) return null;
 
       return LocationResult(
         state: detectedState,
         district: detectedDistrict,
-        city: detectedCity,
         latitude: position.latitude,
         longitude: position.longitude,
       );

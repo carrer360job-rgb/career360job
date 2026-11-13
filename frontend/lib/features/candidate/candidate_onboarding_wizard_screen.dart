@@ -1,10 +1,15 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:file_picker/file_picker.dart';
+
 import '../../core/theme/app_theme.dart';
 import '../../core/responsive/responsive_layout.dart';
 import '../../core/widgets/bouncy_button.dart';
 import '../../core/services/firebase_auth_service.dart';
 import '../../core/services/location_service.dart';
+import '../../core/services/candidate_resume_service.dart';
 
 /// 4-Step Candidate Onboarding Wizard
 /// 1. Personal Info
@@ -31,6 +36,7 @@ class CandidateOnboardingWizardScreen extends StatefulWidget {
 class _CandidateOnboardingWizardScreenState
     extends State<CandidateOnboardingWizardScreen> {
   final FirebaseAuthService _authService = FirebaseAuthService();
+  final CandidateResumeService _resumeService = CandidateResumeService();
   final LocationService _locationService = LocationService();
   int _currentStep = 1; // 1, 2, 3, 4
   bool _isSaving = false;
@@ -43,7 +49,6 @@ class _CandidateOnboardingWizardScreenState
   String? _selectedMaritalStatus;
   String _selectedState = '';
   String _selectedDistrict = '';
-  String _selectedCity = '';
   String? _selectedMonth;
   int? _selectedYear;
   int? _calculatedAge;
@@ -68,6 +73,9 @@ class _CandidateOnboardingWizardScreenState
   final TextEditingController _jobTitleController = TextEditingController();
   final TextEditingController _salaryController = TextEditingController();
   String? _selectedNoticePeriod;
+  Uint8List? _selectedResumeBytes;
+  String? _selectedResumeFileName;
+  String? _savedResumeFileName;
 
   // --- Static Option Datasets ---
   static const List<String> _educationLevels = [
@@ -156,8 +164,18 @@ class _CandidateOnboardingWizardScreenState
   ];
 
   static const List<String> _months = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
   ];
 
   @override
@@ -186,7 +204,6 @@ class _CandidateOnboardingWizardScreenState
     _selectedMaritalStatus = _emptyToNull(stringValue('maritalStatus'));
     _selectedState = stringValue('state');
     _selectedDistrict = stringValue('district');
-    _selectedCity = stringValue('city');
     _selectedMonth = _emptyToNull(stringValue('birthMonth'));
     _selectedYear = intValue('birthYear');
     _calculatedAge = intValue('age');
@@ -226,6 +243,7 @@ class _CandidateOnboardingWizardScreenState
         ? ''
         : salary;
     _selectedNoticePeriod = _emptyToNull(stringValue('noticePeriod'));
+    _savedResumeFileName = _emptyToNull(stringValue('resumeFileName'));
 
     // Existing profile editing should not trigger the initial location prompt.
     _hasPromptedLocation = true;
@@ -322,7 +340,11 @@ class _CandidateOnboardingWizardScreenState
                     child: const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.my_location_rounded, color: Colors.white, size: 18),
+                        Icon(
+                          Icons.my_location_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
                         SizedBox(width: 8),
                         Text(
                           'Allow & Detect Location',
@@ -390,17 +412,15 @@ class _CandidateOnboardingWizardScreenState
         if (result != null) {
           _selectedState = result.state;
           _selectedDistrict = result.district;
-          _selectedCity = result.city;
-        } else {
-          // If running in simulator/emulator without GPS fix, fall back gracefully to Tamil Nadu / Erode / Chennimalai
-          _selectedState = 'Tamil Nadu';
-          _selectedDistrict = 'Erode';
-          _selectedCity = 'Chennimalai';
         }
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Location detected: $_selectedCity, $_selectedDistrict, $_selectedState'),
+          content: Text(
+            result == null
+                ? 'Could not detect your district. Choose it manually.'
+                : 'Location detected: $_selectedDistrict, $_selectedState',
+          ),
           backgroundColor: AppTheme.primary,
           duration: const Duration(seconds: 2),
         ),
@@ -433,10 +453,6 @@ class _CandidateOnboardingWizardScreenState
       }
       if (_selectedDistrict.isEmpty) {
         _showValidationToast('Please choose your District');
-        return;
-      }
-      if (_selectedCity.isEmpty) {
-        _showValidationToast('Please choose your City / Area');
         return;
       }
       if (_selectedMonth == null || _selectedYear == null) {
@@ -491,14 +507,55 @@ class _CandidateOnboardingWizardScreenState
     }
   }
 
-  void _showValidationToast(String message) {
+  void _showValidationToast(
+    String message, {
+    Duration duration = const Duration(seconds: 2),
+  }) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: const Color(0xFFDC2626),
-        duration: const Duration(seconds: 2),
+        duration: duration,
       ),
     );
+  }
+
+  Future<void> _pickResume() async {
+    final PlatformFile? file;
+    try {
+      file = await FilePicker.pickFile(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf'],
+      );
+    } catch (_) {
+      _showValidationToast('Could not open the file picker. Try again.');
+      return;
+    }
+    if (file == null || !mounted) return;
+    try {
+      final size = await file.length();
+      if (size == null ||
+          size < 5 ||
+          size > 10 * 1024 * 1024 ||
+          file.name.length > 160) {
+        _showValidationToast('Choose a PDF up to 10 MB.');
+        return;
+      }
+      final bytes = await file.readAsBytes();
+      if (bytes.length < 5 || String.fromCharCodes(bytes.take(5)) != '%PDF-') {
+        _showValidationToast('That file does not appear to be a valid PDF.');
+        return;
+      }
+      final fileName = file.name;
+      if (mounted) {
+        setState(() {
+          _selectedResumeBytes = bytes;
+          _selectedResumeFileName = fileName;
+        });
+      }
+    } catch (_) {
+      _showValidationToast('Could not read that PDF. Choose it again.');
+    }
   }
 
   // --- Final Save to Firestore ---
@@ -512,8 +569,7 @@ class _CandidateOnboardingWizardScreenState
       'maritalStatus': _selectedMaritalStatus ?? '',
       'state': _selectedState,
       'district': _selectedDistrict,
-      'city': _selectedCity,
-      'location': '$_selectedCity, $_selectedDistrict, $_selectedState',
+      'location': '$_selectedDistrict, $_selectedState',
       'birthMonth': _selectedMonth ?? '',
       'birthYear': _selectedYear ?? 0,
       'age': _calculatedAge ?? 0,
@@ -529,27 +585,45 @@ class _CandidateOnboardingWizardScreenState
       'experienceMonths': _hasWorkExperience == true
           ? '$_experienceMonthsCount ${_experienceMonthsCount == 1 ? "Month" : "Months"}'
           : '0',
-      'lastCompany': _hasWorkExperience == true ? _companyController.text.trim() : null,
-      'lastJobTitle': _hasWorkExperience == true ? _jobTitleController.text.trim() : null,
+      'lastCompany': _hasWorkExperience == true
+          ? _companyController.text.trim()
+          : null,
+      'lastJobTitle': _hasWorkExperience == true
+          ? _jobTitleController.text.trim()
+          : null,
       'salary': _hasWorkExperience == true
           ? (_salaryController.text.trim().isNotEmpty
-              ? '₹${_salaryController.text.trim()} LPA'
-              : 'Not specified')
+                ? '₹${_salaryController.text.trim()} LPA'
+                : 'Not specified')
           : 'Fresher',
-      'noticePeriod': _hasWorkExperience == true ? (_selectedNoticePeriod ?? 'Immediate') : 'Immediate',
+      'noticePeriod': _hasWorkExperience == true
+          ? (_selectedNoticePeriod ?? 'Immediate')
+          : 'Immediate',
     };
 
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
         if (mounted) {
-          _showValidationToast('Authentication required. Please sign in to save profile.');
+          _showValidationToast(
+            'Authentication required. Please sign in to save profile.',
+          );
           setState(() => _isSaving = false);
         }
         return;
       }
       final uid = user.uid;
       final email = user.email ?? '';
+      if (_selectedResumeBytes != null && _selectedResumeFileName != null) {
+        await _resumeService.uploadPdf(
+          uid: uid,
+          bytes: _selectedResumeBytes!,
+          fileName: _selectedResumeFileName!,
+        );
+        _savedResumeFileName = _selectedResumeFileName;
+        _selectedResumeBytes = null;
+        _selectedResumeFileName = null;
+      }
       await _authService.saveCandidateOnboardingProfile(
         uid: uid,
         email: email,
@@ -560,7 +634,10 @@ class _CandidateOnboardingWizardScreenState
       if (mounted) {
         setState(() => _isSaving = false);
         _showValidationToast(
-          'Could not save your profile. Check your connection and try again.',
+          e is StateError
+              ? '${e.message} Remove the selected resume to finish without it.'
+              : 'Could not finish your profile. Check your connection and try again.',
+          duration: const Duration(seconds: 6),
         );
       }
       return;
@@ -589,8 +666,11 @@ class _CandidateOnboardingWizardScreenState
                 color: Color(0xFFDCFCE7),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.check_circle_rounded,
-                  color: AppTheme.success, size: 38),
+              child: const Icon(
+                Icons.check_circle_rounded,
+                color: AppTheme.success,
+                size: 38,
+              ),
             ),
             const SizedBox(height: 16),
             const Text(
@@ -618,7 +698,8 @@ class _CandidateOnboardingWizardScreenState
                 widget.onFinish();
               },
               borderRadius: BorderRadius.circular(12),
-              pressOverlayColor: const Color(0xFF0C3E9E).withValues(alpha: 0.35),
+              pressOverlayColor: const Color(0xFF0C3E9E)
+                  .withValues(alpha: 0.35),
               child: Container(
                 width: double.infinity,
                 height: 48,
@@ -668,8 +749,9 @@ class _CandidateOnboardingWizardScreenState
         return StatefulBuilder(
           builder: (context, setModalState) {
             final filteredItems = items
-                .where((item) =>
-                    item.toLowerCase().contains(filter.toLowerCase()))
+                .where(
+                  (item) => item.toLowerCase().contains(filter.toLowerCase()),
+                )
                 .toList();
 
             return DraggableScrollableSheet(
@@ -684,11 +766,14 @@ class _CandidateOnboardingWizardScreenState
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 14),
+                        horizontal: 20,
+                        vertical: 14,
+                      ),
                       decoration: const BoxDecoration(
                         color: AppTheme.primary,
-                        borderRadius:
-                            BorderRadius.vertical(top: Radius.circular(20)),
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(20),
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -717,17 +802,24 @@ class _CandidateOnboardingWizardScreenState
                         decoration: InputDecoration(
                           hintText: 'Search $title...',
                           hintStyle: const TextStyle(
-                              color: Color(0xFF94A3B8), fontSize: 14),
-                          prefixIcon: const Icon(Icons.search,
-                              color: Color(0xFF64748B)),
+                            color: Color(0xFF94A3B8),
+                            fontSize: 14,
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.search,
+                            color: Color(0xFF64748B),
+                          ),
                           filled: true,
                           fillColor: const Color(0xFFF8FAFC),
                           contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 10),
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
-                            borderSide:
-                                const BorderSide(color: Color(0xFFE2E8F0)),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFE2E8F0),
+                            ),
                           ),
                         ),
                         onChanged: (val) {
@@ -738,9 +830,15 @@ class _CandidateOnboardingWizardScreenState
 
                     // Custom entry if typed and no exact match
                     if (filter.trim().isNotEmpty &&
-                        !filteredItems.any((it) => it.toLowerCase() == filter.trim().toLowerCase()))
+                        !filteredItems.any(
+                          (it) =>
+                              it.toLowerCase() == filter.trim().toLowerCase(),
+                        ))
                       Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFEFF6FF),
                           borderRadius: BorderRadius.circular(10),
@@ -751,7 +849,11 @@ class _CandidateOnboardingWizardScreenState
                           leading: const CircleAvatar(
                             radius: 14,
                             backgroundColor: AppTheme.primary,
-                            child: Icon(Icons.add_rounded, color: Colors.white, size: 16),
+                            child: Icon(
+                              Icons.add_rounded,
+                              color: Colors.white,
+                              size: 16,
+                            ),
                           ),
                           title: Text(
                             'Use "${filter.trim()}"',
@@ -763,7 +865,10 @@ class _CandidateOnboardingWizardScreenState
                           ),
                           subtitle: const Text(
                             'Tap to select this custom item',
-                            style: TextStyle(color: Color(0xFF64748B), fontSize: 11.5),
+                            style: TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 11.5,
+                            ),
                           ),
                           onTap: () {
                             onSelected(filter.trim());
@@ -782,8 +887,11 @@ class _CandidateOnboardingWizardScreenState
                         itemBuilder: (context, index) {
                           final item = filteredItems[index];
                           return ListTile(
-                            leading: const Icon(Icons.school_outlined,
-                                size: 20, color: AppTheme.primary),
+                            leading: const Icon(
+                              Icons.school_outlined,
+                              size: 20,
+                              color: AppTheme.primary,
+                            ),
                             title: Text(
                               item,
                               style: const TextStyle(
@@ -849,7 +957,11 @@ class _CandidateOnboardingWizardScreenState
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close_rounded, color: Color(0xFF64748B), size: 22),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: Color(0xFF64748B),
+                        size: 22,
+                      ),
                       onPressed: () => Navigator.pop(ctx),
                     ),
                   ],
@@ -879,10 +991,14 @@ class _CandidateOnboardingWizardScreenState
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 150),
                         decoration: BoxDecoration(
-                          color: isSelected ? AppTheme.primary : const Color(0xFFF8FAFC),
+                          color: isSelected
+                              ? AppTheme.primary
+                              : const Color(0xFFF8FAFC),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: isSelected ? AppTheme.primary : const Color(0xFFCBD5E1),
+                            color: isSelected
+                                ? AppTheme.primary
+                                : const Color(0xFFCBD5E1),
                             width: isSelected ? 1.5 : 1.0,
                           ),
                         ),
@@ -891,8 +1007,12 @@ class _CandidateOnboardingWizardScreenState
                           month,
                           style: TextStyle(
                             fontSize: 13,
-                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                            color: isSelected ? Colors.white : const Color(0xFF1E293B),
+                            fontWeight: isSelected
+                                ? FontWeight.w700
+                                : FontWeight.w600,
+                            color: isSelected
+                                ? Colors.white
+                                : const Color(0xFF1E293B),
                           ),
                         ),
                       ),
@@ -916,7 +1036,8 @@ class _CandidateOnboardingWizardScreenState
     required ValueChanged<int> onYearSelected,
   }) {
     // Initial decade: default to selected year, or 2000s (candidate prime age), clamped between startYear & endYear
-    final int defaultYear = selectedYear ?? (endYear >= 2000 && startYear <= 2000 ? 2000 : endYear);
+    final int defaultYear =
+        selectedYear ?? (endYear >= 2000 && startYear <= 2000 ? 2000 : endYear);
     int currentDecadeStart = (defaultYear ~/ 10) * 10;
     if (currentDecadeStart < (startYear ~/ 10) * 10) {
       currentDecadeStart = (startYear ~/ 10) * 10;
@@ -978,7 +1099,11 @@ class _CandidateOnboardingWizardScreenState
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.close_rounded, color: Color(0xFF64748B), size: 22),
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            color: Color(0xFF64748B),
+                            size: 22,
+                          ),
                           onPressed: () => Navigator.pop(ctx),
                         ),
                       ],
@@ -987,11 +1112,17 @@ class _CandidateOnboardingWizardScreenState
 
                     // Decade Stepper Bar with Left / Right Moving Arrows
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+                        border: Border.all(
+                          color: const Color(0xFFE2E8F0),
+                          width: 1.2,
+                        ),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1000,7 +1131,9 @@ class _CandidateOnboardingWizardScreenState
                             icon: Icon(
                               Icons.arrow_back_ios_new_rounded,
                               size: 18,
-                              color: canGoPrevious ? AppTheme.primary : const Color(0xFFCBD5E1),
+                              color: canGoPrevious
+                                  ? AppTheme.primary
+                                  : const Color(0xFFCBD5E1),
                             ),
                             onPressed: canGoPrevious
                                 ? () {
@@ -1014,7 +1147,11 @@ class _CandidateOnboardingWizardScreenState
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.calendar_today_rounded, size: 16, color: AppTheme.primary),
+                              const Icon(
+                                Icons.calendar_today_rounded,
+                                size: 16,
+                                color: AppTheme.primary,
+                              ),
                               const SizedBox(width: 8),
                               Text(
                                 '$currentDecadeStart – $decadeEnd',
@@ -1031,7 +1168,9 @@ class _CandidateOnboardingWizardScreenState
                             icon: Icon(
                               Icons.arrow_forward_ios_rounded,
                               size: 18,
-                              color: canGoNext ? AppTheme.primary : const Color(0xFFCBD5E1),
+                              color: canGoNext
+                                  ? AppTheme.primary
+                                  : const Color(0xFFCBD5E1),
                             ),
                             onPressed: canGoNext
                                 ? () {
@@ -1052,12 +1191,13 @@ class _CandidateOnboardingWizardScreenState
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: decadeYears.length,
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 4,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 10,
-                        childAspectRatio: 1.6,
-                      ),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 4,
+                            crossAxisSpacing: 10,
+                            mainAxisSpacing: 10,
+                            childAspectRatio: 1.6,
+                          ),
                       itemBuilder: (context, index) {
                         final year = decadeYears[index];
                         final isSelected = selectedYear == year;
@@ -1069,16 +1209,22 @@ class _CandidateOnboardingWizardScreenState
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 140),
                             decoration: BoxDecoration(
-                              color: isSelected ? AppTheme.primary : Colors.white,
+                              color: isSelected
+                                  ? AppTheme.primary
+                                  : Colors.white,
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(
-                                color: isSelected ? AppTheme.primary : const Color(0xFFCBD5E1),
+                                color: isSelected
+                                    ? AppTheme.primary
+                                    : const Color(0xFFCBD5E1),
                                 width: isSelected ? 1.6 : 1.0,
                               ),
                               boxShadow: isSelected
                                   ? [
                                       BoxShadow(
-                                        color: AppTheme.primary.withValues(alpha: 0.25),
+                                        color: AppTheme.primary.withValues(
+                                          alpha: 0.25,
+                                        ),
                                         blurRadius: 6,
                                         offset: const Offset(0, 2),
                                       ),
@@ -1090,8 +1236,12 @@ class _CandidateOnboardingWizardScreenState
                               '$year',
                               style: TextStyle(
                                 fontSize: 14.5,
-                                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                                color: isSelected ? Colors.white : const Color(0xFF1E293B),
+                                fontWeight: isSelected
+                                    ? FontWeight.w800
+                                    : FontWeight.w600,
+                                color: isSelected
+                                    ? Colors.white
+                                    : const Color(0xFF1E293B),
                               ),
                             ),
                           ),
@@ -1144,7 +1294,9 @@ class _CandidateOnboardingWizardScreenState
                 style: TextStyle(
                   fontSize: 13.5,
                   fontWeight: hasValue ? FontWeight.w600 : FontWeight.w400,
-                  color: hasValue ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
+                  color: hasValue
+                      ? const Color(0xFF0F172A)
+                      : const Color(0xFF94A3B8),
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -1197,7 +1349,10 @@ class _CandidateOnboardingWizardScreenState
                 // Active Step Content in AnimatedSwitcher
                 Expanded(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 8,
+                    ),
                     physics: const BouncingScrollPhysics(),
                     child: AnimatedSwitcher(
                       duration: const Duration(milliseconds: 260),
@@ -1266,8 +1421,8 @@ class _CandidateOnboardingWizardScreenState
                 color: isActive
                     ? AppTheme.primary
                     : isPast
-                        ? const Color(0xFFDCFCE7)
-                        : const Color(0xFFE2E8F0),
+                    ? const Color(0xFFDCFCE7)
+                    : const Color(0xFFE2E8F0),
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: isActive ? AppTheme.primary : Colors.transparent,
@@ -1420,8 +1575,11 @@ class _CandidateOnboardingWizardScreenState
                 : const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.my_location_rounded,
-                          color: Colors.white, size: 18),
+                      Icon(
+                        Icons.my_location_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
                       SizedBox(width: 8),
                       Text(
                         'Detect My Current Location',
@@ -1442,8 +1600,10 @@ class _CandidateOnboardingWizardScreenState
             Expanded(child: Divider(color: Color(0xFFE2E8F0))),
             Padding(
               padding: EdgeInsets.symmetric(horizontal: 12),
-              child: Text('OR',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
+              child: Text(
+                'OR',
+                style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+              ),
             ),
             Expanded(child: Divider(color: Color(0xFFE2E8F0))),
           ],
@@ -1457,10 +1617,9 @@ class _CandidateOnboardingWizardScreenState
           icon: Icons.map_outlined,
           onClear: _selectedState.isNotEmpty
               ? () => setState(() {
-                    _selectedState = '';
-                    _selectedDistrict = '';
-                    _selectedCity = '';
-                  })
+                  _selectedState = '';
+                  _selectedDistrict = '';
+                })
               : null,
           onTap: () {
             _openSearchablePicker(
@@ -1469,10 +1628,7 @@ class _CandidateOnboardingWizardScreenState
               onSelected: (val) {
                 setState(() {
                   _selectedState = val;
-                  // Auto-default district and default city for the selected state
-                  final districts = LocationService.getDistrictsForState(val);
-                  _selectedDistrict = districts.isNotEmpty ? districts.first : '$val Central';
-                  _selectedCity = LocationService.getDefaultCityForDistrict(_selectedDistrict);
+                  _selectedDistrict = '';
                 });
               },
             );
@@ -1487,9 +1643,8 @@ class _CandidateOnboardingWizardScreenState
           icon: Icons.location_on_outlined,
           onClear: _selectedDistrict.isNotEmpty
               ? () => setState(() {
-                    _selectedDistrict = '';
-                    _selectedCity = '';
-                  })
+                  _selectedDistrict = '';
+                })
               : null,
           onTap: () {
             if (_selectedState.isEmpty) {
@@ -1502,8 +1657,6 @@ class _CandidateOnboardingWizardScreenState
               onSelected: (val) {
                 setState(() {
                   _selectedDistrict = val;
-                  // Remove old city and change to the default city for this new district
-                  _selectedCity = LocationService.getDefaultCityForDistrict(val);
                 });
               },
             );
@@ -1511,28 +1664,6 @@ class _CandidateOnboardingWizardScreenState
         ),
         const SizedBox(height: 14),
 
-        // 3. City / Town / Area Selector
-        _buildDropdownSelector(
-          label: 'Your City / Town / Area*',
-          value: _selectedCity,
-          icon: Icons.location_city_rounded,
-          onClear: _selectedCity.isNotEmpty
-              ? () => setState(() => _selectedCity = '')
-              : null,
-          onTap: () {
-            if (_selectedDistrict.isEmpty) {
-              _showValidationToast('Please choose your District first');
-              return;
-            }
-            _openSearchablePicker(
-              title: 'Choose City in $_selectedDistrict',
-              items: LocationService.getCitiesForDistrict(_selectedDistrict),
-              onSelected: (val) {
-                setState(() => _selectedCity = val);
-              },
-            );
-          },
-        ),
         const SizedBox(height: 18),
 
         // Birth Month, Year & Calculated Age
@@ -1584,15 +1715,22 @@ class _CandidateOnboardingWizardScreenState
                 decoration: BoxDecoration(
                   color: const Color(0xFFF1F5F9),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
+                  border: Border.all(
+                    color: const Color(0xFFCBD5E1),
+                    width: 1.2,
+                  ),
                 ),
                 alignment: Alignment.center,
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text('Age',
-                        style: TextStyle(
-                            fontSize: 10.5, color: Color(0xFF64748B))),
+                    const Text(
+                      'Age',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
                     Text(
                       _calculatedAge != null ? '$_calculatedAge' : '--',
                       style: const TextStyle(
@@ -1694,11 +1832,13 @@ class _CandidateOnboardingWizardScreenState
   Widget _buildStep3JobTitles() {
     final cleanQuery = _jobSearchQuery.trim();
     final filteredJobs = _masterJobTitles
-        .where((title) =>
-            title.toLowerCase().contains(cleanQuery.toLowerCase()))
+        .where(
+          (title) => title.toLowerCase().contains(cleanQuery.toLowerCase()),
+        )
         .toList();
-    final bool isAlreadySelected = _selectedJobTitles
-        .any((t) => t.toLowerCase() == cleanQuery.toLowerCase());
+    final bool isAlreadySelected = _selectedJobTitles.any(
+      (t) => t.toLowerCase() == cleanQuery.toLowerCase(),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1735,12 +1875,17 @@ class _CandidateOnboardingWizardScreenState
             runSpacing: 8,
             children: _selectedJobTitles.map((title) {
               return Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFEFF8FF),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFFB2DDFF), width: 1.2),
+                  border: Border.all(
+                    color: const Color(0xFFB2DDFF),
+                    width: 1.2,
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1760,8 +1905,11 @@ class _CandidateOnboardingWizardScreenState
                           _selectedJobTitles.remove(title);
                         });
                       },
-                      child: const Icon(Icons.close_rounded,
-                          size: 15, color: AppTheme.primary),
+                      child: const Icon(
+                        Icons.close_rounded,
+                        size: 15,
+                        color: AppTheme.primary,
+                      ),
                     ),
                   ],
                 ),
@@ -1780,7 +1928,11 @@ class _CandidateOnboardingWizardScreenState
             prefixIcon: const Icon(Icons.search, color: Color(0xFF64748B)),
             suffixIcon: cleanQuery.isNotEmpty
                 ? IconButton(
-                    icon: const Icon(Icons.clear_rounded, size: 18, color: Color(0xFF94A3B8)),
+                    icon: const Icon(
+                      Icons.clear_rounded,
+                      size: 18,
+                      color: Color(0xFF94A3B8),
+                    ),
                     onPressed: () {
                       _jobSearchController.clear();
                       setState(() => _jobSearchQuery = '');
@@ -1789,8 +1941,10 @@ class _CandidateOnboardingWizardScreenState
                 : null,
             filled: true,
             fillColor: const Color(0xFFF8FAFC),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 12,
+            ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
               borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
@@ -1819,7 +1973,11 @@ class _CandidateOnboardingWizardScreenState
                   color: AppTheme.primary,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.add_rounded, color: Colors.white, size: 20),
+                child: const Icon(
+                  Icons.add_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
               ),
               title: Text(
                 'Add "$cleanQuery" as custom role',
@@ -1835,7 +1993,9 @@ class _CandidateOnboardingWizardScreenState
               ),
               onTap: () {
                 if (_selectedJobTitles.length >= 4) {
-                  _showValidationToast('Maximum 4 job titles allowed. Remove one to add this.');
+                  _showValidationToast(
+                    'Maximum 4 job titles allowed. Remove one to add this.',
+                  );
                   return;
                 }
                 setState(() {
@@ -1865,8 +2025,11 @@ class _CandidateOnboardingWizardScreenState
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.work_off_outlined,
-                            size: 38, color: Color(0xFF94A3B8)),
+                        const Icon(
+                          Icons.work_off_outlined,
+                          size: 38,
+                          color: Color(0xFF94A3B8),
+                        ),
                         const SizedBox(height: 10),
                         Text(
                           'No standard listing for "$cleanQuery"',
@@ -1900,14 +2063,21 @@ class _CandidateOnboardingWizardScreenState
 
                     return ListTile(
                       dense: true,
-                      leading: const Icon(Icons.business_center_outlined,
-                          size: 19, color: Color(0xFF64748B)),
+                      leading: const Icon(
+                        Icons.business_center_outlined,
+                        size: 19,
+                        color: Color(0xFF64748B),
+                      ),
                       title: Text(
                         title,
                         style: TextStyle(
                           fontSize: 14,
-                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                          color: isSelected ? AppTheme.primary : const Color(0xFF1E293B),
+                          fontWeight: isSelected
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          color: isSelected
+                              ? AppTheme.primary
+                              : const Color(0xFF1E293B),
                         ),
                       ),
                       trailing: SizedBox(
@@ -1917,7 +2087,8 @@ class _CandidateOnboardingWizardScreenState
                           value: isSelected,
                           activeColor: AppTheme.primary,
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(4)),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
                           onChanged: (val) {
                             setState(() {
                               if (val == true) {
@@ -1925,7 +2096,8 @@ class _CandidateOnboardingWizardScreenState
                                   _selectedJobTitles.add(title);
                                 } else {
                                   _showValidationToast(
-                                      'You can select a maximum of 4 job titles');
+                                    'You can select a maximum of 4 job titles',
+                                  );
                                 }
                               } else {
                                 _selectedJobTitles.remove(title);
@@ -1941,7 +2113,9 @@ class _CandidateOnboardingWizardScreenState
                           } else if (_selectedJobTitles.length < 4) {
                             _selectedJobTitles.add(title);
                           } else {
-                            _showValidationToast('Maximum 4 job titles allowed');
+                            _showValidationToast(
+                              'Maximum 4 job titles allowed',
+                            );
                           }
                         });
                       },
@@ -2013,8 +2187,11 @@ class _CandidateOnboardingWizardScreenState
             ),
             child: const Row(
               children: [
-                Icon(Icons.workspace_premium_rounded,
-                    color: AppTheme.primary, size: 28),
+                Icon(
+                  Icons.workspace_premium_rounded,
+                  color: AppTheme.primary,
+                  size: 28,
+                ),
                 SizedBox(width: 14),
                 Expanded(
                   child: Column(
@@ -2120,7 +2297,9 @@ class _CandidateOnboardingWizardScreenState
             ),
             child: TextField(
               controller: _salaryController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               style: const TextStyle(
                 fontSize: 14.5,
                 fontWeight: FontWeight.w600,
@@ -2128,7 +2307,10 @@ class _CandidateOnboardingWizardScreenState
               ),
               decoration: InputDecoration(
                 hintText: 'e.g. 4.5',
-                hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 14),
+                hintStyle: const TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontSize: 14,
+                ),
                 prefixIcon: const Icon(
                   Icons.currency_rupee_rounded,
                   size: 19,
@@ -2136,7 +2318,10 @@ class _CandidateOnboardingWizardScreenState
                 ),
                 suffixIcon: Container(
                   margin: const EdgeInsets.only(right: 10, top: 10, bottom: 10),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFEFF8FF),
                     borderRadius: BorderRadius.circular(6),
@@ -2154,22 +2339,30 @@ class _CandidateOnboardingWizardScreenState
                 ),
                 filled: true,
                 fillColor: Colors.white,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide:
-                      const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
+                  borderSide: const BorderSide(
+                    color: Color(0xFFCBD5E1),
+                    width: 1.2,
+                  ),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide:
-                      const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
+                  borderSide: const BorderSide(
+                    color: Color(0xFFCBD5E1),
+                    width: 1.2,
+                  ),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide:
-                      const BorderSide(color: AppTheme.primary, width: 1.8),
+                  borderSide: const BorderSide(
+                    color: AppTheme.primary,
+                    width: 1.8,
+                  ),
                 ),
               ),
             ),
@@ -2187,13 +2380,84 @@ class _CandidateOnboardingWizardScreenState
               '15 Days',
               '30 Days',
               '60 Days',
-              '90 Days'
+              '90 Days',
             ],
             onChanged: (val) {
               if (val != null) setState(() => _selectedNoticePeriod = val);
             },
           ),
         ],
+        const SizedBox(height: 22),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFCBD5E1)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Resume (optional)',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 5),
+              const Text(
+                'Choose a PDF up to 10 MB. It uploads when you finish your profile.',
+                style: TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 12,
+                  height: 1.4,
+                ),
+              ),
+              if (_selectedResumeFileName != null ||
+                  _savedResumeFileName != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _selectedResumeFileName ?? _savedResumeFileName!,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _isSaving ? null : _pickResume,
+                    icon: const Icon(Icons.upload_file_outlined, size: 18),
+                    label: Text(
+                      _selectedResumeFileName == null &&
+                              _savedResumeFileName == null
+                          ? 'Choose PDF'
+                          : 'Replace PDF',
+                    ),
+                  ),
+                  if (_selectedResumeFileName != null)
+                    TextButton(
+                      onPressed: _isSaving
+                          ? null
+                          : () => setState(() {
+                              _selectedResumeBytes = null;
+                              _selectedResumeFileName = null;
+                            }),
+                      child: const Text('Skip upload'),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 24),
       ],
     );
@@ -2226,10 +2490,10 @@ class _CandidateOnboardingWizardScreenState
                   _currentStep == 1
                       ? 'Back to Login'
                       : _currentStep == 2
-                          ? 'Personal Info'
-                          : _currentStep == 3
-                              ? 'Education'
-                              : 'Job Titles',
+                      ? 'Personal Info'
+                      : _currentStep == 3
+                      ? 'Education'
+                      : 'Job Titles',
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ],
@@ -2277,8 +2541,11 @@ class _CandidateOnboardingWizardScreenState
                           ),
                         ),
                         const SizedBox(width: 8),
-                        const Icon(Icons.arrow_forward_rounded,
-                            size: 17, color: Colors.white),
+                        const Icon(
+                          Icons.arrow_forward_rounded,
+                          size: 17,
+                          color: Colors.white,
+                        ),
                       ],
                     ),
             ),
@@ -2315,11 +2582,17 @@ class _CandidateOnboardingWizardScreenState
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: const TextStyle(fontSize: 14, color: Color(0xFF94A3B8)),
-          prefixIcon: Icon(prefixIcon, color: const Color(0xFF64748B), size: 19),
+          prefixIcon: Icon(
+            prefixIcon,
+            color: const Color(0xFF64748B),
+            size: 19,
+          ),
           filled: true,
           fillColor: Colors.white,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 12,
+          ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
             borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
@@ -2360,9 +2633,11 @@ class _CandidateOnboardingWizardScreenState
         ),
         child: Row(
           children: [
-            Icon(icon,
-                color: hasValue ? AppTheme.primary : const Color(0xFF94A3B8),
-                size: 19),
+            Icon(
+              icon,
+              color: hasValue ? AppTheme.primary : const Color(0xFF94A3B8),
+              size: 19,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -2383,12 +2658,18 @@ class _CandidateOnboardingWizardScreenState
                 behavior: HitTestBehavior.opaque,
                 child: const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                  child: Icon(Icons.close_rounded,
-                      color: Color(0xFF94A3B8), size: 18),
+                  child: Icon(
+                    Icons.close_rounded,
+                    color: Color(0xFF94A3B8),
+                    size: 18,
+                  ),
                 ),
               ),
-            const Icon(Icons.arrow_drop_down_rounded,
-                color: Color(0xFF64748B), size: 26),
+            const Icon(
+              Icons.arrow_drop_down_rounded,
+              color: Color(0xFF64748B),
+              size: 26,
+            ),
           ],
         ),
       ),
@@ -2417,8 +2698,10 @@ class _CandidateOnboardingWizardScreenState
           overflow: TextOverflow.ellipsis,
         ),
         decoration: InputDecoration(
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 10,
+          ),
           filled: true,
           fillColor: Colors.white,
           enabledBorder: OutlineInputBorder(
@@ -2488,7 +2771,9 @@ class _CandidateOnboardingWizardScreenState
             style: TextStyle(
               fontSize: 14,
               fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-              color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF475569),
+              color: isSelected
+                  ? const Color(0xFF0F172A)
+                  : const Color(0xFF475569),
             ),
           ),
         ],
@@ -2536,17 +2821,23 @@ class _CandidateOnboardingWizardScreenState
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: canDecrement ? const Color(0xFFEFF8FF) : const Color(0xFFF8FAFC),
+                    color: canDecrement
+                        ? const Color(0xFFEFF8FF)
+                        : const Color(0xFFF8FAFC),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: canDecrement ? const Color(0xFFB2DDFF) : const Color(0xFFE2E8F0),
+                      color: canDecrement
+                          ? const Color(0xFFB2DDFF)
+                          : const Color(0xFFE2E8F0),
                     ),
                   ),
                   alignment: Alignment.center,
                   child: Icon(
                     Icons.remove_rounded,
                     size: 18,
-                    color: canDecrement ? AppTheme.primary : const Color(0xFFCBD5E1),
+                    color: canDecrement
+                        ? AppTheme.primary
+                        : const Color(0xFFCBD5E1),
                   ),
                 ),
               ),
@@ -2576,14 +2867,18 @@ class _CandidateOnboardingWizardScreenState
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: canIncrement ? AppTheme.primary : const Color(0xFFF1F5F9),
+                    color: canIncrement
+                        ? AppTheme.primary
+                        : const Color(0xFFF1F5F9),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   alignment: Alignment.center,
                   child: Icon(
                     Icons.add_rounded,
                     size: 18,
-                    color: canIncrement ? Colors.white : const Color(0xFFCBD5E1),
+                    color: canIncrement
+                        ? Colors.white
+                        : const Color(0xFFCBD5E1),
                   ),
                 ),
               ),
@@ -2607,10 +2902,16 @@ class _CandidateOnboardingWizardScreenState
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: Text(
             title,
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF0F172A),
+            ),
           ),
           content: TextField(
             controller: controller,
@@ -2620,18 +2921,25 @@ class _CandidateOnboardingWizardScreenState
               hintText: 'Enter number ($min - $max)',
               filled: true,
               fillColor: const Color(0xFFF8FAFC),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Color(0xFF64748B)),
+              ),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.primary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
               onPressed: () {
                 final val = int.tryParse(controller.text.trim());
@@ -2639,10 +2947,18 @@ class _CandidateOnboardingWizardScreenState
                   onConfirmed(val);
                   Navigator.pop(ctx);
                 } else {
-                  _showValidationToast('Please enter a valid number between $min and $max');
+                  _showValidationToast(
+                    'Please enter a valid number between $min and $max',
+                  );
                 }
               },
-              child: const Text('Set', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+              child: const Text(
+                'Set',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
           ],
         );

@@ -4,6 +4,8 @@ import helmet from 'helmet';
 import dotenv from 'dotenv';
 import authRoutes from './routes/authRoutes.js';
 import resumeRoutes from './routes/resumeRoutes.js';
+import profilePhotoRoutes from './routes/profilePhotoRoutes.js';
+import { firebaseApp } from './config/firebase.js';
 
 dotenv.config();
 
@@ -29,6 +31,17 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Configuration readiness for the resume upload flow; never returns secrets.
+app.get('/api/resumes/ready', (req, res) => {
+  const firebaseAdmin = firebaseApp != null;
+  const cloudinary = Boolean(
+    process.env.CLOUDINARY_CLOUD_NAME &&
+    process.env.CLOUDINARY_API_KEY &&
+    process.env.CLOUDINARY_API_SECRET,
+  );
+  res.status(firebaseAdmin && cloudinary ? 200 : 503).json({ firebaseAdmin, cloudinary });
+});
+
 // Root route
 app.get('/', (req, res) => {
   res.json({ message: 'Job Portal Backend API is active' });
@@ -37,6 +50,7 @@ app.get('/', (req, res) => {
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/resumes', resumeRoutes);
+app.use('/api/profile-photo', profilePhotoRoutes);
 
 // Global Error Handler
 app.use((err, req, res, next) => {

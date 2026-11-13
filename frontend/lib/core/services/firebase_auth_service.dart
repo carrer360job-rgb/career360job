@@ -214,6 +214,7 @@ class FirebaseAuthService {
     batch.set(candidateRef, {
       'uid': uid,
       ...onboardingData,
+      'city': FieldValue.delete(),
       'onboardingCompleted': true,
       'updatedAt': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
@@ -225,7 +226,7 @@ class FirebaseAuthService {
       'role': 'candidate',
       'displayName': onboardingData['fullName'],
       'phone': onboardingData['phone'],
-      'location': onboardingData['city'] ?? onboardingData['district'],
+      'location': onboardingData['district'],
       'onboardingCompleted': true,
       'updatedAt': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),

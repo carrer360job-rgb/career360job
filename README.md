@@ -28,6 +28,8 @@ The custom backend OTP flow has been removed from the API. Email/password sign-u
 
 For Android resume uploads, follow [`docs/CLOUDINARY_RESUME_SETUP.md`](docs/CLOUDINARY_RESUME_SETUP.md). Run Flutter with `--dart-define=API_BASE_URL=https://YOUR_BACKEND`.
 
+Candidate profile photos use the same backend and Cloudinary account; see [`docs/PROFILE_PHOTO_SETUP.md`](docs/PROFILE_PHOTO_SETUP.md).
+
 ## Security configuration
 
 - Firestore rules are in [`firestore.rules`](firestore.rules) and are selected by [`firebase.json`](firebase.json).

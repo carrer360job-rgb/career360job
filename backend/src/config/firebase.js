@@ -16,22 +16,21 @@ try {
   if (getApps().length > 0) {
     firebaseApp = getApp();
     auth = getAuth(firebaseApp);
-  } else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    // 1. From Environment Variable (Vercel / Cloud)
-    let serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
-    if (typeof serviceAccount === 'string') {
-      try {
-        serviceAccount = JSON.parse(serviceAccount);
-      } catch (parseErr) {
-        // In case env var has unescaped newlines or quotes
-        serviceAccount = JSON.parse(serviceAccount.replace(/\\n/g, '\n'));
-      }
-    }
+  } else if (process.env.FIREBASE_SERVICE_ACCOUNT ||
+      (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY)) {
+    // Vercel can use the complete JSON or three separate secret variables.
+    const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
+      ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
+      : {
+          project_id: process.env.FIREBASE_PROJECT_ID,
+          client_email: process.env.FIREBASE_CLIENT_EMAIL,
+          private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        };
     firebaseApp = initializeApp({
       credential: admin.cert(serviceAccount)
     });
     auth = getAuth(firebaseApp);
-    console.log('[Firebase Admin] Successfully initialized from FIREBASE_SERVICE_ACCOUNT env var.');
+    console.log('[Firebase Admin] Initialized from backend environment variables.');
   } else {
     // 2. From Local File (Local development)
     const backendDir = path.resolve(__dirname, '../../');

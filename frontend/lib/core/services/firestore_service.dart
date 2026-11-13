@@ -189,32 +189,51 @@ class FirestoreService {
     if (candidateUid.isEmpty) return Stream.value([]);
     return _applicationsRef
         .where('candidateUid', isEqualTo: candidateUid)
-        .orderBy('appliedAt', descending: true)
         .snapshots()
         .map((snapshot) {
-          return snapshot.docs.map((doc) {
+          final applications = snapshot.docs.map((doc) {
             final data = doc.data() as Map<String, dynamic>;
             data['id'] = doc.id;
             return data;
           }).toList();
+          applications.sort((a, b) {
+            final aTime = a['appliedAt'] is Timestamp
+                ? (a['appliedAt'] as Timestamp).millisecondsSinceEpoch
+                : 0;
+            final bTime = b['appliedAt'] is Timestamp
+                ? (b['appliedAt'] as Timestamp).millisecondsSinceEpoch
+                : 0;
+            return bTime.compareTo(aTime);
+          });
+          return applications;
         });
   }
 
   /// 9. Stream Recruiter Applicants
   Stream<List<Map<String, dynamic>>> streamRecruiterApplicants({
-    String? employerUid,
+    required String employerUid,
   }) {
-    Query q = _applicationsRef.orderBy('appliedAt', descending: true);
-    if (employerUid != null && employerUid.isNotEmpty) {
-      q = q.where('employerUid', isEqualTo: employerUid);
-    }
-    return q.snapshots().map((snapshot) {
-      return snapshot.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        data['id'] = doc.id;
-        return data;
-      }).toList();
-    });
+    if (employerUid.isEmpty) return Stream.value([]);
+    return _applicationsRef
+        .where('employerUid', isEqualTo: employerUid)
+        .snapshots()
+        .map((snapshot) {
+          final applicants = snapshot.docs.map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            data['id'] = doc.id;
+            return data;
+          }).toList();
+          applicants.sort((a, b) {
+            final aTime = a['appliedAt'] is Timestamp
+                ? (a['appliedAt'] as Timestamp).millisecondsSinceEpoch
+                : 0;
+            final bTime = b['appliedAt'] is Timestamp
+                ? (b['appliedAt'] as Timestamp).millisecondsSinceEpoch
+                : 0;
+            return bTime.compareTo(aTime);
+          });
+          return applicants;
+        });
   }
 
   /// 10. Stream Live Candidate Profile from Firestore
@@ -226,6 +245,15 @@ class FirestoreService {
       }
       return null;
     });
+  }
+
+  Stream<String?> streamCandidatePublicPhoto(String uid) {
+    if (uid.isEmpty) return Stream.value(null);
+    return _firestore
+        .collection('candidate_public_profiles')
+        .doc(uid)
+        .snapshots()
+        .map((doc) => doc.data()?['photoUrl'] as String?);
   }
 
   Future<void> updateCandidateProfile({

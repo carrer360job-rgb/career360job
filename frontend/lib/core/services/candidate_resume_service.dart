@@ -5,7 +5,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
 class CandidateResumeService {
-  static const _apiBaseUrl = String.fromEnvironment('API_BASE_URL');
+  static const _defaultBaseUrl = 'https://career360job-backend.vercel.app';
+  static const _envBaseUrl = String.fromEnvironment('API_BASE_URL');
+  static String get _apiBaseUrl =>
+      _envBaseUrl.isNotEmpty ? _envBaseUrl : _defaultBaseUrl;
 
   Uri _endpoint(String path) {
     if (_apiBaseUrl.isEmpty) {

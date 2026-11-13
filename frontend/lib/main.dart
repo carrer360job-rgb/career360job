@@ -12,6 +12,7 @@ import 'core/constants/app_constants.dart';
 import 'core/responsive/responsive_layout.dart';
 import 'core/services/firebase_auth_service.dart';
 import 'core/services/candidate_resume_service.dart';
+import 'core/services/candidate_photo_service.dart';
 import 'core/services/firestore_service.dart';
 import 'core/widgets/bouncy_button.dart';
 import 'data/models/job_model.dart';
@@ -21,6 +22,7 @@ import 'features/candidate/candidate_guidelines_screen.dart';
 import 'features/auth/candidate_login_screen.dart';
 import 'features/candidate/candidate_onboarding_wizard_screen.dart';
 import 'features/legal/privacy_policy_screen.dart';
+import 'features/notifications/notification_center_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -574,6 +576,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
   final FirestoreService _firestoreService = FirestoreService();
   final CandidateResumeService _candidateResumeService =
       CandidateResumeService();
+  final CandidatePhotoService _candidatePhotoService = CandidatePhotoService();
   String get _currentUid =>
       FirebaseAuth.instance.currentUser?.uid ?? 'guest_candidate';
 
@@ -600,6 +603,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
   String _postWorkMode = 'Hybrid';
   bool _isPostingJob = false;
   bool _isUploadingResume = false;
+  bool _isUploadingPhoto = false;
 
   StreamSubscription<Set<String>>? _savedSub;
   StreamSubscription<Set<String>>? _appliedSub;
@@ -775,7 +779,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Your profile and verified resume have been forwarded directly to the hiring team at ${job.companyName}.',
+              'Your application has been sent to the hiring team at ${job.companyName}.',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontSize: 14,
@@ -1156,147 +1160,11 @@ class _MainShellScreenState extends State<MainShellScreen> {
     );
   }
 
-  void _showNotificationsDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: const [
-            Icon(Icons.notifications_active, color: AppTheme.primary),
-            SizedBox(width: 8),
-            Text('Notifications (2)'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const CircleAvatar(
-                backgroundColor: AppTheme.primaryLight,
-                child: Icon(Icons.business, color: AppTheme.primary),
-              ),
-              title: const Text(
-                'Google Technologies',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              subtitle: const Text(
-                'Viewed your application for Senior UI/UX Designer',
-                style: TextStyle(fontSize: 12),
-              ),
-              trailing: const Text(
-                '2h ago',
-                style: TextStyle(fontSize: 11, color: Colors.grey),
-              ),
-            ),
-            const Divider(),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const CircleAvatar(
-                backgroundColor: Color(0xFFDCFCE7),
-                child: Icon(Icons.new_releases, color: AppTheme.success),
-              ),
-              title: const Text(
-                'New Matching Job Alert',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              subtitle: const Text(
-                'Full Stack Flutter Developer in Bengaluru',
-                style: TextStyle(fontSize: 12),
-              ),
-              trailing: const Text(
-                '5h ago',
-                style: TextStyle(fontSize: 11, color: Colors.grey),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showCandidateNotifications() {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.white,
-      isScrollControlled: true,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 42,
-                    height: 42,
-                    decoration: const BoxDecoration(
-                      color: AppTheme.primaryLight,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.notifications_none_rounded,
-                      color: AppTheme.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Text(
-                    'Notifications',
-                    style: TextStyle(
-                      color: AppTheme.textPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 28),
-              const Icon(
-                Icons.notifications_off_outlined,
-                color: AppTheme.textSecondary,
-                size: 42,
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'You’re all caught up',
-                style: TextStyle(
-                  color: AppTheme.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'There are no notifications to show right now.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppTheme.textSecondary,
-                  fontSize: 13,
-                  height: 1.4,
-                ),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () => Navigator.pop(sheetContext),
-                  child: const Text('Done'),
-                ),
-              ),
-            ],
-          ),
+  void _openNotifications() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => NotificationCenterScreen(
+          uid: FirebaseAuth.instance.currentUser?.uid,
         ),
       ),
     );
@@ -1357,7 +1225,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
               ? [
                   IconButton(
                     tooltip: 'Notifications',
-                    onPressed: _showCandidateNotifications,
+                    onPressed: _openNotifications,
                     icon: const Icon(Icons.notifications_none_rounded),
                   ),
                   const SizedBox(width: 8),
@@ -1366,7 +1234,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                   IconButton(
                     tooltip: 'Notifications',
                     icon: const Icon(Icons.notifications_none),
-                    onPressed: _showNotificationsDialog,
+                    onPressed: _openNotifications,
                   ),
                   IconButton(
                     tooltip: 'Switch Mode',
@@ -2676,25 +2544,30 @@ class _MainShellScreenState extends State<MainShellScreen> {
             ? _profileString(profile, 'fullName')
             : FirebaseAuth.instance.currentUser?.displayName ?? 'Candidate';
         final phone = _profileString(profile, 'phone');
-        final city = _profileString(profile, 'city');
         final district = _profileString(profile, 'district');
         final state = _profileString(profile, 'state');
         final locationDisplay = [
-          city,
           district,
           state,
         ].where((part) => part.isNotEmpty).toSet().join(', ');
         final qualification = _profileString(profile, 'qualification');
         final educationLevel = _profileString(profile, 'educationLevel');
-        final qualificationDisplay = [
-          qualification,
-          educationLevel,
-        ].where((part) => part.isNotEmpty).toSet().join(' · ');
         final preferredRoles = _profileStringList(
           profile?['preferredJobTitles'],
         );
-        final skills = _profileStringList(profile?['skills']);
+        final email =
+            FirebaseAuth.instance.currentUser?.email ??
+            _profileString(profile, 'email');
+        final birthMonth = _profileString(profile, 'birthMonth');
+        final birthYear = _profileString(profile, 'birthYear');
+        final birthDisplay = [
+          birthMonth,
+          if (birthYear.isNotEmpty && birthYear != '0') birthYear,
+        ].where((part) => part.isNotEmpty).join(' ');
+        final hasExperience = profile?['hasExperience'] == true;
+        final experienceRecorded = profile?['hasExperience'] is bool;
         final resumeFileName = _profileString(profile, 'resumeFileName');
+        final profilePhotoUrl = _profileString(profile, 'profilePhotoUrl');
         final initials = fullName
             .trim()
             .split(RegExp(r'\s+'))
@@ -2723,25 +2596,60 @@ class _MainShellScreenState extends State<MainShellScreen> {
               ),
               child: Column(
                 children: [
-                  CircleAvatar(
-                    radius: 38,
-                    backgroundColor: AppTheme.primaryLight,
-                    child: CircleAvatar(
-                      radius: 33,
-                      backgroundColor: Colors.white,
-                      child: CircleAvatar(
-                        radius: 29,
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      CircleAvatar(
+                        radius: 40,
                         backgroundColor: AppTheme.primaryLight,
-                        child: Text(
-                          initials.isEmpty ? 'C' : initials,
-                          style: const TextStyle(
-                            fontSize: 21,
-                            fontWeight: FontWeight.w800,
-                            color: AppTheme.primary,
+                        child: CircleAvatar(
+                          radius: 36,
+                          backgroundColor: Colors.white,
+                          child: ClipOval(
+                            child: SizedBox(
+                              width: 66,
+                              height: 66,
+                              child: profilePhotoUrl.isEmpty
+                                  ? _buildProfileInitials(initials)
+                                  : Image.network(
+                                      profilePhotoUrl,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, _, _) =>
+                                          _buildProfileInitials(initials),
+                                    ),
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                      Positioned(
+                        right: -5,
+                        bottom: -3,
+                        child: Material(
+                          color: AppTheme.primary,
+                          shape: const CircleBorder(),
+                          child: IconButton(
+                            tooltip: 'Edit profile photo',
+                            onPressed: _isUploadingPhoto
+                                ? null
+                                : () => _showPhotoActions(profile ?? {}),
+                            icon: _isUploadingPhoto
+                                ? const SizedBox(
+                                    width: 17,
+                                    height: 17,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.camera_alt_outlined,
+                                    color: Colors.white,
+                                    size: 19,
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   Text(
@@ -2826,62 +2734,102 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 color: AppTheme.textPrimary,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
+            _buildProfileFactsSection(
+              title: 'Personal information',
+              icon: Icons.person_outline_rounded,
+              fields: [
+                ('Email', _orNotProvided(email)),
+                ('Gender', _profileValue(profile, 'gender')),
+                ('Marital status', _profileValue(profile, 'maritalStatus')),
+                ('Birth month / year', _orNotProvided(birthDisplay)),
+                ('Age', _profileValue(profile, 'age')),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildProfileFactsSection(
+              title: 'Location',
+              icon: Icons.location_on_outlined,
+              fields: [
+                ('District', _profileValue(profile, 'district')),
+                ('State', _profileValue(profile, 'state')),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildProfileFactsSection(
+              title: 'Education',
+              icon: Icons.school_outlined,
+              fields: [
+                ('Education level', _orNotProvided(educationLevel)),
+                ('Qualification', _orNotProvided(qualification)),
+                (
+                  'College or school',
+                  _profileValue(profile, 'collegeOrSchool'),
+                ),
+                ('Graduation year', _profileValue(profile, 'graduationYear')),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildProfileFactsSection(
+              title: 'Career preferences',
+              icon: Icons.work_outline_rounded,
+              fields: [
+                (
+                  'Preferred job titles',
+                  _orNotProvided(preferredRoles.join(', ')),
+                ),
+                (
+                  'Work experience',
+                  experienceRecorded
+                      ? (hasExperience ? 'Experienced' : 'Fresher')
+                      : 'Not provided',
+                ),
+                if (hasExperience) ...[
+                  (
+                    'Experience length',
+                    _orNotProvided(
+                      [
+                            _profileString(profile, 'experienceYears'),
+                            _profileString(profile, 'experienceMonths'),
+                          ]
+                          .where((part) => part.isNotEmpty && part != '0')
+                          .join(' '),
+                    ),
+                  ),
+                  ('Last company', _profileValue(profile, 'lastCompany')),
+                  ('Last job title', _profileValue(profile, 'lastJobTitle')),
+                  ('Salary', _profileValue(profile, 'salary')),
+                  ('Notice period', _profileValue(profile, 'noticePeriod')),
+                ],
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildProfileSectionTitle('Resume', Icons.description_outlined),
+            const SizedBox(height: 8),
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: AppTheme.border),
               ),
-              child: Column(
-                children: [
-                  _buildProfileDetailRow(
-                    icon: Icons.work_outline_rounded,
-                    title: 'Preferred job titles',
-                    subtitle: preferredRoles.isEmpty
-                        ? 'Add your preferred roles'
-                        : preferredRoles.join(' · '),
-                    onTap: () => _openCandidateProfileEditor(profile),
-                  ),
-                  const Divider(height: 1, indent: 58),
-                  _buildProfileDetailRow(
-                    icon: Icons.school_outlined,
-                    title: 'Qualification',
-                    subtitle: qualificationDisplay.isEmpty
-                        ? 'Add your education details'
-                        : qualificationDisplay,
-                    onTap: () => _openCandidateProfileEditor(profile),
-                  ),
-                  const Divider(height: 1, indent: 58),
-                  _buildProfileDetailRow(
-                    icon: Icons.auto_awesome_outlined,
-                    title: 'Skills',
-                    subtitle: skills.isEmpty
-                        ? 'Add skills to your profile'
-                        : skills.join(' · '),
-                    onTap: () => _editCandidateSkills(skills),
-                  ),
-                  const Divider(height: 1, indent: 58),
-                  _buildProfileDetailRow(
-                    icon: Icons.description_outlined,
-                    title: 'Resume',
-                    subtitle: _isUploadingResume
-                        ? 'Uploading PDF…'
-                        : resumeFileName.isEmpty
-                        ? 'Add a PDF resume (up to 10 MB)'
-                        : resumeFileName,
-                    trailing: _isUploadingResume
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : null,
-                    onTap: _isUploadingResume
-                        ? null
-                        : () => _showResumeActions(profile ?? {}),
-                  ),
-                ],
+              child: _buildProfileDetailRow(
+                icon: Icons.description_outlined,
+                title: 'PDF resume',
+                subtitle: _isUploadingResume
+                    ? 'Uploading PDF...'
+                    : resumeFileName.isEmpty
+                    ? 'Add a PDF resume (up to 10 MB)'
+                    : resumeFileName,
+                trailing: _isUploadingResume
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : null,
+                onTap: _isUploadingResume
+                    ? null
+                    : () => _showResumeActions(profile ?? {}),
               ),
             ),
             const SizedBox(height: 18),
@@ -2953,6 +2901,104 @@ class _MainShellScreenState extends State<MainShellScreen> {
         .where((item) => item.isNotEmpty)
         .toSet()
         .toList();
+  }
+
+  Widget _buildProfileInitials(String initials) {
+    return Container(
+      color: AppTheme.primaryLight,
+      alignment: Alignment.center,
+      child: Text(
+        initials.isEmpty ? 'C' : initials,
+        style: const TextStyle(
+          fontSize: 21,
+          fontWeight: FontWeight.w800,
+          color: AppTheme.primary,
+        ),
+      ),
+    );
+  }
+
+  String _orNotProvided(String value) =>
+      value.trim().isEmpty || value.trim() == '0'
+      ? 'Not provided'
+      : value.trim();
+
+  String _profileValue(Map<String, dynamic>? profile, String key) =>
+      _orNotProvided(_profileString(profile, key));
+
+  Widget _buildProfileSectionTitle(String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, size: 19, color: AppTheme.primary),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+            color: AppTheme.textPrimary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProfileFactsSection({
+    required String title,
+    required IconData icon,
+    required List<(String, String)> fields,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildProfileSectionTitle(title, icon),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var index = 0; index < fields.length; index++) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        fields[index].$1,
+                        style: const TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 11,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        fields[index].$2,
+                        style: const TextStyle(
+                          color: AppTheme.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (index < fields.length - 1)
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildProfileContactCard({
@@ -3076,63 +3122,157 @@ class _MainShellScreenState extends State<MainShellScreen> {
     );
   }
 
-  Future<void> _editCandidateSkills(List<String> skills) async {
-    final controller = TextEditingController(text: skills.join(', '));
-    final updatedSkills = await showDialog<List<String>>(
+  Future<void> _showPhotoActions(Map<String, dynamic> profile) async {
+    final hasCustomPhoto = _profileString(
+      profile,
+      'profilePhotoPublicId',
+    ).isNotEmpty;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(
+                Icons.add_a_photo_outlined,
+                color: AppTheme.primary,
+              ),
+              title: Text(
+                hasCustomPhoto ? 'Change profile photo' : 'Add profile photo',
+              ),
+              subtitle: const Text('JPG, PNG, or WebP · up to 3 MB'),
+              onTap: () => Navigator.pop(sheetContext, 'upload'),
+            ),
+            if (hasCustomPhoto)
+              ListTile(
+                leading: const Icon(
+                  Icons.delete_outline,
+                  color: AppTheme.error,
+                ),
+                title: const Text('Remove profile photo'),
+                onTap: () => Navigator.pop(sheetContext, 'remove'),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'upload') {
+      await _pickAndUploadPhoto();
+    } else if (action == 'remove') {
+      await _removeProfilePhoto();
+    }
+  }
+
+  Future<void> _pickAndUploadPhoto() async {
+    final PlatformFile? file;
+    try {
+      file = await FilePicker.pickFile(
+        type: FileType.custom,
+        allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
+      );
+    } catch (_) {
+      _showProfileMessage('Could not open the photo picker. Try again.');
+      return;
+    }
+    if (file == null || !mounted) return;
+    Uint8List bytes;
+    try {
+      final size = await file.length();
+      if (size == null || size == 0 || size > 3 * 1024 * 1024) {
+        _showProfileMessage('Choose a photo under 3 MB.');
+        return;
+      }
+      bytes = await file.readAsBytes();
+    } catch (_) {
+      _showProfileMessage('Could not read that photo. Try again.');
+      return;
+    }
+    if (!_looksLikeProfilePhoto(bytes)) {
+      _showProfileMessage('Choose a valid JPG, PNG, or WebP photo.');
+      return;
+    }
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Your skills'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            hintText: 'Flutter, Dart, Firebase',
-            helperText: 'Separate skills with commas.',
-            border: OutlineInputBorder(),
-          ),
+        title: const Text('Use this profile photo?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipOval(
+              child: Image.memory(
+                bytes,
+                width: 130,
+                height: 130,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) =>
+                    const Icon(Icons.broken_image_outlined, size: 80),
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text('Your photo may be shown with your candidate profile.'),
+          ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
-              final values = controller.text
-                  .split(',')
-                  .map((value) => value.trim())
-                  .where((value) => value.isNotEmpty)
-                  .toSet()
-                  .take(20)
-                  .toList();
-              Navigator.pop(dialogContext, values);
-            },
-            child: const Text('Save skills'),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Upload photo'),
           ),
         ],
       ),
     );
-    controller.dispose();
-    if (updatedSkills == null || !mounted) return;
-
+    if (confirmed != true || !mounted) return;
+    setState(() => _isUploadingPhoto = true);
     try {
-      await _firestoreService.updateCandidateProfile(
+      await _candidatePhotoService.upload(
         uid: _currentUid,
-        updates: {'skills': updatedSkills},
+        bytes: bytes,
+        fileName: file.name,
       );
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Skills updated.')));
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not save your skills. Try again.'),
-          ),
-        );
-      }
+      _showProfileMessage('Profile photo updated.');
+    } catch (error) {
+      _showProfileMessage(
+        error is StateError ? error.message : 'Could not upload your photo. Check your connection and try again.',
+      );
+    } finally {
+      if (mounted) setState(() => _isUploadingPhoto = false);
+    }
+  }
+
+  bool _looksLikeProfilePhoto(Uint8List bytes) {
+    if (bytes.length < 12) return false;
+    final jpeg = bytes[0] == 0xff && bytes[1] == 0xd8 && bytes[2] == 0xff;
+    final png =
+        bytes[0] == 0x89 && String.fromCharCodes(bytes.sublist(1, 4)) == 'PNG';
+    final webp =
+        String.fromCharCodes(bytes.sublist(0, 4)) == 'RIFF' &&
+        String.fromCharCodes(bytes.sublist(8, 12)) == 'WEBP';
+    return jpeg || png || webp;
+  }
+
+  Future<void> _removeProfilePhoto() async {
+    setState(() => _isUploadingPhoto = true);
+    try {
+      await _candidatePhotoService.delete(_currentUid);
+      _showProfileMessage('Profile photo removed.');
+    } catch (error) {
+      _showProfileMessage(
+        error is StateError
+            ? error.message
+            : 'Could not remove your photo. Try again.',
+      );
+    } finally {
+      if (mounted) setState(() => _isUploadingPhoto = false);
     }
   }
 
@@ -3281,7 +3421,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
       builder: (context, jobsSnap) {
         final jobCount = jobsSnap.data?.length ?? 0;
         return StreamBuilder<List<Map<String, dynamic>>>(
-          stream: _firestoreService.streamRecruiterApplicants(),
+          stream: _firestoreService.streamRecruiterApplicants(
+            employerUid: _currentUid,
+          ),
           builder: (context, appSnap) {
             final appCount = appSnap.data?.length ?? 0;
             return ListView(
@@ -3875,7 +4017,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
 
   Widget _buildEmployerApplicants() {
     return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: _firestoreService.streamRecruiterApplicants(),
+      stream: _firestoreService.streamRecruiterApplicants(
+        employerUid: _currentUid,
+      ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
@@ -3920,7 +4064,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
           itemCount: applicants.length,
           itemBuilder: (context, idx) {
             final app = applicants[idx];
-            final name = app['candidateName'] ?? 'Applicant';
+            final name = app['candidateName']?.toString() ?? 'Applicant';
+            final candidateUid = app['candidateUid']?.toString() ?? '';
             final jobTitle = app['jobTitle'] ?? 'Job';
             final email = app['candidateEmail'] ?? '';
             final phone = app['candidatePhone'] ?? '';
@@ -3948,6 +4093,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
+                      _buildApplicantAvatar(candidateUid, name),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           name,
@@ -4015,6 +4162,45 @@ class _MainShellScreenState extends State<MainShellScreen> {
     );
   }
 
+  Widget _buildApplicantAvatar(String candidateUid, String name) {
+    final initials = name.trim().isEmpty ? 'C' : name.trim()[0].toUpperCase();
+    Widget fallback() => Text(
+      initials,
+      style: const TextStyle(
+        color: AppTheme.primary,
+        fontWeight: FontWeight.w800,
+      ),
+    );
+    if (candidateUid.isEmpty) {
+      return CircleAvatar(
+        radius: 22,
+        backgroundColor: AppTheme.primaryLight,
+        child: fallback(),
+      );
+    }
+    return StreamBuilder<String?>(
+      stream: _firestoreService.streamCandidatePublicPhoto(candidateUid),
+      builder: (context, snapshot) {
+        final photoUrl = snapshot.data;
+        return CircleAvatar(
+          radius: 22,
+          backgroundColor: AppTheme.primaryLight,
+          child: photoUrl == null || photoUrl.isEmpty
+              ? fallback()
+              : ClipOval(
+                  child: Image.network(
+                    photoUrl,
+                    width: 44,
+                    height: 44,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => fallback(),
+                  ),
+                ),
+        );
+      },
+    );
+  }
+
   // --- ADMIN VIEWS ---
   Widget _buildAdminPanel() {
     return StreamBuilder<List<JobModel>>(
@@ -4022,7 +4208,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
       builder: (context, jobSnap) {
         final totalJobs = jobSnap.data?.length ?? 0;
         return StreamBuilder<List<Map<String, dynamic>>>(
-          stream: _firestoreService.streamRecruiterApplicants(),
+          stream: _firestoreService.streamRecruiterApplicants(
+            employerUid: _currentUid,
+          ),
           builder: (context, appSnap) {
             final totalApps = appSnap.data?.length ?? 0;
             return ListView(

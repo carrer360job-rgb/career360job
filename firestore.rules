@@ -39,20 +39,39 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Only trusted server code creates notifications. Recipients may mark
+    // their own notifications as read without changing message content.
+    match /users/{uid}/notifications/{notificationId} {
+      allow read: if owns(uid);
+      allow create, delete: if false;
+      allow update: if owns(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])
+        && request.resource.data.readAt == request.time;
+    }
+
     // Candidate profile documents contain personal information.
     match /candidates/{uid} {
       allow read: if owns(uid);
       allow create: if owns(uid)
         && request.resource.data.uid == uid
         && !request.resource.data.keys().hasAny([
-          'resumePublicId', 'resumeFileName', 'resumeUpdatedAt', 'resumePath'
+          'resumePublicId', 'resumeFileName', 'resumeUpdatedAt', 'resumePath',
+          'profilePhotoPublicId', 'profilePhotoUrl', 'profilePhotoUpdatedAt'
         ]);
       allow update: if owns(uid)
         && request.resource.data.uid == resource.data.uid
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-          'resumePublicId', 'resumeFileName', 'resumeUpdatedAt', 'resumePath'
+          'resumePublicId', 'resumeFileName', 'resumeUpdatedAt', 'resumePath',
+          'profilePhotoPublicId', 'profilePhotoUrl', 'profilePhotoUpdatedAt'
         ]);
       allow delete: if false;
+    }
+
+    // Only the backend publishes a candidate's chosen profile photo.
+    // Verified users may fetch a known candidate photo for an application.
+    match /candidate_public_profiles/{uid} {
+      allow get: if verified();
+      allow list, create, update, delete: if false;
     }
 
     // Candidates may create an application only for themselves and a real job.
