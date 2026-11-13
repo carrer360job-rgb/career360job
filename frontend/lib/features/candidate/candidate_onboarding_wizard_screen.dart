@@ -14,11 +14,13 @@ import '../../core/services/location_service.dart';
 class CandidateOnboardingWizardScreen extends StatefulWidget {
   final VoidCallback onFinish;
   final VoidCallback onBackToLogin;
+  final Map<String, dynamic>? initialProfile;
 
   const CandidateOnboardingWizardScreen({
     super.key,
     required this.onFinish,
     required this.onBackToLogin,
+    this.initialProfile,
   });
 
   @override
@@ -161,6 +163,7 @@ class _CandidateOnboardingWizardScreenState
   @override
   void initState() {
     super.initState();
+    _loadInitialProfile();
     // Prompt the user for location automatically when landing on Step 1
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_hasPromptedLocation && mounted && _selectedDistrict.isEmpty) {
@@ -168,6 +171,71 @@ class _CandidateOnboardingWizardScreenState
         _showInitialLocationPrompt();
       }
     });
+  }
+
+  void _loadInitialProfile() {
+    final profile = widget.initialProfile;
+    if (profile == null) return;
+
+    String stringValue(String key) => profile[key]?.toString() ?? '';
+    int? intValue(String key) => int.tryParse(stringValue(key));
+
+    _nameController.text = stringValue('fullName');
+    _phoneController.text = stringValue('phone');
+    _selectedGender = _emptyToNull(stringValue('gender'));
+    _selectedMaritalStatus = _emptyToNull(stringValue('maritalStatus'));
+    _selectedState = stringValue('state');
+    _selectedDistrict = stringValue('district');
+    _selectedCity = stringValue('city');
+    _selectedMonth = _emptyToNull(stringValue('birthMonth'));
+    _selectedYear = intValue('birthYear');
+    _calculatedAge = intValue('age');
+
+    _selectedEducation = stringValue('educationLevel');
+    _selectedQualification = stringValue('qualification');
+    _collegeController.text = stringValue('collegeOrSchool');
+    _selectedGraduationYear = intValue('graduationYear');
+
+    final preferredTitles = profile['preferredJobTitles'];
+    if (preferredTitles is Iterable) {
+      _selectedJobTitles.addAll(
+        preferredTitles
+            .map((title) => title.toString().trim())
+            .where((title) => title.isNotEmpty)
+            .take(4),
+      );
+    }
+
+    final hasExperience = profile['hasExperience'];
+    _hasWorkExperience = hasExperience is bool ? hasExperience : null;
+    _experienceYearsCount = _parseExperienceNumber(
+      stringValue('experienceYears'),
+      fallback: 1,
+    ).clamp(0, 40).toInt();
+    _experienceMonthsCount = _parseExperienceNumber(
+      stringValue('experienceMonths'),
+      fallback: 0,
+    ).clamp(0, 11).toInt();
+    _companyController.text = stringValue('lastCompany');
+    _jobTitleController.text = stringValue('lastJobTitle');
+    final salary = stringValue('salary')
+        .replaceAll('₹', '')
+        .replaceAll('LPA', '')
+        .trim();
+    _salaryController.text = salary == 'Fresher' || salary == 'Not specified'
+        ? ''
+        : salary;
+    _selectedNoticePeriod = _emptyToNull(stringValue('noticePeriod'));
+
+    // Existing profile editing should not trigger the initial location prompt.
+    _hasPromptedLocation = true;
+  }
+
+  String? _emptyToNull(String value) => value.trim().isEmpty ? null : value;
+
+  int _parseExperienceNumber(String value, {required int fallback}) {
+    final match = RegExp(r'\d+').firstMatch(value);
+    return match == null ? fallback : int.tryParse(match.group(0)!) ?? fallback;
   }
 
   void _showInitialLocationPrompt() {
@@ -482,17 +550,20 @@ class _CandidateOnboardingWizardScreenState
       }
       final uid = user.uid;
       final email = user.email ?? '';
-      await _authService.syncUserProfileToFirestore(
-        uid: uid,
-        email: email,
-        displayName: _nameController.text.trim(),
-      );
       await _authService.saveCandidateOnboardingProfile(
         uid: uid,
+        email: email,
         onboardingData: onboardingData,
       );
     } catch (e) {
       debugPrint('[Onboarding Save Notice]: $e');
+      if (mounted) {
+        setState(() => _isSaving = false);
+        _showValidationToast(
+          'Could not save your profile. Check your connection and try again.',
+        );
+      }
+      return;
     }
 
     if (mounted) {

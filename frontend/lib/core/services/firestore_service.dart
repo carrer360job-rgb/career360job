@@ -23,7 +23,11 @@ class FirestoreService {
     String? locationCity,
     String? searchQuery,
   }) {
-    Query query = _jobsRef.orderBy('postedAt', descending: true);
+    Query query = _jobsRef;
+    if (category != null && category != 'All' && category != 'All Categories') {
+      query = query.where('category', isEqualTo: category);
+    }
+    query = query.orderBy('postedAt', descending: true);
 
     return query.snapshots().map((snapshot) {
       final jobs = snapshot.docs
@@ -50,10 +54,12 @@ class FirestoreService {
           final matchesCompany = job.companyName.toLowerCase().contains(q);
           final matchesLoc = job.locationCity.toLowerCase().contains(q);
           final matchesCategory = job.category.toLowerCase().contains(q);
+          final matchesDescription = job.description.toLowerCase().contains(q);
           return matchesTitle ||
               matchesCompany ||
               matchesLoc ||
-              matchesCategory;
+              matchesCategory ||
+              matchesDescription;
         }
         return true;
       }).toList();
@@ -80,8 +86,9 @@ class FirestoreService {
     required Map<String, dynamic> candidateProfile,
   }) async {
     try {
-      // 1. Create document in applications collection
-      await _applicationsRef.add({
+      final batch = _firestore.batch();
+      final applicationRef = _applicationsRef.doc();
+      batch.set(applicationRef, {
         'jobId': jobId,
         'jobTitle': job.title,
         'companyName': job.companyName,
@@ -104,12 +111,15 @@ class FirestoreService {
         'appliedAt': FieldValue.serverTimestamp(),
       });
 
-      // 2. Add to user's applied jobs set
       final userDoc = _usersRef.doc(candidateUid);
-      await userDoc.set({
+      batch.set(userDoc, {
+        'uid': candidateUid,
+        'email': candidateProfile['email'] ?? '',
+        'role': 'candidate',
         'appliedJobIds': FieldValue.arrayUnion([jobId]),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      await batch.commit();
 
       debugPrint('[FirestoreService] Application recorded for job: $jobId');
       return true;
@@ -216,5 +226,16 @@ class FirestoreService {
       }
       return null;
     });
+  }
+
+  Future<void> updateCandidateProfile({
+    required String uid,
+    required Map<String, dynamic> updates,
+  }) async {
+    await _candidatesRef.doc(uid).set({
+      'uid': uid,
+      ...updates,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 }

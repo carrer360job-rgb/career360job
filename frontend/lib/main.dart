@@ -1,12 +1,17 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:file_picker/file_picker.dart';
 
 import 'core/theme/app_theme.dart';
 import 'core/constants/app_constants.dart';
 import 'core/responsive/responsive_layout.dart';
+import 'core/services/firebase_auth_service.dart';
+import 'core/services/candidate_resume_service.dart';
 import 'core/services/firestore_service.dart';
 import 'core/widgets/bouncy_button.dart';
 import 'data/models/job_model.dart';
@@ -15,22 +20,66 @@ import 'features/auth/role_selection_screen.dart';
 import 'features/candidate/candidate_guidelines_screen.dart';
 import 'features/auth/candidate_login_screen.dart';
 import 'features/candidate/candidate_onboarding_wizard_screen.dart';
+import 'features/legal/privacy_policy_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  Object? firebaseInitializationError;
-  try {
-    await Firebase.initializeApp();
-  } catch (e) {
-    firebaseInitializationError = e;
+  runApp(const FirebaseBootstrap());
+}
+
+class FirebaseBootstrap extends StatefulWidget {
+  const FirebaseBootstrap({super.key});
+
+  @override
+  State<FirebaseBootstrap> createState() => _FirebaseBootstrapState();
+}
+
+class _FirebaseBootstrapState extends State<FirebaseBootstrap> {
+  late final Future<FirebaseApp> _firebaseInitialization;
+
+  @override
+  void initState() {
+    super.initState();
+    _firebaseInitialization = Firebase.initializeApp();
   }
-  runApp(
-    firebaseInitializationError == null
-        ? const Career360App()
-        : FirebaseConfigurationFailure(
-            error: firebaseInitializationError.toString(),
-          ),
-  );
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<FirebaseApp>(
+      future: _firebaseInitialization,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return FirebaseConfigurationFailure(error: snapshot.error.toString());
+        }
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const MaterialApp(
+            debugShowCheckedModeBanner: false,
+            home: Scaffold(
+              body: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.work_outline_rounded,
+                      size: 42,
+                      color: Color(0xFF155EEF),
+                    ),
+                    SizedBox(height: 18),
+                    SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+        return const Career360App();
+      },
+    );
+  }
 }
 
 class FirebaseConfigurationFailure extends StatelessWidget {
@@ -84,7 +133,9 @@ class FirebaseConfigurationFailure extends StatelessWidget {
 enum AppUserRole { candidate, employer, admin }
 
 class Career360App extends StatefulWidget {
-  const Career360App({super.key});
+  final Stream<User?>? authChanges;
+
+  const Career360App({super.key, this.authChanges});
 
   @override
   State<Career360App> createState() => _Career360AppState();
@@ -94,7 +145,6 @@ class _Career360AppState extends State<Career360App> {
   bool _showSplash = true;
   bool _showCandidateGuidelines = false;
   bool _showCandidateLogin = false;
-  bool _showCandidateOnboarding = false;
   AppUserRole? _currentRole;
 
   void _onSplashFinished() {
@@ -129,13 +179,6 @@ class _Career360AppState extends State<Career360App> {
     });
   }
 
-  void _onCandidateLoginSuccess() {
-    setState(() {
-      _showCandidateLogin = false;
-      _showCandidateOnboarding = true;
-    });
-  }
-
   void _onCandidateLoginBack() {
     setState(() {
       _showCandidateLogin = false;
@@ -143,25 +186,30 @@ class _Career360AppState extends State<Career360App> {
     });
   }
 
-  void _onCandidateOnboardingFinished() {
+  Future<void> _onCandidateOnboardingBack() async {
     setState(() {
-      _showCandidateOnboarding = false;
-      _currentRole = AppUserRole.candidate;
+      _showSplash = false;
+      _showCandidateGuidelines = true;
+      _showCandidateLogin = false;
+      _currentRole = null;
     });
+    await FirebaseAuthService().signOut();
   }
 
-  void _onCandidateOnboardingBack() {
+  Future<void> _signOutToRoleSelection() async {
     setState(() {
-      _showCandidateOnboarding = false;
-      _showCandidateLogin = true;
+      _showSplash = false;
+      _showCandidateGuidelines = false;
+      _showCandidateLogin = false;
+      _currentRole = null;
     });
+    await FirebaseAuthService().signOut();
   }
 
   void _resetToRoleSelection() {
     setState(() {
       _showCandidateGuidelines = false;
       _showCandidateLogin = false;
-      _showCandidateOnboarding = false;
       _currentRole = null;
     });
   }
@@ -183,15 +231,7 @@ class _Career360AppState extends State<Career360App> {
     if (_showCandidateLogin) {
       return CandidateLoginScreen(
         key: const ValueKey('login_screen'),
-        onLoginSuccess: _onCandidateLoginSuccess,
         onBack: _onCandidateLoginBack,
-      );
-    }
-    if (_showCandidateOnboarding) {
-      return CandidateOnboardingWizardScreen(
-        key: const ValueKey('onboarding_wizard_screen'),
-        onFinish: _onCandidateOnboardingFinished,
-        onBackToLogin: _onCandidateOnboardingBack,
       );
     }
     if (_currentRole == null) {
@@ -205,6 +245,7 @@ class _Career360AppState extends State<Career360App> {
       currentRole: _currentRole!,
       onRoleChanged: _onRoleSelected,
       onSwitchRoleRequested: _resetToRoleSelection,
+      onSignOutRequested: _resetToRoleSelection,
     );
   }
 
@@ -214,25 +255,298 @@ class _Career360AppState extends State<Career360App> {
       title: 'Career360 — Job Portal',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      home: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 320),
-        reverseDuration: const Duration(milliseconds: 260),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeInCubic,
-        transitionBuilder: (child, animation) {
-          final slide =
-              Tween<Offset>(
-                begin: const Offset(0.04, 0.0),
-                end: Offset.zero,
-              ).animate(
-                CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+      home: StreamBuilder<User?>(
+        stream: widget.authChanges ?? FirebaseAuth.instance.userChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) return const AuthStateLoadFailure();
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
+            return const SessionLoadingScreen();
+          }
+
+          final user = snapshot.data;
+          if (user != null) {
+            return CandidateSessionGate(
+              key: ValueKey('candidate_session_${user.uid}'),
+              user: user,
+              onBackToLogin: _onCandidateOnboardingBack,
+              onRoleChanged: _onRoleSelected,
+              onSwitchRoleRequested: _signOutToRoleSelection,
+              onSignOutRequested: _signOutToRoleSelection,
+            );
+          }
+
+          return AnimatedSwitcher(
+            duration: const Duration(milliseconds: 320),
+            reverseDuration: const Duration(milliseconds: 260),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) {
+              final slide =
+                  Tween<Offset>(
+                    begin: const Offset(0.04, 0.0),
+                    end: Offset.zero,
+                  ).animate(
+                    CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeOutCubic,
+                    ),
+                  );
+              return SlideTransition(
+                position: slide,
+                child: FadeTransition(opacity: animation, child: child),
               );
-          return SlideTransition(
-            position: slide,
-            child: FadeTransition(opacity: animation, child: child),
+            },
+            child: _buildCurrentScreen(),
           );
         },
-        child: _buildCurrentScreen(),
+      ),
+    );
+  }
+}
+
+class CandidateSessionGate extends StatelessWidget {
+  final User user;
+  final Future<void> Function() onBackToLogin;
+  final ValueChanged<AppUserRole> onRoleChanged;
+  final VoidCallback onSwitchRoleRequested;
+  final VoidCallback onSignOutRequested;
+
+  const CandidateSessionGate({
+    super.key,
+    required this.user,
+    required this.onBackToLogin,
+    required this.onRoleChanged,
+    required this.onSwitchRoleRequested,
+    required this.onSignOutRequested,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!user.emailVerified) {
+      return EmailVerificationRequiredScreen(user: user);
+    }
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('candidates')
+          .doc(user.uid)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) return const AuthStateLoadFailure();
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const SessionLoadingScreen();
+        }
+
+        final onboardingComplete =
+            snapshot.data?.data()?['onboardingCompleted'] == true;
+        if (!onboardingComplete) {
+          return CandidateOnboardingWizardScreen(
+            key: ValueKey('candidate_onboarding_${user.uid}'),
+            onFinish: () {},
+            onBackToLogin: () => unawaited(onBackToLogin()),
+          );
+        }
+
+        return MainShellScreen(
+          key: ValueKey('main_shell_${user.uid}'),
+          currentRole: AppUserRole.candidate,
+          onRoleChanged: onRoleChanged,
+          onSwitchRoleRequested: onSwitchRoleRequested,
+          onSignOutRequested: onSignOutRequested,
+        );
+      },
+    );
+  }
+}
+
+class SessionLoadingScreen extends StatelessWidget {
+  const SessionLoadingScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2.5),
+        ),
+      ),
+    );
+  }
+}
+
+class AuthStateLoadFailure extends StatelessWidget {
+  const AuthStateLoadFailure({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: _AuthLoadFailureContent(),
+        ),
+      ),
+    );
+  }
+}
+
+class _AuthLoadFailureContent extends StatefulWidget {
+  const _AuthLoadFailureContent();
+
+  @override
+  State<_AuthLoadFailureContent> createState() =>
+      _AuthLoadFailureContentState();
+}
+
+class _AuthLoadFailureContentState extends State<_AuthLoadFailureContent> {
+  bool _isRetrying = false;
+
+  Future<void> _retry() async {
+    setState(() => _isRetrying = true);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      await user?.reload();
+      await user?.getIdToken(true);
+    } catch (_) {
+      // The auth/profile streams will report the current state again on retry.
+    }
+    if (mounted) setState(() => _isRetrying = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          'We could not load your account right now. Check your connection and try again.',
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 16),
+        FilledButton(
+          onPressed: _isRetrying ? null : _retry,
+          child: _isRetrying
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Retry'),
+        ),
+      ],
+    );
+  }
+}
+
+class EmailVerificationRequiredScreen extends StatefulWidget {
+  final User user;
+
+  const EmailVerificationRequiredScreen({super.key, required this.user});
+
+  @override
+  State<EmailVerificationRequiredScreen> createState() =>
+      _EmailVerificationRequiredScreenState();
+}
+
+class _EmailVerificationRequiredScreenState
+    extends State<EmailVerificationRequiredScreen> {
+  bool _isSending = false;
+  String? _message;
+
+  Future<void> _sendVerificationEmail() async {
+    setState(() => _isSending = true);
+    try {
+      await widget.user.sendEmailVerification();
+      if (!mounted) return;
+      setState(() {
+        _isSending = false;
+        _message =
+            'Verification email sent. Open the link, then tap I verified.';
+      });
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isSending = false;
+        _message = error.message ?? 'Could not send a verification email.';
+      });
+    }
+  }
+
+  Future<void> _refreshVerificationStatus() async {
+    setState(() => _isSending = true);
+    try {
+      await FirebaseAuth.instance.currentUser?.reload();
+      await FirebaseAuth.instance.currentUser?.getIdToken(true);
+      final isVerified =
+          FirebaseAuth.instance.currentUser?.emailVerified ?? false;
+      if (!mounted) return;
+      setState(() {
+        _isSending = false;
+        _message = isVerified ? 'Email verified. Loading your profile...' : 'The email is not verified yet. Open the link from your inbox and retry.';
+      });
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isSending = false;
+        _message = error.message ?? 'Could not check verification status.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.mark_email_unread_outlined,
+                  size: 42,
+                  color: AppTheme.primary,
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Verify your email to continue',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'We sent a verification link to ${widget.user.email ?? 'your email address'}.',
+                  textAlign: TextAlign.center,
+                ),
+                if (_message != null) ...[
+                  const SizedBox(height: 12),
+                  Text(_message!, textAlign: TextAlign.center),
+                ],
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: _isSending ? null : _refreshVerificationStatus,
+                  child: _isSending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('I verified my email'),
+                ),
+                TextButton(
+                  onPressed: _isSending ? null : _sendVerificationEmail,
+                  child: const Text('Resend verification email'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -242,12 +556,14 @@ class MainShellScreen extends StatefulWidget {
   final AppUserRole currentRole;
   final ValueChanged<AppUserRole> onRoleChanged;
   final VoidCallback onSwitchRoleRequested;
+  final VoidCallback onSignOutRequested;
 
   const MainShellScreen({
     super.key,
     required this.currentRole,
     required this.onRoleChanged,
     required this.onSwitchRoleRequested,
+    required this.onSignOutRequested,
   });
 
   @override
@@ -256,6 +572,8 @@ class MainShellScreen extends StatefulWidget {
 
 class _MainShellScreenState extends State<MainShellScreen> {
   final FirestoreService _firestoreService = FirestoreService();
+  final CandidateResumeService _candidateResumeService =
+      CandidateResumeService();
   String get _currentUid =>
       FirebaseAuth.instance.currentUser?.uid ?? 'guest_candidate';
 
@@ -268,6 +586,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
 
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _feedScrollController = ScrollController();
+  Timer? _searchDebounce;
 
   // Employer Post Job Controllers
   final TextEditingController _postTitleController = TextEditingController();
@@ -280,6 +599,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
   String _postLocation = 'Chennai';
   String _postWorkMode = 'Hybrid';
   bool _isPostingJob = false;
+  bool _isUploadingResume = false;
 
   StreamSubscription<Set<String>>? _savedSub;
   StreamSubscription<Set<String>>? _appliedSub;
@@ -288,27 +608,30 @@ class _MainShellScreenState extends State<MainShellScreen> {
   void initState() {
     super.initState();
     _savedSub = _firestoreService.streamSavedJobIds(_currentUid).listen((ids) {
-      if (mounted)
+      if (mounted) {
         setState(
           () => _savedJobIds
             ..clear()
             ..addAll(ids),
         );
+      }
     });
     _appliedSub = _firestoreService.streamAppliedJobIds(_currentUid).listen((
       ids,
     ) {
-      if (mounted)
+      if (mounted) {
         setState(
           () => _appliedJobIds
             ..clear()
             ..addAll(ids),
         );
+      }
     });
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _savedSub?.cancel();
     _appliedSub?.cancel();
     _searchController.dispose();
@@ -321,7 +644,23 @@ class _MainShellScreenState extends State<MainShellScreen> {
     super.dispose();
   }
 
-  void _toggleSaveJob(String id) {
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      setState(() => _searchQuery = value.trim());
+    });
+  }
+
+  void _openCandidateSearch() {
+    _searchDebounce?.cancel();
+    setState(() {
+      _searchQuery = _searchController.text.trim();
+      _selectedTabIndex = 1;
+    });
+  }
+
+  Future<void> _toggleSaveJob(String id) async {
     final isSaved = _savedJobIds.contains(id);
     setState(() {
       if (isSaved) {
@@ -330,11 +669,27 @@ class _MainShellScreenState extends State<MainShellScreen> {
         _savedJobIds.add(id);
       }
     });
-    _firestoreService.toggleSaveJob(
+    final saved = await _firestoreService.toggleSaveJob(
       candidateUid: _currentUid,
       jobId: id,
       isSaved: isSaved,
     );
+    if (!mounted) return;
+    if (saved == isSaved) {
+      setState(() {
+        if (isSaved) {
+          _savedJobIds.add(id);
+        } else {
+          _savedJobIds.remove(id);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not update saved jobs. Try again.'),
+        ),
+      );
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         duration: const Duration(seconds: 1),
@@ -361,7 +716,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
           .first;
     } catch (_) {}
 
-    await _firestoreService.applyToJob(
+    final applicationSubmitted = await _firestoreService.applyToJob(
       jobId: job.id,
       job: job,
       candidateUid: _currentUid,
@@ -375,6 +730,17 @@ class _MainShellScreenState extends State<MainShellScreen> {
       },
     );
     if (!mounted) return;
+    if (!applicationSubmitted) {
+      setState(() => _appliedJobIds.remove(job.id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Application could not be submitted. Please try again.',
+          ),
+        ),
+      );
+      return;
+    }
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -855,6 +1221,87 @@ class _MainShellScreenState extends State<MainShellScreen> {
     );
   }
 
+  void _showCandidateNotifications() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: const BoxDecoration(
+                      color: AppTheme.primaryLight,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.notifications_none_rounded,
+                      color: AppTheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Notifications',
+                    style: TextStyle(
+                      color: AppTheme.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 28),
+              const Icon(
+                Icons.notifications_off_outlined,
+                color: AppTheme.textSecondary,
+                size: 42,
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'You’re all caught up',
+                style: TextStyle(
+                  color: AppTheme.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'There are no notifications to show right now.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 13,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(sheetContext),
+                  child: const Text('Done'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isDesktop = ResponsiveLayout.isDesktop(context);
@@ -906,62 +1353,58 @@ class _MainShellScreenState extends State<MainShellScreen> {
               ),
             ],
           ),
-          actions: [
-            IconButton(
-              tooltip: 'Notifications',
-              icon: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  const Icon(
-                    Icons.notifications_none,
-                    color: AppTheme.textPrimary,
+          actions: widget.currentRole == AppUserRole.candidate
+              ? [
+                  IconButton(
+                    tooltip: 'Notifications',
+                    onPressed: _showCandidateNotifications,
+                    icon: const Icon(Icons.notifications_none_rounded),
                   ),
-                  Positioned(
-                    right: -2,
-                    top: -2,
-                    child: Container(
-                      padding: const EdgeInsets.all(3),
-                      decoration: const BoxDecoration(
-                        color: AppTheme.error,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Text(
-                        '2',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                        ),
+                  const SizedBox(width: 8),
+                ]
+              : [
+                  IconButton(
+                    tooltip: 'Notifications',
+                    icon: const Icon(Icons.notifications_none),
+                    onPressed: _showNotificationsDialog,
+                  ),
+                  IconButton(
+                    tooltip: 'Switch Mode',
+                    icon: const Icon(Icons.swap_horiz, color: AppTheme.primary),
+                    onPressed: widget.onSwitchRoleRequested,
+                  ),
+                  IconButton(
+                    tooltip: 'Sign out',
+                    icon: const Icon(
+                      Icons.logout_rounded,
+                      color: AppTheme.primary,
+                    ),
+                    onPressed: widget.onSignOutRequested,
+                  ),
+                  Container(
+                    margin: const EdgeInsets.symmetric(
+                      vertical: 10,
+                      horizontal: 8,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryLight,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      _getRoleBadgeText(),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.primary,
                       ),
                     ),
                   ),
+                  const SizedBox(width: 4),
                 ],
-              ),
-              onPressed: _showNotificationsDialog,
-            ),
-            IconButton(
-              tooltip: 'Switch Mode',
-              icon: const Icon(Icons.swap_horiz, color: AppTheme.primary),
-              onPressed: widget.onSwitchRoleRequested,
-            ),
-            Container(
-              margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryLight,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                _getRoleBadgeText(),
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.primary,
-                ),
-              ),
-            ),
-            const SizedBox(width: 4),
-          ],
         ),
         body: isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
         bottomNavigationBar: isDesktop ? null : _buildMobileBottomNav(),
@@ -1213,358 +1656,176 @@ class _MainShellScreenState extends State<MainShellScreen> {
         final isLoading =
             snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData;
+        return StreamBuilder<Map<String, dynamic>?>(
+          stream: _firestoreService.streamCandidateProfile(_currentUid),
+          builder: (context, profileSnap) {
+            final profile = profileSnap.data;
+            final fullName =
+                (profile?['fullName'] as String?)?.trim().isNotEmpty == true
+                ? (profile!['fullName'] as String).trim()
+                : FirebaseAuth.instance.currentUser?.displayName ?? 'Candidate';
+            final firstName = fullName.split(RegExp(r'\s+')).first;
+            final preferredRoles = profile?['preferredJobTitles'];
+            final needsPreferences =
+                profile != null &&
+                (preferredRoles is! List || preferredRoles.isEmpty);
+            final hasActiveFilters =
+                _selectedCategory != null ||
+                _selectedLocation != 'All Locations' ||
+                _searchQuery.trim().isNotEmpty;
 
-        return ListView(
-          controller: _feedScrollController,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          children: [
-            // Greeting & Headline Streamed from Candidate Profile
-            StreamBuilder<Map<String, dynamic>?>(
-              stream: _firestoreService.streamCandidateProfile(_currentUid),
-              builder: (context, profileSnap) {
-                final profile = profileSnap.data;
-                final fullName =
-                    profile?['fullName'] ??
-                    FirebaseAuth.instance.currentUser?.displayName ??
-                    'Candidate';
-                final initials = fullName.trim().isNotEmpty
-                    ? fullName
-                          .trim()
-                          .split(' ')
-                          .map((p) => p.isNotEmpty ? p[0] : '')
-                          .take(2)
-                          .join()
-                          .toUpperCase()
-                    : 'C3';
-
-                return Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Hello, $fullName 👋',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: AppTheme.textSecondary,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        const Text(
-                          'Find Your Next\nCareer Move',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            color: AppTheme.textPrimary,
-                            height: 1.2,
-                          ),
-                        ),
-                      ],
-                    ),
-                    GestureDetector(
-                      onTap: () {
-                        setState(() => _selectedTabIndex = 3);
-                      },
-                      child: CircleAvatar(
-                        radius: 22,
-                        backgroundColor: AppTheme.primaryLight,
-                        child: Text(
-                          initials.isNotEmpty ? initials : 'C3',
-                          style: const TextStyle(
-                            color: AppTheme.primary,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Search Input & Filter Button
-            Row(
+            return ListView(
+              controller: _feedScrollController,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
-                Expanded(
-                  child: Container(
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppTheme.border),
-                    ),
-                    child: TextField(
-                      controller: _searchController,
-                      onChanged: (val) {
-                        setState(() => _searchQuery = val);
-                      },
-                      decoration: const InputDecoration(
-                        hintText: 'Search jobs, skills, companies...',
-                        hintStyle: TextStyle(
-                          fontSize: 14,
-                          color: AppTheme.textSecondary,
-                        ),
-                        prefixIcon: Icon(
-                          Icons.search,
-                          color: AppTheme.primary,
-                          size: 20,
-                        ),
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(vertical: 14),
-                      ),
-                    ),
+                Text(
+                  'Welcome back, $firstName',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: AppTheme.textSecondary,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(width: 10),
-                Container(
-                  height: 48,
-                  width: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.border),
-                  ),
-                  child: IconButton(
-                    icon: const Icon(
-                      Icons.tune,
-                      color: AppTheme.primary,
-                      size: 20,
-                    ),
-                    onPressed: _showFilterModal,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Featured Promo Card (Better Career, Brighter Future)
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppTheme.primary, Color(0xFF1D4ED8)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppTheme.primary.withValues(alpha: 0.25),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Better Career\nBrighter Future',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.white,
-                            height: 1.25,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        const Text(
-                          'Apply today and grow faster!',
-                          style: TextStyle(fontSize: 12, color: Colors.white70),
-                        ),
-                        const SizedBox(height: 12),
-                        ElevatedButton(
-                          onPressed: () {
-                            _feedScrollController.animateTo(
-                              420,
-                              duration: const Duration(milliseconds: 500),
-                              curve: Curves.easeOut,
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            foregroundColor: AppTheme.primary,
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Explore Jobs',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              SizedBox(width: 4),
-                              Icon(Icons.arrow_forward, size: 14),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.business_center_rounded,
-                      color: Colors.white,
-                      size: 40,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 22),
-
-            // Top Categories Section
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
+                const SizedBox(height: 4),
                 const Text(
-                  'Top Categories',
+                  'Find your next opportunity',
                   style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 23,
+                    fontWeight: FontWeight.w800,
                     color: AppTheme.textPrimary,
+                    height: 1.16,
                   ),
                 ),
-                TextButton(
-                  onPressed: () {
-                    setState(() {
-                      _selectedCategory = null;
-                    });
-                  },
-                  child: const Text(
-                    'See All ➔',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: AppTheme.primary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            _buildCategoryGrid(),
-            const SizedBox(height: 22),
-
-            // Recent Jobs Section Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
+                const SizedBox(height: 16),
                 Row(
                   children: [
-                    const Text(
-                      'Recent Jobs',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textPrimary,
+                    Expanded(
+                      child: SizedBox(
+                        height: 48,
+                        child: TextField(
+                          controller: _searchController,
+                          textInputAction: TextInputAction.search,
+                          onChanged: _onSearchChanged,
+                          onSubmitted: (_) => _openCandidateSearch(),
+                          decoration: InputDecoration(
+                            hintText: 'Search jobs, companies, locations',
+                            hintStyle: const TextStyle(
+                              fontSize: 13,
+                              color: AppTheme.textSecondary,
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.search,
+                              color: AppTheme.primary,
+                              size: 20,
+                            ),
+                            filled: true,
+                            fillColor: Colors.white,
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 12,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(13),
+                              borderSide: const BorderSide(
+                                color: AppTheme.border,
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(13),
+                              borderSide: const BorderSide(
+                                color: AppTheme.border,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(13),
+                              borderSide: const BorderSide(
+                                color: AppTheme.primary,
+                                width: 1.5,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primaryLight,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '${jobs.length}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.primary,
+                    SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: IconButton.filledTonal(
+                        tooltip: 'Filter jobs',
+                        onPressed: _showFilterModal,
+                        icon: const Icon(Icons.tune_rounded),
+                        style: IconButton.styleFrom(
+                          foregroundColor: AppTheme.primary,
+                          backgroundColor: Colors.white,
+                          side: const BorderSide(color: AppTheme.border),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(13),
+                          ),
                         ),
                       ),
                     ),
                   ],
                 ),
-                if (_selectedCategory != null ||
-                    _selectedLocation != 'All Locations')
-                  GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedCategory = null;
-                        _selectedLocation = 'All Locations';
-                      });
-                    },
-                    child: const Text(
-                      'Clear Filters',
-                      style: TextStyle(fontSize: 12, color: AppTheme.error),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: ActionChip(
+                    avatar: const Icon(
+                      Icons.location_on_outlined,
+                      size: 17,
+                      color: AppTheme.primary,
                     ),
+                    label: Text(
+                      _selectedLocation == 'All Locations'
+                          ? 'All locations'
+                          : _selectedLocation,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onPressed: _showFilterModal,
+                    backgroundColor: Colors.white,
+                    side: const BorderSide(color: AppTheme.border),
+                    labelStyle: const TextStyle(
+                      color: AppTheme.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    visualDensity: VisualDensity.compact,
                   ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // Jobs Feed Cards
-            if (isLoading)
-              const Padding(
-                padding: EdgeInsets.all(40),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (jobs.isEmpty)
-              Container(
-                padding: const EdgeInsets.all(36),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppTheme.border),
                 ),
-                child: Column(
+                if (needsPreferences) ...[
+                  const SizedBox(height: 12),
+                  _buildPreferencesPrompt(),
+                ],
+                const SizedBox(height: 20),
+                Row(
                   children: [
-                    const Icon(
-                      Icons.search_off_rounded,
-                      size: 48,
-                      color: AppTheme.textSecondary,
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'No live jobs found',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textPrimary,
+                    Expanded(
+                      child: Text(
+                        _selectedCategory == null
+                            ? 'Latest jobs'
+                            : '${_selectedCategory!} jobs',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.textPrimary,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'There are no matching live jobs in Firestore for this filter. Reset filters to see all available vacancies.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppTheme.textSecondary,
-                      ),
+                    TextButton(
+                      onPressed: _openCandidateSearch,
+                      child: const Text('See all'),
                     ),
-                    const SizedBox(height: 16),
-                    OutlinedButton(
+                  ],
+                ),
+                if (hasActiveFilters)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
                       onPressed: () {
+                        _searchDebounce?.cancel();
                         setState(() {
                           _selectedLocation = 'All Locations';
                           _selectedCategory = null;
@@ -1572,16 +1833,211 @@ class _MainShellScreenState extends State<MainShellScreen> {
                           _searchController.clear();
                         });
                       },
-                      child: const Text('Reset All Filters'),
+                      icon: const Icon(Icons.close, size: 16),
+                      label: const Text('Clear filters'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppTheme.textSecondary,
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                if (snapshot.hasError)
+                  _buildHomeLoadFailure()
+                else if (isLoading)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 30),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2.5),
+                          ),
+                          SizedBox(height: 10),
+                          Text(
+                            'Loading jobs…',
+                            style: TextStyle(
+                              color: AppTheme.textSecondary,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else if (jobs.isEmpty)
+                  _buildHomeEmptyState(hasActiveFilters: hasActiveFilters)
+                else
+                  ...jobs.take(3).map(_buildReferenceJobCard),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Browse categories',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _openCandidateSearch,
+                      child: const Text('See all'),
                     ),
                   ],
                 ),
-              )
-            else
-              ...jobs.map((job) => _buildReferenceJobCard(job)),
-          ],
+                const SizedBox(height: 4),
+                _buildCategoryGrid(),
+              ],
+            );
+          },
         );
       },
+    );
+  }
+
+  Widget _buildPreferencesPrompt() {
+    return Material(
+      color: AppTheme.primaryLight,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => setState(() => _selectedTabIndex = 3),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              const Icon(Icons.tune_rounded, color: AppTheme.primary),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Add your preferred roles',
+                      style: TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Help us show jobs that fit your goals.',
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: AppTheme.primary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHomeLoadFailure() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: AppTheme.border),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.wifi_off_rounded, color: AppTheme.textSecondary),
+          const SizedBox(height: 8),
+          const Text(
+            'We couldn’t load jobs right now.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppTheme.textPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Check your connection and try again.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: () => setState(() {}),
+            icon: const Icon(Icons.refresh, size: 18),
+            label: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHomeEmptyState({required bool hasActiveFilters}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: AppTheme.border),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          const Icon(
+            Icons.work_outline_rounded,
+            size: 34,
+            color: AppTheme.primary,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            hasActiveFilters ? 'No matching jobs yet' : 'No jobs posted yet',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            hasActiveFilters
+                ? 'Try a different search or clear your filters.'
+                : 'New opportunities will appear here when they are available.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppTheme.textSecondary,
+              height: 1.4,
+            ),
+          ),
+          if (hasActiveFilters) ...[
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: () {
+                _searchDebounce?.cancel();
+                setState(() {
+                  _selectedLocation = 'All Locations';
+                  _selectedCategory = null;
+                  _searchQuery = '';
+                  _searchController.clear();
+                });
+              },
+              child: const Text('Clear filters'),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -1625,81 +2081,92 @@ class _MainShellScreenState extends State<MainShellScreen> {
       },
     ];
 
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: categories.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        childAspectRatio: 1.05,
-      ),
-      itemBuilder: (context, idx) {
-        final cat = categories[idx];
-        final name = cat['name'] as String;
-        final icon = cat['icon'] as IconData;
-        final color = cat['color'] as Color;
-        final iconColor = cat['iconColor'] as Color;
-        final isSelected = _selectedCategory == name;
+    return SizedBox(
+      height: 72,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: categories.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 8),
+        itemBuilder: (context, idx) {
+          final cat = categories[idx];
+          final name = cat['name'] as String;
+          final icon = cat['icon'] as IconData;
+          final color = cat['color'] as Color;
+          final iconColor = cat['iconColor'] as Color;
+          final isSelected = _selectedCategory == name;
 
-        return GestureDetector(
-          onTap: () {
-            setState(() {
-              if (_selectedCategory == name) {
-                _selectedCategory = null;
-              } else {
-                _selectedCategory = name;
-              }
-            });
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-            decoration: BoxDecoration(
-              color: isSelected ? AppTheme.primaryLight : Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: isSelected ? AppTheme.primary : AppTheme.border,
-                width: isSelected ? 2 : 1,
+          return Semantics(
+            button: true,
+            selected: isSelected,
+            label: '$name category',
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  if (_selectedCategory == name) {
+                    _selectedCategory = null;
+                  } else {
+                    _selectedCategory = name;
+                  }
+                });
+              },
+              borderRadius: BorderRadius.circular(13),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: 148,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 11,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: isSelected ? AppTheme.primaryLight : Colors.white,
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(
+                    color: isSelected ? AppTheme.primary : AppTheme.border,
+                    width: isSelected ? 2 : 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.02),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icon, color: iconColor, size: 20),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: isSelected
+                              ? FontWeight.bold
+                              : FontWeight.w600,
+                          color: isSelected
+                              ? AppTheme.primary
+                              : AppTheme.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.02),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(icon, color: iconColor, size: 20),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  name,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                    color: isSelected ? AppTheme.primary : AppTheme.textPrimary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -1812,6 +2279,24 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.schedule_outlined,
+                      size: 14,
+                      color: AppTheme.textSecondary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _formatPostedAge(job.postedAt),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 12),
 
                 // Bottom row: Salary Pill & Apply Button
@@ -1892,6 +2377,14 @@ class _MainShellScreenState extends State<MainShellScreen> {
     );
   }
 
+  String _formatPostedAge(DateTime postedAt) {
+    final age = DateTime.now().difference(postedAt);
+    if (age.isNegative || age.inMinutes < 60) return 'Posted recently';
+    if (age.inHours < 24) return 'Posted ${age.inHours}h ago';
+    if (age.inDays == 1) return 'Posted yesterday';
+    return 'Posted ${age.inDays}d ago';
+  }
+
   Widget _buildCompanyAvatar(String companyName, {double size = 40}) {
     Color bg = const Color(0xFFEFF8FF);
     Color fg = AppTheme.primary;
@@ -1967,9 +2460,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 Expanded(
                   child: TextField(
                     controller: _searchController,
-                    onChanged: (val) => setState(() => _searchQuery = val),
+                    onChanged: _onSearchChanged,
                     decoration: InputDecoration(
-                      hintText: 'Search roles, skills, or companies...',
+                      hintText: 'Search jobs, companies, locations...',
                       prefixIcon: const Icon(
                         Icons.search,
                         color: AppTheme.primary,
@@ -2142,41 +2635,199 @@ class _MainShellScreenState extends State<MainShellScreen> {
     return StreamBuilder<Map<String, dynamic>?>(
       stream: _firestoreService.streamCandidateProfile(_currentUid),
       builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const Center(
+            child: CircularProgressIndicator(strokeWidth: 2.5),
+          );
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.cloud_off_outlined,
+                    color: AppTheme.textSecondary,
+                    size: 36,
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'We couldn’t load your profile.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => setState(() {}),
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
         final profile = snapshot.data;
-        final fullName =
-            profile?['fullName'] ??
-            FirebaseAuth.instance.currentUser?.displayName ??
-            'New Candidate';
-        final phone = profile?['phone'] ?? 'No phone added';
-        final qualification =
-            profile?['qualification'] ?? profile?['educationLevel'] ?? '';
-        final district = profile?['district'] ?? '';
-        final city = profile?['city'] ?? '';
-        final locationDisplay = district.isNotEmpty && city.isNotEmpty
-            ? '$city, $district'
-            : (district.isNotEmpty
-                  ? district
-                  : (city.isNotEmpty ? city : 'Tamil Nadu'));
-        final hasExperience = profile?['hasExperience'] == true;
-        final expText = hasExperience
-            ? '${profile?['experienceYears'] ?? '1 Year'} • ${profile?['lastJobTitle'] ?? 'Experienced'}'
-            : 'Fresher';
-        final initials = fullName.trim().isNotEmpty
-            ? fullName
-                  .trim()
-                  .split(' ')
-                  .map((p) => p.isNotEmpty ? p[0] : '')
-                  .take(2)
-                  .join()
-                  .toUpperCase()
-            : 'C3';
+        final fullName = _profileString(profile, 'fullName').isNotEmpty
+            ? _profileString(profile, 'fullName')
+            : FirebaseAuth.instance.currentUser?.displayName ?? 'Candidate';
+        final phone = _profileString(profile, 'phone');
+        final city = _profileString(profile, 'city');
+        final district = _profileString(profile, 'district');
+        final state = _profileString(profile, 'state');
+        final locationDisplay = [
+          city,
+          district,
+          state,
+        ].where((part) => part.isNotEmpty).toSet().join(', ');
+        final qualification = _profileString(profile, 'qualification');
+        final educationLevel = _profileString(profile, 'educationLevel');
+        final qualificationDisplay = [
+          qualification,
+          educationLevel,
+        ].where((part) => part.isNotEmpty).toSet().join(' · ');
+        final preferredRoles = _profileStringList(
+          profile?['preferredJobTitles'],
+        );
+        final skills = _profileStringList(profile?['skills']);
+        final resumeFileName = _profileString(profile, 'resumeFileName');
+        final initials = fullName
+            .trim()
+            .split(RegExp(r'\s+'))
+            .where((part) => part.isNotEmpty)
+            .take(2)
+            .map((part) => part[0])
+            .join()
+            .toUpperCase();
 
         return ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
           children: [
-            // Profile Summary Card
             Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppTheme.border),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.primaryDark.withValues(alpha: 0.04),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  CircleAvatar(
+                    radius: 38,
+                    backgroundColor: AppTheme.primaryLight,
+                    child: CircleAvatar(
+                      radius: 33,
+                      backgroundColor: Colors.white,
+                      child: CircleAvatar(
+                        radius: 29,
+                        backgroundColor: AppTheme.primaryLight,
+                        child: Text(
+                          initials.isEmpty ? 'C' : initials,
+                          style: const TextStyle(
+                            fontSize: 21,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    fullName,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w800,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    locationDisplay.isEmpty
+                        ? 'Candidate profile'
+                        : locationDisplay,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _openCandidateApplications,
+                          icon: const Icon(Icons.work_outline, size: 17),
+                          label: const Text('Applied jobs'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            textStyle: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _openCandidateProfileEditor(profile),
+                          icon: const Icon(Icons.edit_outlined, size: 17),
+                          label: const Text('Edit profile'),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            textStyle: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _buildProfileContactCard(
+              icon: Icons.phone_outlined,
+              title: 'Phone number',
+              value: phone.isEmpty ? 'Add your phone number' : phone,
+              actionLabel: 'Change',
+              onTap: () => _openCandidateProfileEditor(profile),
+            ),
+            const SizedBox(height: 10),
+            _buildProfileContactCard(
+              icon: Icons.location_on_outlined,
+              title: 'Location',
+              value: locationDisplay.isEmpty
+                  ? 'Add your location'
+                  : locationDisplay,
+              actionLabel: 'Change',
+              onTap: () => _openCandidateProfileEditor(profile),
+            ),
+            const SizedBox(height: 22),
+            const Text(
+              'Profile details',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Container(
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
@@ -2184,197 +2835,443 @@ class _MainShellScreenState extends State<MainShellScreen> {
               ),
               child: Column(
                 children: [
-                  CircleAvatar(
-                    radius: 36,
-                    backgroundColor: AppTheme.primaryLight,
-                    child: Text(
-                      initials.isNotEmpty ? initials : 'C3',
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w900,
-                        color: AppTheme.primary,
-                      ),
-                    ),
+                  _buildProfileDetailRow(
+                    icon: Icons.work_outline_rounded,
+                    title: 'Preferred job titles',
+                    subtitle: preferredRoles.isEmpty
+                        ? 'Add your preferred roles'
+                        : preferredRoles.join(' · '),
+                    onTap: () => _openCandidateProfileEditor(profile),
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    fullName,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.textPrimary,
-                    ),
+                  const Divider(height: 1, indent: 58),
+                  _buildProfileDetailRow(
+                    icon: Icons.school_outlined,
+                    title: 'Qualification',
+                    subtitle: qualificationDisplay.isEmpty
+                        ? 'Add your education details'
+                        : qualificationDisplay,
+                    onTap: () => _openCandidateProfileEditor(profile),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '$expText • $locationDisplay',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 13,
+                  const Divider(height: 1, indent: 58),
+                  _buildProfileDetailRow(
+                    icon: Icons.auto_awesome_outlined,
+                    title: 'Skills',
+                    subtitle: skills.isEmpty
+                        ? 'Add skills to your profile'
+                        : skills.join(' · '),
+                    onTap: () => _editCandidateSkills(skills),
+                  ),
+                  const Divider(height: 1, indent: 58),
+                  _buildProfileDetailRow(
+                    icon: Icons.description_outlined,
+                    title: 'Resume',
+                    subtitle: _isUploadingResume
+                        ? 'Uploading PDF…'
+                        : resumeFileName.isEmpty
+                        ? 'Add a PDF resume (up to 10 MB)'
+                        : resumeFileName,
+                    trailing: _isUploadingResume
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : null,
+                    onTap: _isUploadingResume
+                        ? null
+                        : () => _showResumeActions(profile ?? {}),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Text(
+                    'Your profile information is handled according to our ',
+                    style: TextStyle(
+                      fontSize: 11,
                       color: AppTheme.textSecondary,
                     ),
                   ),
-                  if (qualification.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      qualification,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 12,
+                  InkWell(
+                    onTap: () => PrivacyPolicyScreen.open(context),
+                    child: const Text(
+                      'Privacy Policy',
+                      style: TextStyle(
+                        fontSize: 11,
                         color: AppTheme.primary,
+                        decoration: TextDecoration.underline,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ],
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _ProfileStat(
-                        label: 'Applied',
-                        value: '${_appliedJobIds.length}',
-                      ),
-                      _ProfileStat(
-                        label: 'Saved',
-                        value: '${_savedJobIds.length}',
-                      ),
-                      _ProfileStat(
-                        label: 'Status',
-                        value: profile != null ? 'Active' : 'Incomplete',
-                      ),
-                    ],
+                  ),
+                  const Text(
+                    '.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.textSecondary,
+                    ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-
-            // Profile Wizard Launcher
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppTheme.border),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: const BoxDecoration(
-                      color: AppTheme.primaryLight,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.edit_note_rounded,
-                      color: AppTheme.primary,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Candidate Details & Preferences',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Phone: $phone',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: AppTheme.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (c) => CandidateOnboardingWizardScreen(
-                            onFinish: () => Navigator.pop(c),
-                            onBackToLogin: () => Navigator.pop(c),
-                          ),
-                        ),
-                      );
-                    },
-                    child: const Text('Update'),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Role Switcher / Preferences
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppTheme.border),
-              ),
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: const Icon(
-                      Icons.switch_account_outlined,
-                      color: AppTheme.primary,
-                    ),
-                    title: const Text(
-                      'Switch Role Mode',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                    subtitle: const Text(
-                      'Access Employer ATS or Admin Control Panel',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: widget.onSwitchRoleRequested,
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(
-                      Icons.privacy_tip_outlined,
-                      color: AppTheme.textPrimary,
-                    ),
-                    title: const Text(
-                      'Candidate Guidelines & Safety',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (c) => CandidateGuidelinesScreen(
-                            onAccepted: () => Navigator.pop(c),
-                            onBack: () => Navigator.pop(c),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
+            const SizedBox(height: 14),
+            TextButton.icon(
+              onPressed: _confirmCandidateSignOut,
+              icon: const Icon(Icons.logout_rounded, size: 18),
+              label: const Text('Sign out'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppTheme.error,
+                minimumSize: const Size.fromHeight(46),
               ),
             ),
           ],
         );
       },
     );
+  }
+
+  String _profileString(Map<String, dynamic>? profile, String key) {
+    final value = profile?[key];
+    return value == null ? '' : value.toString().trim();
+  }
+
+  List<String> _profileStringList(dynamic value) {
+    if (value is! Iterable) return [];
+    return value
+        .map((item) => item.toString().trim())
+        .where((item) => item.isNotEmpty)
+        .toSet()
+        .toList();
+  }
+
+  Widget _buildProfileContactCard({
+    required IconData icon,
+    required String title,
+    required String value,
+    required String actionLabel,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: AppTheme.primary, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 11,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(onPressed: onTap, child: Text(actionLabel)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileDetailRow({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback? onTap,
+    Widget? trailing,
+  }) {
+    return ListTile(
+      enabled: onTap != null,
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+      leading: Container(
+        width: 36,
+        height: 36,
+        decoration: const BoxDecoration(
+          color: AppTheme.primaryLight,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: AppTheme.primary, size: 19),
+      ),
+      title: Text(
+        title,
+        style: const TextStyle(
+          color: AppTheme.textPrimary,
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: AppTheme.textSecondary,
+          fontSize: 12,
+          height: 1.3,
+        ),
+      ),
+      trailing:
+          trailing ??
+          (onTap == null
+              ? null
+              : const Icon(Icons.chevron_right, color: AppTheme.textSecondary)),
+    );
+  }
+
+  void _openCandidateProfileEditor(Map<String, dynamic>? profile) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (routeContext) => CandidateOnboardingWizardScreen(
+          onFinish: () => Navigator.pop(routeContext),
+          onBackToLogin: () => Navigator.pop(routeContext),
+          initialProfile: profile,
+        ),
+      ),
+    );
+  }
+
+  void _openCandidateApplications() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _CandidateApplicationsScreen(
+          candidateUid: _currentUid,
+          firestoreService: _firestoreService,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editCandidateSkills(List<String> skills) async {
+    final controller = TextEditingController(text: skills.join(', '));
+    final updatedSkills = await showDialog<List<String>>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Your skills'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            hintText: 'Flutter, Dart, Firebase',
+            helperText: 'Separate skills with commas.',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final values = controller.text
+                  .split(',')
+                  .map((value) => value.trim())
+                  .where((value) => value.isNotEmpty)
+                  .toSet()
+                  .take(20)
+                  .toList();
+              Navigator.pop(dialogContext, values);
+            },
+            child: const Text('Save skills'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (updatedSkills == null || !mounted) return;
+
+    try {
+      await _firestoreService.updateCandidateProfile(
+        uid: _currentUid,
+        updates: {'skills': updatedSkills},
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Skills updated.')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not save your skills. Try again.'),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showResumeActions(Map<String, dynamic> profile) async {
+    final resumePath = profile['resumePublicId']?.toString() ?? '';
+    final selectedAction = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.upload_file, color: AppTheme.primary),
+              title: Text(
+                resumePath.isEmpty ? 'Upload PDF resume' : 'Replace resume',
+              ),
+              subtitle: const Text('PDF only, up to 10 MB'),
+              onTap: () => Navigator.pop(sheetContext, 'upload'),
+            ),
+            if (resumePath.isNotEmpty)
+              ListTile(
+                leading: const Icon(
+                  Icons.delete_outline,
+                  color: AppTheme.error,
+                ),
+                title: const Text('Remove resume'),
+                onTap: () => Navigator.pop(sheetContext, 'delete'),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (selectedAction == 'upload') {
+      await _pickAndUploadResume();
+    } else if (selectedAction == 'delete') {
+      await _removeCandidateResume(resumePath);
+    }
+  }
+
+  Future<void> _pickAndUploadResume() async {
+    final PlatformFile? file;
+    try {
+      file = await FilePicker.pickFile(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf'],
+      );
+    } catch (_) {
+      _showProfileMessage('Could not open the file picker. Try again.');
+      return;
+    }
+    if (file == null || !mounted) return;
+    int? fileSize;
+    Uint8List bytes;
+    try {
+      fileSize = await file.length();
+      if (fileSize == null || fileSize == 0) {
+        _showProfileMessage('Could not read that file. Choose the PDF again.');
+        return;
+      }
+      if (fileSize > 10 * 1024 * 1024) {
+        _showProfileMessage('Choose a PDF smaller than 10 MB.');
+        return;
+      }
+      bytes = await file.readAsBytes();
+    } catch (_) {
+      _showProfileMessage('Could not read that file. Choose the PDF again.');
+      return;
+    }
+    if (!String.fromCharCodes(bytes.take(5)).startsWith('%PDF-')) {
+      _showProfileMessage('That file does not appear to be a valid PDF.');
+      return;
+    }
+
+    setState(() => _isUploadingResume = true);
+    try {
+      await _candidateResumeService.uploadPdf(
+        uid: _currentUid,
+        bytes: bytes,
+        fileName: file.name,
+      );
+      _showProfileMessage('Resume uploaded successfully.');
+    } catch (error) {
+      _showProfileMessage(
+        error is StateError ? error.message : 'Could not upload the resume. Check your connection and try again.',
+      );
+    } finally {
+      if (mounted) setState(() => _isUploadingResume = false);
+    }
+  }
+
+  Future<void> _removeCandidateResume(String path) async {
+    if (path.isEmpty) return;
+    try {
+      await _candidateResumeService.delete(_currentUid);
+      _showProfileMessage('Resume removed from your profile.');
+    } catch (error) {
+      _showProfileMessage(
+        error is StateError
+            ? error.message
+            : 'Could not remove the resume. Try again.',
+      );
+    }
+  }
+
+  void _showProfileMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _confirmCandidateSignOut() async {
+    final shouldSignOut = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Sign out?'),
+        content: const Text(
+          'You can sign back in to access your profile and saved jobs.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+    if (shouldSignOut == true && mounted) widget.onSignOutRequested();
   }
 
   // --- EMPLOYER VIEWS ---
@@ -2719,8 +3616,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
                             ),
                           ],
                           onChanged: (val) {
-                            if (val != null)
+                            if (val != null) {
                               setState(() => _postCategory = val);
+                            }
                           },
                         ),
                       ],
@@ -2774,8 +3672,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
                             ),
                           ],
                           onChanged: (val) {
-                            if (val != null)
+                            if (val != null) {
                               setState(() => _postWorkMode = val);
+                            }
                           },
                         ),
                       ],
@@ -2856,8 +3755,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
                             ),
                           ],
                           onChanged: (val) {
-                            if (val != null)
+                            if (val != null) {
                               setState(() => _postLocation = val);
+                            }
                           },
                         ),
                       ],
@@ -3177,6 +4077,205 @@ class _MainShellScreenState extends State<MainShellScreen> {
   }
 }
 
+class _CandidateApplicationsScreen extends StatefulWidget {
+  final String candidateUid;
+  final FirestoreService firestoreService;
+
+  const _CandidateApplicationsScreen({
+    required this.candidateUid,
+    required this.firestoreService,
+  });
+
+  @override
+  State<_CandidateApplicationsScreen> createState() =>
+      _CandidateApplicationsScreenState();
+}
+
+class _CandidateApplicationsScreenState
+    extends State<_CandidateApplicationsScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Applied jobs')),
+      body: StreamBuilder<List<Map<String, dynamic>>>(
+        stream: widget.firestoreService.streamCandidateApplications(
+          widget.candidateUid,
+        ),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Could not load your applications.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: () => setState(() {}),
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          final applications = snapshot.data ?? [];
+          if (applications.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.work_history_outlined,
+                      size: 48,
+                      color: AppTheme.textSecondary,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'No applications yet',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Jobs you apply to will appear here.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppTheme.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: applications.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 10),
+            itemBuilder: (context, index) {
+              final application = applications[index];
+              final title = application['jobTitle']?.toString() ?? 'Job';
+              final company =
+                  application['companyName']?.toString() ?? 'Company';
+              final location = application['locationCity']?.toString() ?? '';
+              final status = application['status']?.toString() ?? 'Applied';
+              final appliedAt = application['appliedAt'];
+              final appliedDate = appliedAt is Timestamp
+                  ? appliedAt.toDate()
+                  : appliedAt is DateTime
+                  ? appliedAt
+                  : null;
+
+              return Container(
+                padding: const EdgeInsets.all(15),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(15),
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppTheme.textPrimary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _ApplicationStatusLabel(status: status),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      [
+                        company,
+                        location,
+                      ].where((value) => value.isNotEmpty).join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                    if (appliedDate != null) ...[
+                      const SizedBox(height: 9),
+                      Text(
+                        'Applied ${appliedDate.day}/${appliedDate.month}/${appliedDate.year}',
+                        style: const TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ApplicationStatusLabel extends StatelessWidget {
+  final String status;
+
+  const _ApplicationStatusLabel({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final normalized = status.toLowerCase();
+    final color = normalized.contains('reject')
+        ? AppTheme.error
+        : normalized.contains('short') || normalized.contains('interview')
+        ? AppTheme.success
+        : AppTheme.primary;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        status,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
 class _MetricItem extends StatelessWidget {
   final String label;
   final String value;
@@ -3201,34 +4300,6 @@ class _MetricItem extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-        ),
-      ],
-    );
-  }
-}
-
-class _ProfileStat extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _ProfileStat({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: AppTheme.primaryDark,
-          ),
-        ),
-        const SizedBox(height: 2),
         Text(
           label,
           style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),

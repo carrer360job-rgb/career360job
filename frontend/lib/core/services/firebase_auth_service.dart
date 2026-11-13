@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -53,10 +55,12 @@ class FirebaseAuthService {
           message: 'Verify your email address before signing in.',
         );
       }
-      await syncUserProfileToFirestore(
-        uid: refreshedUser.uid,
-        email: refreshedUser.email ?? email,
-        displayName: refreshedUser.displayName,
+      unawaited(
+        syncUserProfileToFirestore(
+          uid: refreshedUser.uid,
+          email: refreshedUser.email ?? email,
+          displayName: refreshedUser.displayName,
+        ),
       );
     }
 
@@ -111,11 +115,13 @@ class FirebaseAuthService {
 
         final user = cred.user;
         if (user != null) {
-          await syncUserProfileToFirestore(
-            uid: user.uid,
-            email: user.email ?? '',
-            displayName: user.displayName,
-            photoUrl: user.photoURL,
+          unawaited(
+            syncUserProfileToFirestore(
+              uid: user.uid,
+              email: user.email ?? '',
+              displayName: user.displayName,
+              photoUrl: user.photoURL,
+            ),
           );
         }
 
@@ -141,11 +147,13 @@ class FirebaseAuthService {
 
       final user = cred.user;
       if (user != null) {
-        await syncUserProfileToFirestore(
-          uid: user.uid,
-          email: user.email ?? '',
-          displayName: user.displayName,
-          photoUrl: user.photoURL,
+        unawaited(
+          syncUserProfileToFirestore(
+            uid: user.uid,
+            email: user.email ?? '',
+            displayName: user.displayName,
+            photoUrl: user.photoURL,
+          ),
         );
       }
 
@@ -196,35 +204,37 @@ class FirebaseAuthService {
   /// 6. Save Candidate Complete Onboarding Profile to Cloud Firestore
   Future<void> saveCandidateOnboardingProfile({
     required String uid,
+    required String email,
     required Map<String, dynamic> onboardingData,
   }) async {
-    try {
-      final docRef = _firestore.collection('candidates').doc(uid);
-      await docRef.set({
-        'uid': uid,
-        ...onboardingData,
-        'onboardingCompleted': true,
-        'updatedAt': FieldValue.serverTimestamp(),
-        'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+    final batch = _firestore.batch();
+    final candidateRef = _firestore.collection('candidates').doc(uid);
+    final userRef = _firestore.collection('users').doc(uid);
 
-      final userRef = _firestore.collection('users').doc(uid);
-      await userRef.set({
-        'uid': uid,
-        'displayName': onboardingData['fullName'],
-        'phone': onboardingData['phone'],
-        'location': onboardingData['city'] ?? onboardingData['district'],
-        'onboardingCompleted': true,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-      debugPrint(
-        '[FirebaseAuthService] Candidate onboarding profile saved for $uid',
-      );
-    } catch (e) {
-      debugPrint(
-        '[FirebaseAuthService] Firestore candidate profile notice: $e',
-      );
-    }
+    batch.set(candidateRef, {
+      'uid': uid,
+      ...onboardingData,
+      'onboardingCompleted': true,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    batch.set(userRef, {
+      'uid': uid,
+      'email': email.toLowerCase().trim(),
+      'role': 'candidate',
+      'displayName': onboardingData['fullName'],
+      'phone': onboardingData['phone'],
+      'location': onboardingData['city'] ?? onboardingData['district'],
+      'onboardingCompleted': true,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await batch.commit();
+    debugPrint(
+      '[FirebaseAuthService] Candidate onboarding profile saved for $uid',
+    );
   }
 
   /// 7. Sign Out

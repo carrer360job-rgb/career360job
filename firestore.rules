@@ -41,8 +41,17 @@ service cloud.firestore {
 
     // Candidate profile documents contain personal information.
     match /candidates/{uid} {
-      allow read, create, update: if owns(uid)
-        && request.resource.data.uid == uid;
+      allow read: if owns(uid);
+      allow create: if owns(uid)
+        && request.resource.data.uid == uid
+        && !request.resource.data.keys().hasAny([
+          'resumePublicId', 'resumeFileName', 'resumeUpdatedAt', 'resumePath'
+        ]);
+      allow update: if owns(uid)
+        && request.resource.data.uid == resource.data.uid
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'resumePublicId', 'resumeFileName', 'resumeUpdatedAt', 'resumePath'
+        ]);
       allow delete: if false;
     }
 

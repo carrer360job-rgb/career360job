@@ -10,14 +10,9 @@ import '../legal/privacy_policy_screen.dart';
 enum AuthScreenState { signIn, signUp, forgotPassword }
 
 class CandidateLoginScreen extends StatefulWidget {
-  final VoidCallback onLoginSuccess;
   final VoidCallback onBack;
 
-  const CandidateLoginScreen({
-    super.key,
-    required this.onLoginSuccess,
-    required this.onBack,
-  });
+  const CandidateLoginScreen({super.key, required this.onBack});
 
   @override
   State<CandidateLoginScreen> createState() => _CandidateLoginScreenState();
@@ -107,7 +102,6 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       await _authService.signInWithEmail(email: email, password: password);
       if (mounted) {
         setState(() => _isLoading = false);
-        widget.onLoginSuccess();
       }
     } on FirebaseAuthException catch (e) {
       if (mounted) {
@@ -244,7 +238,6 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
           _showSuccess(
             'Welcome back, ${cred.user?.displayName ?? "Candidate"}!',
           );
-          widget.onLoginSuccess();
         }
       }
     } catch (e) {

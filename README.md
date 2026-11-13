@@ -16,7 +16,7 @@ The Android Firebase configuration is `frontend/android/app/google-services.json
 
 ## Backend
 
-The backend is an incomplete development component. Configure `backend/.env` from `backend/.env.example`, then run:
+The backend handles signed candidate resume uploads to Cloudinary. Configure `backend/.env` from `backend/.env.example`, then run:
 
 ```powershell
 cd backend
@@ -25,6 +25,8 @@ npm run dev
 ```
 
 The custom backend OTP flow has been removed from the API. Email/password sign-up and verification use Firebase Authentication.
+
+For Android resume uploads, follow [`docs/CLOUDINARY_RESUME_SETUP.md`](docs/CLOUDINARY_RESUME_SETUP.md). Run Flutter with `--dart-define=API_BASE_URL=https://YOUR_BACKEND`.
 
 ## Security configuration
 
