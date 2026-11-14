@@ -13,8 +13,26 @@ service cloud.firestore {
       return verified() && request.auth.uid == uid;
     }
 
-    // Job listings are public. Client-side creation and moderation are disabled
-    // until employer roles and verification are assigned by trusted server code.
+    function isAdmin() {
+      return verified() && request.auth.token.admin == true;
+    }
+
+    function validEmployerPhones(data) {
+      return data.phone is string
+        && data.phone.matches('^[0-9]{10}$')
+        && data.whatsappPhone is string
+        && data.whatsappPhone.matches('^[0-9]{10}$')
+        && data.whatsappSameAsPhone is bool
+        && (!data.whatsappSameAsPhone || data.whatsappPhone == data.phone);
+    }
+
+    function approvedEmployer(uid) {
+      return owns(uid)
+        && exists(/databases/$(database)/documents/employers/$(uid))
+        && get(/databases/$(database)/documents/employers/$(uid)).data.status == 'approved';
+    }
+
+    // Only trusted backend code publishes and changes jobs.
     match /jobs/{jobId} {
       allow read: if true;
       allow write: if false;
@@ -26,7 +44,10 @@ service cloud.firestore {
       allow read: if owns(uid);
       allow create: if owns(uid)
         && request.resource.data.uid == uid
-        && (!('role' in request.resource.data) || request.resource.data.role == 'candidate')
+        && request.resource.data.role in ['candidate', 'employer']
+        && (request.resource.data.role == 'candidate'
+          ? !exists(/databases/$(database)/documents/employers/$(uid))
+          : !exists(/databases/$(database)/documents/candidates/$(uid)))
         && !('isAdmin' in request.resource.data)
         && !('employerVerified' in request.resource.data);
       allow update: if owns(uid)
@@ -37,6 +58,53 @@ service cloud.firestore {
           'isAdmin', 'employerVerified', 'companyVerified', 'subscription', 'plan'
         ]);
       allow delete: if false;
+    }
+
+    // Employers submit contact details. Approval and entitlements are server-only.
+    match /employers/{uid} {
+      allow read: if owns(uid) || isAdmin();
+      allow create: if owns(uid)
+        && !exists(/databases/$(database)/documents/candidates/$(uid))
+        && getAfter(/databases/$(database)/documents/users/$(uid)).data.role == 'employer'
+        && request.resource.data.uid == uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.keys().hasOnly([
+          'uid', 'email', 'contactName', 'designation', 'companyName',
+          'industry', 'companySize', 'phone', 'whatsappPhone',
+          'whatsappSameAsPhone', 'website', 'address', 'city', 'description', 'state',
+          'district', 'postalCode', 'registrationNumber', 'status',
+          'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.companyName is string
+        && request.resource.data.companyName.size() >= 3
+        && request.resource.data.companyName.size() <= 100
+        && request.resource.data.contactName is string
+        && request.resource.data.contactName.size() >= 2
+        && request.resource.data.contactName.size() <= 80
+        && validEmployerPhones(request.resource.data)
+        && request.resource.data.email is string
+        && request.resource.data.email.size() <= 254
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if owns(uid)
+        && resource.data.status in ['pending', 'approved', 'rejected']
+        && request.resource.data.uid == uid
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'contactName', 'designation', 'phone', 'whatsappPhone',
+          'whatsappSameAsPhone', 'website', 'address', 'city', 'description',
+          'state', 'district', 'postalCode', 'updatedAt'
+        ])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'phone', 'whatsappPhone', 'whatsappSameAsPhone'
+        ]) || validEmployerPhones(request.resource.data))
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    match /employer_orders/{orderId} {
+      allow read: if verified() && resource.data.employerUid == request.auth.uid;
+      allow write: if false;
     }
 
     // Only trusted server code creates notifications. Recipients may mark
@@ -54,6 +122,7 @@ service cloud.firestore {
       allow read: if owns(uid);
       allow create: if owns(uid)
         && request.resource.data.uid == uid
+        && getAfter(/databases/$(database)/documents/users/$(uid)).data.role == 'candidate'
         && !request.resource.data.keys().hasAny([
           'resumePublicId', 'resumeFileName', 'resumeUpdatedAt', 'resumePath',
           'profilePhotoPublicId', 'profilePhotoUrl', 'profilePhotoUpdatedAt'
@@ -74,23 +143,25 @@ service cloud.firestore {
       allow list, create, update, delete: if false;
     }
 
-    // Candidates may create an application only for themselves and a real job.
-    // Applicants and the owning employer may read it. Employer status changes
-    // remain disabled until employer identity is managed by trusted code.
+    // Candidates may apply and read their own application. Employer access is
+    // served by the backend so plan-based redaction cannot be bypassed.
     match /applications/{applicationId} {
       allow create: if verified()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'candidate'
         && request.resource.data.candidateUid == request.auth.uid
         && request.resource.data.status == 'Applied'
         && request.resource.data.jobId is string
         && exists(/databases/$(database)/documents/jobs/$(request.resource.data.jobId))
         && request.resource.data.employerUid == get(
           /databases/$(database)/documents/jobs/$(request.resource.data.jobId)
-        ).data.employerUid;
-      allow read: if verified()
-        && (resource.data.candidateUid == request.auth.uid
-          || (resource.data.employerUid is string
-            && resource.data.employerUid == request.auth.uid));
-      allow update, delete: if false;
+        ).data.employerUid
+        && (!('status' in get(/databases/$(database)/documents/jobs/$(request.resource.data.jobId)).data)
+          || get(/databases/$(database)/documents/jobs/$(request.resource.data.jobId)).data.status == 'active')
+        && (!('expiresAt' in get(/databases/$(database)/documents/jobs/$(request.resource.data.jobId)).data)
+          || get(/databases/$(database)/documents/jobs/$(request.resource.data.jobId)).data.expiresAt > request.time);
+      allow read: if verified() && resource.data.candidateUid == request.auth.uid;
+      allow update: if false;
+      allow delete: if false;
     }
 
     // Deny access to collections that do not yet have an explicit policy.

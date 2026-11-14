@@ -5,6 +5,8 @@
   "private": true,
   "scripts": {
     "dev:backend": "npm --prefix backend run dev",
+    "dev:admin": "npm --prefix admin-web run dev",
+    "build:admin": "npm --prefix admin-web run build",
     "build:frontend:apk": "cd frontend && flutter build apk --release",
     "prisma:generate": "npm --prefix backend run prisma:generate",
     "prisma:migrate": "npm --prefix backend run prisma:migrate"

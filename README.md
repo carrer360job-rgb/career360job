@@ -1,6 +1,6 @@
 # Career360
 
-Career360 is currently being built as an Android job portal. The client is a Flutter app; Firebase Authentication and Cloud Firestore provide the active sign-in and app-data flows. An Express/Prisma backend is retained for planned trusted server operations, but most product features are not connected to it yet.
+Career360 is an Android job portal built with Flutter, Firebase Authentication, Cloud Firestore, and an Express backend. Candidate profile files use Cloudinary. The employer flow uses the backend for paid plans, job publishing, applicant decisions, and secure resume access.
 
 ## Run the Android app
 
@@ -9,14 +9,26 @@ Requirements: Flutter SDK, Android SDK, and a configured Android device or emula
 ```powershell
 cd frontend
 flutter pub get
-flutter run
+flutter run -d YOUR_DEVICE_ID
 ```
+
+### Candidate sample jobs for client preview
+
+Debug builds show 10 fictional jobs in a separate **Sample jobs** section. They are stored in the app, not in Firestore. Preview Apply never creates an application, and preview bookmarks exist only until the app restarts. The employer and admin views use only live Firestore jobs.
+
+To hide the samples while developing:
+
+```powershell
+flutter run --dart-define=SHOW_SAMPLE_JOBS=false
+```
+
+Release builds hide them by default. The setting is defined in `frontend/lib/core/config/sample_jobs_config.dart`. Preview and approve the app through USB debugging before creating a distributable APK.
 
 The Android Firebase configuration is `frontend/android/app/google-services.json`. It must belong to Firebase project `career360-7f60f` and match Android application ID `com.career360.candidate`.
 
 ## Backend
 
-The backend handles signed candidate resume uploads to Cloudinary. Configure `backend/.env` from `backend/.env.example`, then run:
+The backend handles signed candidate resume uploads, employer hiring actions, and Razorpay payment verification. Configure `backend/.env` from `backend/.env.example`, then run:
 
 ```powershell
 cd backend
@@ -25,10 +37,17 @@ npm run dev
 ```
 
 The custom backend OTP flow has been removed from the API. Email/password sign-up and verification use Firebase Authentication.
+Candidate Google sign-in uses Firebase Authentication's single browser flow on Android; it does not open a separate native account picker first.
 
 For Android resume uploads, follow [`docs/CLOUDINARY_RESUME_SETUP.md`](docs/CLOUDINARY_RESUME_SETUP.md). Run Flutter with `--dart-define=API_BASE_URL=https://YOUR_BACKEND`.
 
 Candidate profile photos use the same backend and Cloudinary account; see [`docs/PROFILE_PHOTO_SETUP.md`](docs/PROFILE_PHOTO_SETUP.md).
+
+The employer registration, company approval, posting plan, Razorpay webhook, and USB preview steps are in [`docs/EMPLOYER_SETUP.md`](docs/EMPLOYER_SETUP.md).
+
+## Admin website
+
+The separate React admin website is in `admin-web/`. Its first release provides email/password sign-in and a protected empty dashboard. Configure its Firebase web app and backend URL as described in [`docs/ADMIN_WEB_SETUP.md`](docs/ADMIN_WEB_SETUP.md), then run `npm install` and `npm run dev` from `admin-web/`.
 
 ## Security configuration
 

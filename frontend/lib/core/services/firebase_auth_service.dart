@@ -3,16 +3,12 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 
 /// Full-Stack Authentication & Profile Service
 /// Pure Firebase Authentication & Cloud Firestore Integration
 class FirebaseAuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    serverClientId: '91724152546-vtc0vna61drcpn0as33hsbkh7pq118k9.apps.googleusercontent.com',
-  );
 
   // Current logged in user
   User? get currentUser => _auth.currentUser;
@@ -34,6 +30,7 @@ class FirebaseAuthService {
   Future<UserCredential> signInWithEmail({
     required String email,
     required String password,
+    String role = 'candidate',
   }) async {
     final cred = await _auth.signInWithEmailAndPassword(
       email: email.trim(),
@@ -60,6 +57,7 @@ class FirebaseAuthService {
           uid: refreshedUser.uid,
           email: refreshedUser.email ?? email,
           displayName: refreshedUser.displayName,
+          role: role,
         ),
       );
     }
@@ -98,52 +96,13 @@ class FirebaseAuthService {
     await user.sendEmailVerification();
   }
 
-  /// 3. High-Speed Google Sign-In (Native 1-Tap Prompt + Browser Fallback)
-  Future<UserCredential?> signInWithGoogle() async {
-    // 1. Ultra-fast Native 1-Tap Prompt
+  /// 3. Google sign-in uses one Firebase browser flow on Android.
+  Future<UserCredential?> signInWithGoogle({String role = 'candidate'}) async {
     try {
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser != null) {
-        final GoogleSignInAuthentication googleAuth =
-            await googleUser.authentication;
-        final OAuthCredential credential = GoogleAuthProvider.credential(
-          accessToken: googleAuth.accessToken,
-          idToken: googleAuth.idToken,
-        );
-
-        final cred = await _auth.signInWithCredential(credential);
-
-        final user = cred.user;
-        if (user != null) {
-          unawaited(
-            syncUserProfileToFirestore(
-              uid: user.uid,
-              email: user.email ?? '',
-              displayName: user.displayName,
-              photoUrl: user.photoURL,
-            ),
-          );
-        }
-
-        return cred;
-      } else {
-        return null;
-      }
-    } catch (nativeErr) {
-      debugPrint(
-        '[FirebaseAuthService] Native 1-Tap notice ($nativeErr), activating browser flow...',
-      );
-    }
-
-    // 2. High-Performance In-App Browser OAuth
-    try {
-      final GoogleAuthProvider googleProvider = GoogleAuthProvider();
-      googleProvider.addScope('email');
-      googleProvider.addScope('profile');
-
-      final UserCredential cred = await _auth.signInWithProvider(
-        googleProvider,
-      );
+      final googleProvider = GoogleAuthProvider()
+        ..addScope('email')
+        ..addScope('profile');
+      final cred = await _auth.signInWithProvider(googleProvider);
 
       final user = cred.user;
       if (user != null) {
@@ -153,18 +112,20 @@ class FirebaseAuthService {
             email: user.email ?? '',
             displayName: user.displayName,
             photoUrl: user.photoURL,
+            role: role,
           ),
         );
       }
 
       return cred;
     } on FirebaseAuthException catch (e) {
-      if (e.code == 'web-context-cancelled' ||
-          e.code == 'canceled' ||
-          e.code == 'cancelled') {
-        debugPrint(
-          '[FirebaseAuthService] User dismissed the Google sign-in sheet.',
-        );
+      if (const {
+        'web-context-canceled',
+        'web-context-cancelled',
+        'user-cancelled',
+        'canceled',
+        'cancelled',
+      }.contains(e.code.toLowerCase())) {
         return null;
       }
       rethrow;
@@ -193,7 +154,6 @@ class FirebaseAuthService {
         'photoUrl': photoUrl,
         'role': role,
         'updatedAt': FieldValue.serverTimestamp(),
-        'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
       debugPrint('[FirebaseAuthService] Firestore profile synced for $uid');
     } catch (e) {
@@ -240,6 +200,6 @@ class FirebaseAuthService {
 
   /// 7. Sign Out
   Future<void> signOut() async {
-    await Future.wait([_auth.signOut(), _googleSignIn.signOut()]);
+    await _auth.signOut();
   }
 }

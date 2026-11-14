@@ -6,21 +6,30 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'core/theme/app_theme.dart';
+import 'core/config/sample_jobs_config.dart';
 import 'core/constants/app_constants.dart';
 import 'core/responsive/responsive_layout.dart';
 import 'core/services/firebase_auth_service.dart';
 import 'core/services/candidate_resume_service.dart';
 import 'core/services/candidate_photo_service.dart';
 import 'core/services/firestore_service.dart';
+import 'core/services/employer_service.dart';
 import 'core/widgets/bouncy_button.dart';
 import 'data/models/job_model.dart';
+import 'data/models/employer_profile.dart';
+import 'data/sample_jobs.dart';
 import 'features/splash/splash_screen.dart';
 import 'features/auth/role_selection_screen.dart';
 import 'features/candidate/candidate_guidelines_screen.dart';
+import 'features/employer/employer_guidelines_screen.dart';
 import 'features/auth/candidate_login_screen.dart';
 import 'features/candidate/candidate_onboarding_wizard_screen.dart';
+import 'features/candidate/sample_job_details_screen.dart';
+import 'features/employer/employer_registration_screen.dart';
+import 'features/employer/employer_workspace_screen.dart';
 import 'features/legal/privacy_policy_screen.dart';
 import 'features/notifications/notification_center_screen.dart';
 
@@ -147,6 +156,8 @@ class _Career360AppState extends State<Career360App> {
   bool _showSplash = true;
   bool _showCandidateGuidelines = false;
   bool _showCandidateLogin = false;
+  bool _showEmployerGuidelines = false;
+  bool _showEmployerLogin = false;
   AppUserRole? _currentRole;
 
   void _onSplashFinished() {
@@ -158,13 +169,36 @@ class _Career360AppState extends State<Career360App> {
   void _onRoleSelected(AppUserRole role) {
     if (role == AppUserRole.candidate) {
       setState(() {
+        _currentRole = role;
         _showCandidateGuidelines = true;
       });
-    } else {
+    } else if (role == AppUserRole.employer) {
       setState(() {
         _currentRole = role;
+        _showEmployerGuidelines = true;
       });
     }
+  }
+
+  void _onEmployerGuidelinesAccepted() {
+    setState(() {
+      _showEmployerGuidelines = false;
+      _showEmployerLogin = true;
+    });
+  }
+
+  void _onEmployerGuidelinesBack() {
+    setState(() {
+      _showEmployerGuidelines = false;
+      _currentRole = null;
+    });
+  }
+
+  void _onEmployerLoginBack() {
+    setState(() {
+      _showEmployerLogin = false;
+      _showEmployerGuidelines = true;
+    });
   }
 
   void _onCandidateGuidelinesAccepted() {
@@ -193,6 +227,8 @@ class _Career360AppState extends State<Career360App> {
       _showSplash = false;
       _showCandidateGuidelines = true;
       _showCandidateLogin = false;
+      _showEmployerGuidelines = false;
+      _showEmployerLogin = false;
       _currentRole = null;
     });
     await FirebaseAuthService().signOut();
@@ -203,6 +239,8 @@ class _Career360AppState extends State<Career360App> {
       _showSplash = false;
       _showCandidateGuidelines = false;
       _showCandidateLogin = false;
+      _showEmployerGuidelines = false;
+      _showEmployerLogin = false;
       _currentRole = null;
     });
     await FirebaseAuthService().signOut();
@@ -212,6 +250,8 @@ class _Career360AppState extends State<Career360App> {
     setState(() {
       _showCandidateGuidelines = false;
       _showCandidateLogin = false;
+      _showEmployerGuidelines = false;
+      _showEmployerLogin = false;
       _currentRole = null;
     });
   }
@@ -234,6 +274,20 @@ class _Career360AppState extends State<Career360App> {
       return CandidateLoginScreen(
         key: const ValueKey('login_screen'),
         onBack: _onCandidateLoginBack,
+      );
+    }
+    if (_showEmployerGuidelines) {
+      return EmployerGuidelinesScreen(
+        key: const ValueKey('employer_guidelines_screen'),
+        onAccepted: _onEmployerGuidelinesAccepted,
+        onBack: _onEmployerGuidelinesBack,
+      );
+    }
+    if (_showEmployerLogin) {
+      return CandidateLoginScreen(
+        key: const ValueKey('employer_login_screen'),
+        isEmployer: true,
+        onBack: _onEmployerLoginBack,
       );
     }
     if (_currentRole == null) {
@@ -268,9 +322,11 @@ class _Career360AppState extends State<Career360App> {
 
           final user = snapshot.data;
           if (user != null) {
-            return CandidateSessionGate(
-              key: ValueKey('candidate_session_${user.uid}'),
+            return AccountSessionGate(
+              key: ValueKey('account_session_${user.uid}'),
               user: user,
+              requestedRole: _currentRole,
+              onRoleSelected: _onRoleSelected,
               onBackToLogin: _onCandidateOnboardingBack,
               onRoleChanged: _onRoleSelected,
               onSwitchRoleRequested: _signOutToRoleSelection,
@@ -303,6 +359,183 @@ class _Career360AppState extends State<Career360App> {
           );
         },
       ),
+    );
+  }
+}
+
+class AccountSessionGate extends StatelessWidget {
+  final User user;
+  final AppUserRole? requestedRole;
+  final ValueChanged<AppUserRole> onRoleSelected;
+  final Future<void> Function() onBackToLogin;
+  final ValueChanged<AppUserRole> onRoleChanged;
+  final VoidCallback onSwitchRoleRequested;
+  final VoidCallback onSignOutRequested;
+
+  const AccountSessionGate({
+    super.key,
+    required this.user,
+    required this.requestedRole,
+    required this.onRoleSelected,
+    required this.onBackToLogin,
+    required this.onRoleChanged,
+    required this.onSwitchRoleRequested,
+    required this.onSignOutRequested,
+  });
+
+  @override
+  Widget build(BuildContext context) =>
+      StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!user.emailVerified) {
+            return EmailVerificationRequiredScreen(user: user);
+          }
+          if (snapshot.hasError) return const AuthStateLoadFailure();
+          if (!snapshot.hasData) return const SessionLoadingScreen();
+          final storedRole = snapshot.data?.data()?['role'] as String?;
+          final selectedRole = storedRole == 'employer'
+              ? AppUserRole.employer
+              : storedRole == 'candidate'
+              ? AppUserRole.candidate
+              : requestedRole;
+          if (selectedRole == null) {
+            return Scaffold(
+              body: SafeArea(
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: RoleSelectionScreen(onSelectRole: onRoleSelected),
+                    ),
+                    TextButton(
+                      onPressed: onSignOutRequested,
+                      child: const Text('Sign out'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+          if (storedRole != null &&
+              requestedRole != null &&
+              requestedRole != selectedRole) {
+            final correct = selectedRole == AppUserRole.employer
+                ? 'employer'
+                : 'job seeker';
+            return Scaffold(
+              body: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.account_circle_outlined,
+                        size: 48,
+                        color: AppTheme.primary,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'This email belongs to a $correct account.',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Sign out and continue with a separate email for this role.',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: onSignOutRequested,
+                        child: const Text('Sign out'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
+          if (selectedRole == AppUserRole.employer) {
+            return EmployerSessionGate(
+              user: user,
+              onSignOut: onSignOutRequested,
+            );
+          }
+          return CandidateSessionGate(
+            user: user,
+            onBackToLogin: onBackToLogin,
+            onRoleChanged: onRoleChanged,
+            onSwitchRoleRequested: onSwitchRoleRequested,
+            onSignOutRequested: onSignOutRequested,
+          );
+        },
+      );
+}
+
+class EmployerSessionGate extends StatefulWidget {
+  final User user;
+  final VoidCallback onSignOut;
+
+  const EmployerSessionGate({
+    super.key,
+    required this.user,
+    required this.onSignOut,
+  });
+
+  @override
+  State<EmployerSessionGate> createState() => _EmployerSessionGateState();
+}
+
+class _EmployerSessionGateState extends State<EmployerSessionGate> {
+  late final Stream<EmployerProfile?> _profileStream;
+  bool _keepRegistrationVisible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _profileStream = EmployerService().watchProfile(widget.user.uid);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.user.emailVerified) {
+      return EmailVerificationRequiredScreen(user: widget.user);
+    }
+    return StreamBuilder<EmployerProfile?>(
+      stream: _profileStream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) return const AuthStateLoadFailure();
+        if (!snapshot.hasData &&
+            snapshot.connectionState == ConnectionState.waiting) {
+          return const SessionLoadingScreen();
+        }
+        final profile = snapshot.data;
+        if (profile == null || _keepRegistrationVisible) {
+          return EmployerRegistrationScreen(
+            onSignOut: widget.onSignOut,
+            onSubmissionStarted: () {
+              if (mounted) setState(() => _keepRegistrationVisible = true);
+            },
+            onSubmissionFailed: () {
+              if (mounted) setState(() => _keepRegistrationVisible = false);
+            },
+            onFinished: () {
+              if (mounted) setState(() => _keepRegistrationVisible = false);
+            },
+          );
+        }
+        return EmployerWorkspaceScreen(
+          profile: profile,
+          onSignOut: widget.onSignOut,
+        );
+      },
     );
   }
 }
@@ -586,6 +819,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
   String _searchQuery = '';
   final Set<String> _savedJobIds = {};
   final Set<String> _appliedJobIds = {};
+  final Set<String> _sampleSavedJobIds = {};
 
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _feedScrollController = ScrollController();
@@ -665,6 +899,26 @@ class _MainShellScreenState extends State<MainShellScreen> {
   }
 
   Future<void> _toggleSaveJob(String id) async {
+    if (showSampleJobs && SampleJobs.containsId(id)) {
+      final wasSaved = _sampleSavedJobIds.contains(id);
+      setState(() {
+        if (wasSaved) {
+          _sampleSavedJobIds.remove(id);
+        } else {
+          _sampleSavedJobIds.add(id);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            wasSaved
+                ? 'Preview bookmark removed.'
+                : 'Preview bookmarked for this session only.',
+          ),
+        ),
+      );
+      return;
+    }
     final isSaved = _savedJobIds.contains(id);
     setState(() {
       if (isSaved) {
@@ -706,7 +960,94 @@ class _MainShellScreenState extends State<MainShellScreen> {
     );
   }
 
+  Future<void> _makeCall(String phone) async {
+    final clean = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+    final uri = Uri.parse('tel:$clean');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not start phone call to $phone')),
+        );
+      }
+    }
+  }
+
+  Future<void> _openWhatsApp(String phone, String title) async {
+    String clean = phone.replaceAll(RegExp(r'[^0-9]'), '');
+    if (clean.length == 10) clean = '91$clean';
+    final msg = Uri.encodeComponent(
+      'Hello, I am contacting you regarding the "$title" role on Career360.',
+    );
+    final uri = Uri.parse('https://wa.me/$clean?text=$msg');
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open WhatsApp for $phone')),
+        );
+      }
+    }
+  }
+
+  Future<void> _sendEmail(String email, String title) async {
+    final subject = Uri.encodeComponent('Application for $title - Career360');
+    final uri = Uri.parse('mailto:$email?subject=$subject');
+    try {
+      await launchUrl(uri);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open email client for $email')),
+        );
+      }
+    }
+  }
+
   void _applyToJob(JobModel job) async {
+    if (job.isDemo) {
+      showModalBottomSheet(
+        context: context,
+        showDragHandle: true,
+        builder: (sheetContext) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.visibility_outlined,
+                  size: 42,
+                  color: AppTheme.primary,
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'Application preview',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'This is a sample job for the client showcase. No application was sent or saved.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppTheme.textSecondary, height: 1.4),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(sheetContext),
+                    child: const Text('Continue browsing'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      return;
+    }
     if (_appliedJobIds.contains(job.id)) return;
     setState(() {
       _appliedJobIds.add(job.id);
@@ -802,6 +1143,19 @@ class _MainShellScreenState extends State<MainShellScreen> {
   }
 
   void _showJobDetails(JobModel job) {
+    if (job.isDemo) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => SampleJobDetailsScreen(
+            job: job,
+            isSaved: _sampleSavedJobIds.contains(job.id),
+            onToggleSaved: () => _toggleSaveJob(job.id),
+            onPreviewApply: () => _applyToJob(job),
+          ),
+        ),
+      );
+      return;
+    }
     final isApplied = _appliedJobIds.contains(job.id);
     final isSaved = _savedJobIds.contains(job.id);
 
@@ -883,6 +1237,18 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
+                      if (job.isFeatured)
+                        _buildChip(
+                          Icons.star_rounded,
+                          'Featured Job',
+                          isFeatured: true,
+                        ),
+                      if (job.isStatewide)
+                        _buildChip(
+                          Icons.public_rounded,
+                          'Statewide (All Tamil Nadu)',
+                          isStatewide: true,
+                        ),
                       _buildChip(Icons.location_on_outlined, job.locationCity),
                       _buildChip(Icons.access_time_outlined, job.workMode),
                       _buildChip(
@@ -929,6 +1295,175 @@ class _MainShellScreenState extends State<MainShellScreen> {
                   ),
                   _buildRequirementBullet(
                     'Demonstrated ownership of production-grade deliverable solutions.',
+                  ),
+                  const SizedBox(height: 24),
+                  // Direct Recruiter Connect Section
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFBBF7D0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.quick_contacts_mail_rounded,
+                              color: Color(0xFF15803D),
+                              size: 22,
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Direct Recruiter Connect',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF14532D),
+                              ),
+                            ),
+                            const Spacer(),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFDCFCE7),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Text(
+                                'Instant Connect',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF15803D),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Contact ${job.contactName?.isNotEmpty == true ? job.contactName : "Recruiter"} directly via Call, WhatsApp, or Email for immediate interview screening.',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF166534),
+                            height: 1.3,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            if ((job.phone ?? '').isNotEmpty) ...[
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _makeCall(job.phone!),
+                                  icon: const Icon(Icons.call, size: 16),
+                                  label: const Text('Call HR'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF15803D),
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            if ((job.whatsappNumber ?? job.phone ?? '')
+                                .isNotEmpty) ...[
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _openWhatsApp(
+                                    (job.whatsappNumber ?? job.phone)!,
+                                    job.title,
+                                  ),
+                                  icon: const Icon(
+                                    Icons.chat_bubble_outline_rounded,
+                                    size: 16,
+                                  ),
+                                  label: const Text('WhatsApp'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF25D366),
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            if ((job.email ?? '').isNotEmpty) ...[
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () =>
+                                      _sendEmail(job.email!, job.title),
+                                  icon: const Icon(
+                                    Icons.email_outlined,
+                                    size: 16,
+                                  ),
+                                  label: const Text('Email'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF2563EB),
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFFDE68A)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(
+                          Icons.shield_outlined,
+                          color: Color(0xFFB45309),
+                          size: 20,
+                        ),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Career360 jobs are 100% free for candidates. Never pay fees for interview or job offers.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF92400E),
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 32),
                   SizedBox(
@@ -999,10 +1534,18 @@ class _MainShellScreenState extends State<MainShellScreen> {
     String label, {
     bool isPrimary = false,
     bool isSuccess = false,
+    bool isFeatured = false,
+    bool isStatewide = false,
   }) {
     Color bg = const Color(0xFFF1F5F9);
     Color fg = AppTheme.textPrimary;
-    if (isPrimary) {
+    if (isFeatured) {
+      bg = const Color(0xFFFEF3C7);
+      fg = const Color(0xFF92400E);
+    } else if (isStatewide) {
+      bg = const Color(0xFFF5F3FF);
+      fg = const Color(0xFF6D28D9);
+    } else if (isPrimary) {
       bg = AppTheme.primaryLight;
       fg = AppTheme.primary;
     } else if (isSuccess) {
@@ -1113,7 +1656,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     children:
                         [
                           'All',
-                          'IT',
+                          'IT & Software',
                           'Marketing',
                           'Finance',
                           'Design',
@@ -1541,6 +2084,13 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 _selectedCategory != null ||
                 _selectedLocation != 'All Locations' ||
                 _searchQuery.trim().isNotEmpty;
+            final sampleJobs = showSampleJobs
+                ? SampleJobs.matching(
+                    category: _selectedCategory,
+                    location: _selectedLocation,
+                    query: _searchQuery,
+                  )
+                : <JobModel>[];
 
             return ListView(
               controller: _feedScrollController,
@@ -1666,6 +2216,36 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 if (needsPreferences) ...[
                   const SizedBox(height: 12),
                   _buildPreferencesPrompt(),
+                ],
+                if (showSampleJobs && sampleJobs.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Sample jobs',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _openCandidateSearch,
+                        child: const Text('See all'),
+                      ),
+                    ],
+                  ),
+                  const Text(
+                    'Fictional listings for preview. Applications are not sent.',
+                    style: TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ...sampleJobs.take(3).map(_buildReferenceJobCard),
                 ],
                 const SizedBox(height: 20),
                 Row(
@@ -2039,18 +2619,25 @@ class _MainShellScreenState extends State<MainShellScreen> {
   }
 
   Widget _buildReferenceJobCard(JobModel job) {
-    final isSaved = _savedJobIds.contains(job.id);
-    final isApplied = _appliedJobIds.contains(job.id);
+    final isSaved = job.isDemo
+        ? _sampleSavedJobIds.contains(job.id)
+        : _savedJobIds.contains(job.id);
+    final isApplied = !job.isDemo && _appliedJobIds.contains(job.id);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.border),
+        border: Border.all(
+          color: job.isFeatured ? const Color(0xFFFCD34D) : AppTheme.border,
+          width: job.isFeatured ? 1.5 : 1,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
+            color: job.isFeatured
+                ? const Color(0xFFD97706).withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 3),
           ),
@@ -2067,6 +2654,80 @@ class _MainShellScreenState extends State<MainShellScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (job.isFeatured || job.isStatewide) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      children: [
+                        if (job.isFeatured)
+                          Container(
+                            margin: const EdgeInsets.only(right: 6),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF3C7),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFFFDE68A)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(
+                                  Icons.star_rounded,
+                                  size: 13,
+                                  color: Color(0xFFD97706),
+                                ),
+                                SizedBox(width: 3),
+                                Text(
+                                  'FEATURED',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.4,
+                                    color: Color(0xFF92400E),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (job.isStatewide)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF5F3FF),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFFDDD6FE)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(
+                                  Icons.public_rounded,
+                                  size: 12,
+                                  color: Color(0xFF7C3AED),
+                                ),
+                                SizedBox(width: 3),
+                                Text(
+                                  'ALL TAMIL NADU',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.4,
+                                    color: Color(0xFF6D28D9),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
                 // Top row: Avatar, Title, Bookmark
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2079,7 +2740,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                         children: [
                           Text(
                             job.title,
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontSize: 15,
@@ -2090,12 +2751,16 @@ class _MainShellScreenState extends State<MainShellScreen> {
                           const SizedBox(height: 2),
                           Row(
                             children: [
-                              Text(
-                                job.companyName,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  color: AppTheme.textSecondary,
-                                  fontWeight: FontWeight.w500,
+                              Flexible(
+                                child: Text(
+                                  job.companyName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: AppTheme.textSecondary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
                               ),
                               if (job.isVerified) ...[
@@ -2108,10 +2773,23 @@ class _MainShellScreenState extends State<MainShellScreen> {
                               ],
                             ],
                           ),
+                          if (job.isDemo) ...[
+                            const SizedBox(height: 5),
+                            const Text(
+                              'SAMPLE · PREVIEW ONLY',
+                              style: TextStyle(
+                                color: AppTheme.primary,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
                     IconButton(
+                      tooltip: isSaved ? 'Remove bookmark' : 'Save job',
                       icon: Icon(
                         isSaved ? Icons.bookmark : Icons.bookmark_border,
                         color: isSaved
@@ -2171,33 +2849,29 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primaryLight,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.currency_rupee,
-                            size: 13,
+                    Flexible(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryLight,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          job.salaryText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
                             color: AppTheme.primary,
                           ),
-                          Text(
-                            job.salaryText.replaceFirst('₹', ''),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.primary,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
+                    const SizedBox(width: 8),
                     ElevatedButton(
                       onPressed: isApplied ? null : () => _applyToJob(job),
                       style: ElevatedButton.styleFrom(
@@ -2219,7 +2893,11 @@ class _MainShellScreenState extends State<MainShellScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            isApplied ? 'Applied ✓' : 'Apply Now',
+                            isApplied
+                                ? 'Applied ✓'
+                                : job.isDemo
+                                ? 'Preview'
+                                : 'Apply Now',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
@@ -2301,6 +2979,13 @@ class _MainShellScreenState extends State<MainShellScreen> {
       ),
       builder: (context, snapshot) {
         final jobs = snapshot.data ?? [];
+        final sampleJobs = showSampleJobs
+            ? SampleJobs.matching(
+                category: _selectedCategory,
+                location: _selectedLocation,
+                query: _searchQuery,
+              )
+            : <JobModel>[];
         final isLoading =
             snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData;
@@ -2309,7 +2994,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             const Text(
-              'Explore All Opportunities',
+              'Explore jobs',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -2317,9 +3002,14 @@ class _MainShellScreenState extends State<MainShellScreen> {
               ),
             ),
             const SizedBox(height: 6),
-            const Text(
-              'Real-time job opportunities streamed live from Cloud Firestore.',
-              style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+            Text(
+              showSampleJobs
+                  ? 'Browse live opportunities and fictional preview listings.'
+                  : 'Browse live job opportunities.',
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppTheme.textSecondary,
+              ),
             ),
             const SizedBox(height: 16),
             // Search & Location Row
@@ -2360,14 +3050,40 @@ class _MainShellScreenState extends State<MainShellScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            if (isLoading)
+            if (sampleJobs.isNotEmpty) ...[
+              Text(
+                'Sample jobs · ${sampleJobs.length}',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Preview only. Applying will not send your details.',
+                style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+              ),
+              const SizedBox(height: 12),
+              ...sampleJobs.map(_buildReferenceJobCard),
+              const SizedBox(height: 8),
+            ],
+            if (snapshot.hasError)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  'Live jobs are unavailable right now. Please try again later.',
+                  style: TextStyle(color: AppTheme.textSecondary),
+                ),
+              )
+            else if (isLoading)
               const Center(
                 child: Padding(
                   padding: EdgeInsets.all(32),
                   child: CircularProgressIndicator(),
                 ),
               )
-            else if (jobs.isEmpty)
+            else if (jobs.isEmpty && sampleJobs.isEmpty)
               Container(
                 padding: const EdgeInsets.all(32),
                 alignment: Alignment.center,
@@ -2402,13 +3118,13 @@ class _MainShellScreenState extends State<MainShellScreen> {
                   ],
                 ),
               )
-            else ...[
+            else if (jobs.isNotEmpty) ...[
               Text(
-                '${jobs.length} Results Found',
+                'Live jobs · ${jobs.length}',
                 style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.textSecondary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary,
                 ),
               ),
               const SizedBox(height: 10),
@@ -2426,9 +3142,13 @@ class _MainShellScreenState extends State<MainShellScreen> {
       stream: _firestoreService.streamJobs(),
       builder: (context, snapshot) {
         final allJobs = snapshot.data ?? [];
-        final savedJobs = allJobs
-            .where((j) => _savedJobIds.contains(j.id))
-            .toList();
+        final savedJobs = <JobModel>[
+          ...allJobs.where((job) => _savedJobIds.contains(job.id)),
+          if (showSampleJobs)
+            ...SampleJobs.all.where(
+              (job) => _sampleSavedJobIds.contains(job.id),
+            ),
+        ];
 
         if (savedJobs.isEmpty) {
           return Center(
@@ -2448,8 +3168,10 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'Bookmark live opportunities while browsing to review and apply to them later.',
+                  Text(
+                    showSampleJobs
+                        ? 'Bookmark jobs while browsing. Sample bookmarks last only for this session.'
+                        : 'Bookmark opportunities while browsing to review them later.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 13,

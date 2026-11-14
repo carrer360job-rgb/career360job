@@ -1,6 +1,6 @@
 import { admin, firebaseApp } from '../config/firebase.js';
 
-export const verifyFirebaseToken = async (req, res, next) => {
+const verifyToken = (checkRevoked) => async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -11,7 +11,10 @@ export const verifyFirebaseToken = async (req, res, next) => {
     });
   }
 
-  const token = authHeader.split('Bearer ')[1];
+  const token = authHeader.slice('Bearer '.length).trim();
+  if (!token) {
+    return res.status(401).json({ error: { message: 'Missing Firebase ID token.' } });
+  }
 
   if (!admin || !firebaseApp) {
     return res.status(503).json({
@@ -22,7 +25,7 @@ export const verifyFirebaseToken = async (req, res, next) => {
   }
 
   try {
-    const decodedToken = await admin.auth().verifyIdToken(token);
+    const decodedToken = await admin.auth().verifyIdToken(token, checkRevoked);
     req.user = decodedToken;
     next();
   } catch (error) {
@@ -35,3 +38,6 @@ export const verifyFirebaseToken = async (req, res, next) => {
     });
   }
 };
+
+export const verifyFirebaseToken = verifyToken(false);
+export const verifyAdminToken = verifyToken(true);

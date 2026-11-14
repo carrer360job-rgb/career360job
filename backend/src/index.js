@@ -5,6 +5,8 @@ import dotenv from 'dotenv';
 import authRoutes from './routes/authRoutes.js';
 import resumeRoutes from './routes/resumeRoutes.js';
 import profilePhotoRoutes from './routes/profilePhotoRoutes.js';
+import { employerRouter, employerWebhookRouter } from './routes/employerRoutes.js';
+import adminRoutes from './routes/adminRoutes.js';
 import { firebaseApp } from './config/firebase.js';
 
 dotenv.config();
@@ -14,10 +16,17 @@ const PORT = process.env.PORT || 5000;
 
 // Security & Cross-Origin Middleware
 app.use(helmet());
+const allowedOrigins = new Set([
+  process.env.CLIENT_URL_ADMIN,
+  process.env.CLIENT_URL_EMPLOYER,
+  ...(process.env.NODE_ENV === 'production' ? [] : ['http://localhost:5173', 'http://127.0.0.1:5173']),
+].filter(Boolean).map((origin) => origin.replace(/\/$/, '')));
+
 app.use(cors({
-  origin: true,
-  credentials: true,
+  origin: (origin, callback) => callback(null, Boolean(origin && allowedOrigins.has(origin))),
 }));
+// Razorpay requires the original request bytes for webhook signature checks.
+app.use('/api/employer/payments/webhook', employerWebhookRouter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -49,8 +58,10 @@ app.get('/', (req, res) => {
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/resumes', resumeRoutes);
 app.use('/api/profile-photo', profilePhotoRoutes);
+app.use('/api/employer', employerRouter);
 
 // Global Error Handler
 app.use((err, req, res, next) => {

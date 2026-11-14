@@ -11,8 +11,13 @@ enum AuthScreenState { signIn, signUp, forgotPassword }
 
 class CandidateLoginScreen extends StatefulWidget {
   final VoidCallback onBack;
+  final bool isEmployer;
 
-  const CandidateLoginScreen({super.key, required this.onBack});
+  const CandidateLoginScreen({
+    super.key,
+    required this.onBack,
+    this.isEmployer = false,
+  });
 
   @override
   State<CandidateLoginScreen> createState() => _CandidateLoginScreenState();
@@ -84,6 +89,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   // --- Handlers ---
 
   Future<void> _handleSignIn() async {
+    if (_isLoading || _isGoogleLoading) return;
     final email = _signInEmailController.text.trim();
     final password = _signInPasswordController.text;
 
@@ -99,7 +105,11 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await _authService.signInWithEmail(email: email, password: password);
+      await _authService.signInWithEmail(
+        email: email,
+        password: password,
+        role: widget.isEmployer ? 'employer' : 'candidate',
+      );
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -133,6 +143,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   }
 
   Future<void> _handleInitiateSignUp() async {
+    if (_isLoading || _isGoogleLoading) return;
     final name = _signUpNameController.text.trim();
     final email = _signUpEmailController.text.trim();
     final password = _signUpPasswordController.text;
@@ -193,6 +204,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   }
 
   Future<void> _handleSendResetLink() async {
+    if (_isLoading || _isGoogleLoading) return;
     final email = _forgotEmailController.text.trim();
     if (email.isEmpty || !email.contains('@')) {
       _showError('Please enter a valid email address.');
@@ -229,30 +241,37 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   }
 
   Future<void> _handleGoogleSignIn() async {
+    if (_isLoading || _isGoogleLoading) return;
     setState(() => _isGoogleLoading = true);
     try {
-      final cred = await _authService.signInWithGoogle();
+      await _authService.signInWithGoogle(
+        role: widget.isEmployer ? 'employer' : 'candidate',
+      );
       if (mounted) {
         setState(() => _isGoogleLoading = false);
-        if (cred != null) {
-          _showSuccess(
-            'Welcome back, ${cred.user?.displayName ?? "Candidate"}!',
-          );
-        }
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isGoogleLoading = false);
-        debugPrint('[Google Sign-In Error]: $e');
-        String errMsg = e.toString();
-        if (errMsg.contains('sign_in_canceled') ||
-            errMsg.contains('canceled') ||
-            errMsg.contains('cancelled') ||
-            errMsg.contains('web-context-cancelled')) {
-          return; // User dismissed picker
-        }
-        _showError('Google sign-in error: $errMsg');
-      }
+    } on FirebaseAuthException catch (error) {
+      debugPrint('[Google Sign-In] ${error.code}: ${error.message}');
+      if (!mounted) return;
+      setState(() => _isGoogleLoading = false);
+      final message = switch (error.code) {
+        'network-request-failed' =>
+          'Check your internet connection and try Google sign-in again.',
+        'too-many-requests' =>
+          'Too many sign-in attempts. Please wait and try again.',
+        'user-disabled' =>
+          'This account has been disabled. Please contact support.',
+        'account-exists-with-different-credential' => 'An account with this email already exists. Try signing in with your original method.',
+        'operation-not-allowed' =>
+          'Google sign-in is unavailable right now. Please try again later.',
+        _ => 'Could not sign in with Google. Please try again.',
+      };
+      _showError(message);
+    } catch (error) {
+      debugPrint('[Google Sign-In] Unexpected error: $error');
+      if (!mounted) return;
+      setState(() => _isGoogleLoading = false);
+      _showError('Could not sign in with Google. Please try again.');
     }
   }
 
@@ -430,17 +449,24 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
 
   /// Component 2: AuthHero (Pure Enterprise Minimalist - Direction A)
   Widget _buildAuthHero() {
-    String badgeText = 'Verified Candidate Portal';
+    String badgeText = widget.isEmployer
+        ? 'Employer Portal'
+        : 'Verified Candidate Portal';
     IconData badgeIcon = Icons.shield_outlined;
     String heading = 'Welcome Back';
-    String description =
-        'Sign in to your Career360 account to continue your journey.';
+    String description = widget.isEmployer
+        ? 'Sign in to manage your hiring with Career360.'
+        : 'Sign in to your Career360 account to continue your journey.';
 
     if (_screenState == AuthScreenState.signUp) {
-      badgeText = 'Candidate Registration';
+      badgeText = widget.isEmployer
+          ? 'Employer Registration'
+          : 'Candidate Registration';
       badgeIcon = Icons.person_add_alt_1_outlined;
       heading = 'Create Your Account';
-      description = 'Join Career360 and take the next step in your career.';
+      description = widget.isEmployer
+          ? 'Create your account to register your company and start hiring.'
+          : 'Join Career360 and take the next step in your career.';
     } else if (_screenState == AuthScreenState.forgotPassword) {
       badgeText = 'Account Security';
       badgeIcon = Icons.lock_reset_rounded;
@@ -990,7 +1016,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     required String label,
     required VoidCallback onPressed,
   }) {
-    final bool isEnabled = !_isLoading;
+    final bool isEnabled = !_isLoading && !_isGoogleLoading;
     return BouncyButton(
       onPressed: isEnabled ? onPressed : null,
       borderRadius: BorderRadius.circular(_inputRadius),

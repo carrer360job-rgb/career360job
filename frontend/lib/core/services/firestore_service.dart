@@ -35,8 +35,10 @@ class FirestoreService {
           .toList();
 
       return jobs.where((job) {
+        if (!job.isOpen) return false;
         if (locationCity != null &&
             locationCity != 'All Locations' &&
+            !job.isStatewide &&
             !job.locationCity.toLowerCase().contains(
               locationCity.toLowerCase(),
             )) {
@@ -52,7 +54,7 @@ class FirestoreService {
           final q = searchQuery.toLowerCase();
           final matchesTitle = job.title.toLowerCase().contains(q);
           final matchesCompany = job.companyName.toLowerCase().contains(q);
-          final matchesLoc = job.locationCity.toLowerCase().contains(q);
+          final matchesLoc = job.isStatewide || job.locationCity.toLowerCase().contains(q);
           final matchesCategory = job.category.toLowerCase().contains(q);
           final matchesDescription = job.description.toLowerCase().contains(q);
           return matchesTitle ||
@@ -62,7 +64,13 @@ class FirestoreService {
               matchesDescription;
         }
         return true;
-      }).toList();
+      }).toList()
+        ..sort((a, b) {
+          if (a.isFeatured != b.isFeatured) {
+            return a.isFeatured ? -1 : 1;
+          }
+          return b.postedAt.compareTo(a.postedAt);
+        });
     });
   }
 
@@ -85,6 +93,7 @@ class FirestoreService {
     required String candidateUid,
     required Map<String, dynamic> candidateProfile,
   }) async {
+    if (job.isDemo) return false;
     try {
       final batch = _firestore.batch();
       final applicationRef = _applicationsRef.doc();
