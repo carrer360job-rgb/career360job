@@ -11,7 +11,7 @@
 
 ## User Jobs
 - **Primary job to be done:** Find verified jobs matching skills and location, and apply immediately without deceptive fees.
-- **Secondary jobs:** Save jobs for later, track submitted applications, build/preview resume profile.
+- **Secondary jobs:** Save jobs for later, track submitted applications, and keep candidate profile details up to date.
 - **Most important action on the main screen:** Search/filter jobs and tap "Apply Now".
 - **How users know they succeeded:** Immediate visual confirmation ("Application Submitted Successfully" bottom sheet & updated applied status badge).
 

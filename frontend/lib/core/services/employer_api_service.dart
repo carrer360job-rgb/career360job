@@ -98,10 +98,4 @@ class EmployerApiService {
     return (data['profile'] as Map).cast<String, dynamic>();
   }
 
-  Future<Uri> resumeUrl(String id) async {
-    final data = await _request('GET', '/applications/${Uri.encodeComponent(id)}/resume');
-    final url = data['url'];
-    if (url is! String) throw StateError('Resume link is unavailable.');
-    return Uri.parse(url);
-  }
 }

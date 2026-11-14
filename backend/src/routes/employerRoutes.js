@@ -1,7 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import express from 'express';
 import { FieldValue, Timestamp, getFirestore } from 'firebase-admin/firestore';
-import { v2 as cloudinary } from 'cloudinary';
 import { auth, firebaseApp } from '../config/firebase.js';
 import { verifyFirebaseToken, verifySensitiveToken, verifyAdminToken } from '../middlewares/authMiddleware.js';
 import { requireAdmin } from '../middlewares/adminMiddleware.js';
@@ -611,35 +610,8 @@ employerRouter.get('/applications/:applicationId/profile', verifySensitiveToken,
       experienceYears: candidate.experienceYears || a.experienceYears || '',
       experienceMonths: candidate.experienceMonths || '',
       preferredJobTitles: candidate.preferredJobTitles || [],
-      resumeFileName: candidate.resumeFileName || null,
       profilePhotoUrl: candidate.profilePhotoUrl || null,
     } });
-  } catch (error) { return handleError(res, error); }
-});
-
-employerRouter.get('/applications/:applicationId/resume', verifySensitiveToken, verified, async (req, res) => {
-  try {
-    await approvedEmployer(req.user.uid);
-    const database = db();
-    const application = await requireUnlocked(database, req.user.uid, req.params.applicationId);
-    const candidate = await database.collection('candidates').doc(application.data().candidateUid).get();
-    const publicId = candidate.data()?.resumePublicId;
-    if (typeof publicId !== 'string' || !publicId.startsWith(`candidate_resumes/${application.data().candidateUid}/`)) {
-      return res.status(404).json({ error: { message: 'No resume is available for this applicant.' } });
-    }
-    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
-      return res.status(503).json({ error: { message: 'Resume access is unavailable.' } });
-    }
-    cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_API_SECRET,
-      secure: true,
-    });
-    const url = cloudinary.utils.private_download_url(publicId, 'pdf', {
-      resource_type: 'raw', type: 'authenticated', expires_at: Math.floor(Date.now() / 1000) + 300,
-    });
-    return res.json({ url, expiresInSeconds: 300 });
   } catch (error) { return handleError(res, error); }
 });
 

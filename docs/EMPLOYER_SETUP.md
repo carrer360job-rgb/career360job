@@ -6,7 +6,7 @@ The Android employer flow uses the same Firebase email/password and browser Goog
 
 The free starter draft grants one job credit once, after company approval. Its listing stays live for seven days. Plans and prices are stored in Firestore `employer_plans`; only admin-published versions are returned by `/api/employer/plans`. The initial drafts are Free Starter, Starter, Premium and Elite Tamil Nadu. Review and publish them in the admin website. No plan is sold from a client-side default catalog.
 
-Paid terms have manual renewal. An active paid plan cannot be renewed until it expires; a paid plan may replace an active free starter. Applicant names, qualification and application status are visible in the employer's own applications. Contact details, photo and resume require a server-authorized profile unlock from the active plan. Unlocks are counted once per candidate per plan term. The free starter has zero unlocks. Direct Firestore employer reads of application and public photo documents are denied by the updated rules.
+Paid terms have manual renewal. An active paid plan cannot be renewed until it expires; a paid plan may replace an active free starter. Applicant names, qualification and application status are visible in the employer's own applications. Contact details and photo require a server-authorized profile unlock from the active plan. Unlocks are counted once per candidate per plan term. The free starter has zero unlocks. Direct Firestore employer reads of application and public photo documents are denied by the updated rules.
 
 ## Firebase
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { browserSessionPersistence, onIdTokenChanged, sendPasswordResetEmail, setPersistence, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
+import { browserSessionPersistence, onIdTokenChanged, setPersistence, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
 import { ApiError, getAdminIdentity, type AdminIdentity } from './api';
 import { auth, missingConfiguration } from './firebase';
 import PlansPanel from './PlansPanel';
@@ -37,7 +37,6 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
-  const [formNotice, setFormNotice] = useState('');
   const requestSequence = useRef(0);
 
   const checkAccess = useCallback(async (user: User) => {
@@ -96,7 +95,6 @@ export default function App() {
     event.preventDefault();
     if (!auth || submitting) return;
     setFormError('');
-    setFormNotice('');
     setSubmitting(true);
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
@@ -112,35 +110,11 @@ export default function App() {
     if (!auth) return;
     ++requestSequence.current;
     setFormError('');
-    setFormNotice('');
     setView({ kind: 'checking' });
     try {
       await signOut(auth);
     } catch {
       setView({ kind: 'unavailable' });
-    }
-  }
-
-  async function handlePasswordReset() {
-    if (!auth || submitting) return;
-    const address = email.trim();
-    if (!address) {
-      setFormError('Enter your admin email first.');
-      return;
-    }
-    setFormError('');
-    setFormNotice('');
-    setSubmitting(true);
-    try {
-      await sendPasswordResetEmail(auth, address);
-      setFormNotice('If this email has a password account, check its inbox for a reset link.');
-    } catch (error) {
-      const code = (error as { code?: string }).code;
-      setFormError(code === 'auth/invalid-email'
-        ? 'Enter a valid email address.'
-        : 'Could not send a reset link. Check your connection and try again.');
-    } finally {
-      setSubmitting(false);
     }
   }
 
@@ -213,12 +187,9 @@ export default function App() {
                 onClick={() => setShowPassword((value) => !value)}>{showPassword ? 'Hide' : 'Show'}</button>
             </div>
             {formError && <p className="form-error" role="alert">{formError}</p>}
-            {formNotice && <p className="form-notice" role="status">{formNotice}</p>}
             <button className="primary-button" type="submit" disabled={submitting || !email.trim() || !password}>
               {submitting ? 'Signing in…' : 'Sign in'}
             </button>
-            <button className="reset-button" type="button" disabled={submitting}
-              onClick={() => void handlePasswordReset()}>Forgot password?</button>
           </form>
           <p className="access-note">Access is limited to authorized Career360 staff.</p>
         </>}

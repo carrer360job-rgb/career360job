@@ -13,7 +13,6 @@ import 'core/config/sample_jobs_config.dart';
 import 'core/constants/app_constants.dart';
 import 'core/responsive/responsive_layout.dart';
 import 'core/services/firebase_auth_service.dart';
-import 'core/services/candidate_resume_service.dart';
 import 'core/services/candidate_photo_service.dart';
 import 'core/services/firestore_service.dart';
 import 'core/services/employer_service.dart';
@@ -807,8 +806,6 @@ class MainShellScreen extends StatefulWidget {
 
 class _MainShellScreenState extends State<MainShellScreen> {
   final FirestoreService _firestoreService = FirestoreService();
-  final CandidateResumeService _candidateResumeService =
-      CandidateResumeService();
   final CandidatePhotoService _candidatePhotoService = CandidatePhotoService();
   String get _currentUid =>
       FirebaseAuth.instance.currentUser?.uid ?? 'guest_candidate';
@@ -836,7 +833,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
   String _postLocation = 'Chennai';
   String _postWorkMode = 'Hybrid';
   bool _isPostingJob = false;
-  bool _isUploadingResume = false;
   bool _isUploadingPhoto = false;
 
   StreamSubscription<Set<String>>? _savedSub;
@@ -3288,7 +3284,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
         ].where((part) => part.isNotEmpty).join(' ');
         final hasExperience = profile?['hasExperience'] == true;
         final experienceRecorded = profile?['hasExperience'] is bool;
-        final resumeFileName = _profileString(profile, 'resumeFileName');
         final profilePhotoUrl = _profileString(profile, 'profilePhotoUrl');
         final initials = fullName
             .trim()
@@ -3526,35 +3521,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            _buildProfileSectionTitle('Resume', Icons.description_outlined),
-            const SizedBox(height: 8),
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppTheme.border),
-              ),
-              child: _buildProfileDetailRow(
-                icon: Icons.description_outlined,
-                title: 'PDF resume',
-                subtitle: _isUploadingResume
-                    ? 'Uploading PDF...'
-                    : resumeFileName.isEmpty
-                    ? 'Add a PDF resume (up to 10 MB)'
-                    : resumeFileName,
-                trailing: _isUploadingResume
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : null,
-                onTap: _isUploadingResume
-                    ? null
-                    : () => _showResumeActions(profile ?? {}),
-              ),
-            ),
-            const SizedBox(height: 18),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
@@ -3773,52 +3739,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
     );
   }
 
-  Widget _buildProfileDetailRow({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback? onTap,
-    Widget? trailing,
-  }) {
-    return ListTile(
-      enabled: onTap != null,
-      onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-      leading: Container(
-        width: 36,
-        height: 36,
-        decoration: const BoxDecoration(
-          color: AppTheme.primaryLight,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, color: AppTheme.primary, size: 19),
-      ),
-      title: Text(
-        title,
-        style: const TextStyle(
-          color: AppTheme.textPrimary,
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: AppTheme.textSecondary,
-          fontSize: 12,
-          height: 1.3,
-        ),
-      ),
-      trailing:
-          trailing ??
-          (onTap == null
-              ? null
-              : const Icon(Icons.chevron_right, color: AppTheme.textSecondary)),
-    );
-  }
-
   void _openCandidateProfileEditor(Map<String, dynamic>? profile) {
     Navigator.push(
       context,
@@ -3995,115 +3915,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
       );
     } finally {
       if (mounted) setState(() => _isUploadingPhoto = false);
-    }
-  }
-
-  Future<void> _showResumeActions(Map<String, dynamic> profile) async {
-    final resumePath = profile['resumePublicId']?.toString() ?? '';
-    final selectedAction = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.white,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.upload_file, color: AppTheme.primary),
-              title: Text(
-                resumePath.isEmpty ? 'Upload PDF resume' : 'Replace resume',
-              ),
-              subtitle: const Text('PDF only, up to 10 MB'),
-              onTap: () => Navigator.pop(sheetContext, 'upload'),
-            ),
-            if (resumePath.isNotEmpty)
-              ListTile(
-                leading: const Icon(
-                  Icons.delete_outline,
-                  color: AppTheme.error,
-                ),
-                title: const Text('Remove resume'),
-                onTap: () => Navigator.pop(sheetContext, 'delete'),
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-    if (!mounted) return;
-    if (selectedAction == 'upload') {
-      await _pickAndUploadResume();
-    } else if (selectedAction == 'delete') {
-      await _removeCandidateResume(resumePath);
-    }
-  }
-
-  Future<void> _pickAndUploadResume() async {
-    final PlatformFile? file;
-    try {
-      file = await FilePicker.pickFile(
-        type: FileType.custom,
-        allowedExtensions: const ['pdf'],
-      );
-    } catch (_) {
-      _showProfileMessage('Could not open the file picker. Try again.');
-      return;
-    }
-    if (file == null || !mounted) return;
-    int? fileSize;
-    Uint8List bytes;
-    try {
-      fileSize = await file.length();
-      if (fileSize == null || fileSize == 0) {
-        _showProfileMessage('Could not read that file. Choose the PDF again.');
-        return;
-      }
-      if (fileSize > 10 * 1024 * 1024) {
-        _showProfileMessage('Choose a PDF smaller than 10 MB.');
-        return;
-      }
-      bytes = await file.readAsBytes();
-    } catch (_) {
-      _showProfileMessage('Could not read that file. Choose the PDF again.');
-      return;
-    }
-    if (!String.fromCharCodes(bytes.take(5)).startsWith('%PDF-')) {
-      _showProfileMessage('That file does not appear to be a valid PDF.');
-      return;
-    }
-
-    setState(() => _isUploadingResume = true);
-    try {
-      await _candidateResumeService.uploadPdf(
-        uid: _currentUid,
-        bytes: bytes,
-        fileName: file.name,
-      );
-      _showProfileMessage('Resume uploaded successfully.');
-    } catch (error) {
-      _showProfileMessage(
-        error is StateError ? error.message : 'Could not upload the resume. Check your connection and try again.',
-      );
-    } finally {
-      if (mounted) setState(() => _isUploadingResume = false);
-    }
-  }
-
-  Future<void> _removeCandidateResume(String path) async {
-    if (path.isEmpty) return;
-    try {
-      await _candidateResumeService.delete(_currentUid);
-      _showProfileMessage('Resume removed from your profile.');
-    } catch (error) {
-      _showProfileMessage(
-        error is StateError
-            ? error.message
-            : 'Could not remove the resume. Try again.',
-      );
     }
   }
 

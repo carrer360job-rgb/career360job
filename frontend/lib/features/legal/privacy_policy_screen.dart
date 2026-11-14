@@ -95,7 +95,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
               const SizedBox(height: 8),
               _buildSubTitle('1.1. Personally Identifiable Information'),
               _buildParagraph(
-                'Career360 collects personal details that you voluntarily submit when creating your candidate account, updating your profile, or applying for vacancies. This includes your full name, email address, mobile phone number, current city, educational qualifications, employment history, portfolio links, and uploaded resume document (PDF or DOCX).',
+                'Career360 collects personal details that you voluntarily submit when creating your candidate account, updating your profile, or applying for vacancies. This includes your full name, email address, mobile phone number, selected location, educational qualifications, employment history, and profile photo when you choose to add one.',
               ),
               const SizedBox(height: 10),
               _buildSubTitle('1.2. Non-Personally Identifiable Information'),
@@ -111,7 +111,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
                 'We use candidate information strictly for recruitment facilitation and legitimate platform operations:',
               ),
               _buildBullet('Matching your skill sets and career preferences with verified job opportunities across Indian cities.'),
-              _buildBullet('Transmitting your resume, contact details, and application data directly to verified employers upon your explicit application.'),
+              _buildBullet('Sharing your contact details and application data with verified employers when you apply for their vacancies.'),
               _buildBullet('Providing real-time notifications regarding application reviews, recruiter shortlists, and interview updates.'),
               _buildBullet('Detecting and preventing unauthorized consultancies, fraudulent job offers, and payment scams.'),
               const SizedBox(height: 22),
@@ -134,7 +134,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
                 'We have a strict zero-sale policy: Career360 does NOT sell, rent, monetize, or trade candidate personal identification information with any third-party marketing brokers or advertising networks.',
               ),
               _buildParagraph(
-                'Your profile and resume are shared exclusively with verified hiring organizations that you choose to apply to. We may disclose personal data only when required to do so by applicable Indian law, court order, or governmental authority.',
+                'Your application details are shared with verified hiring organizations that you choose to apply to. We may disclose personal data only when required to do so by applicable Indian law, court order, or governmental authority.',
               ),
               const SizedBox(height: 22),
 
@@ -152,7 +152,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
               _buildParagraph(
                 'You maintain complete ownership of your personal information:',
               ),
-              _buildBullet('You have the right to review, edit, or replace your resume and contact information at any time in your profile.'),
+              _buildBullet('You have the right to review and edit your profile and contact information in the app.'),
               _buildBullet('You have the right to opt out of promotional communications and email updates.'),
               _buildBullet('You have the right to request permanent deletion of your account and all associated personal data from our systems.'),
               const SizedBox(height: 8),

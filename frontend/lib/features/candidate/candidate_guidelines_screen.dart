@@ -163,7 +163,7 @@ class _CandidateGuidelinesScreenState extends State<CandidateGuidelinesScreen> {
                               icon: Icons.lock_outline_rounded,
                               title: 'Data & Privacy Protection',
                               description:
-                                  'Your personal details, resume, and application history are kept confidential and shared only with the recruiters you apply to.',
+                                  'Your personal details and application history are kept confidential and shared only with the recruiters you apply to.',
                             ),
                             const Divider(
                               height: 32,

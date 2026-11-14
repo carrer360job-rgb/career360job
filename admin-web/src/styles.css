@@ -52,9 +52,6 @@ select:focus-visible, textarea:focus-visible { outline: 3px solid #93c5fd; outli
 .secondary-button { margin-top: 10px; background: #fff; color: #155eef; }
 .secondary-button:hover { background: #eff6ff; }
 .form-error { margin: 14px 0 -8px; color: #b91c1c; font-size: 13px; line-height: 1.45; }
-.form-notice { margin: 14px 0 -8px; color: #166534; font-size: 13px; line-height: 1.45; }
-.reset-button { align-self: flex-end; margin-top: 10px; padding: 8px 0; border: 0; background: transparent; color: #155eef; font-size: 13px; font-weight: 700; }
-.reset-button:hover { text-decoration: underline; }
 .access-note { margin: 24px 0 0; color: #64748b; font-size: 12px; line-height: 1.5; }
 .setup-hint { padding: 12px 14px; border-left: 3px solid #155eef; background: #eff6ff; color: #334155; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .checking { display: flex; align-items: center; gap: 13px; color: #64748b; font-size: 14px; }

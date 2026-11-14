@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/services/employer_api_service.dart';
 import '../../core/services/employer_service.dart';
@@ -25,7 +24,6 @@ class EmployerWorkspaceScreen extends StatefulWidget {
   State<EmployerWorkspaceScreen> createState() =>
       _EmployerWorkspaceScreenState();
 }
-
 class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
   final _service = EmployerService();
   final _api = EmployerApiService();
@@ -1012,7 +1010,7 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
   Future<void> _unlock() async {
     final confirm = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
       title: const Text('Unlock applicant profile?'),
-      content: const Text('This uses one profile unlock from your current plan. The applicant’s contact details and resume will be available until the plan expires.'),
+      content: const Text('This uses one profile unlock from your current plan. The applicant’s contact details and photo will be available until the plan expires.'),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
         FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Unlock')),
@@ -1091,7 +1089,7 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
           if (!_unlocked) Padding(
             padding: const EdgeInsets.only(bottom: 14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              const Text('Contact details and resume are available after a profile unlock.'),
+              const Text('Contact details and photo are available after a profile unlock.'),
               const SizedBox(height: 10),
               FilledButton.icon(onPressed: _busy ? null : _unlock,
                 icon: const Icon(Icons.lock_open_outlined),
@@ -1127,22 +1125,6 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
             ),
           ),
           const SizedBox(height: 14),
-          if (_unlocked) OutlinedButton.icon(
-            onPressed: _busy || _profile == null || _profile?['resumeFileName'] == null
-                ? null
-                : () async {
-                    try {
-                      final url = await _api.resumeUrl('${a['id']}');
-                      if (!context.mounted) return;
-                      // The signed URL is short lived and is opened by the device's browser.
-                      await launchResume(url);
-                    } catch (error) {
-                      if (context.mounted) _show(error);
-                    }
-                  },
-            icon: const Icon(Icons.picture_as_pdf_outlined),
-            label: Text(_profile?['resumeFileName'] == null ? 'No resume available' : 'View resume'),
-          ),
           const SizedBox(height: 20),
           const _SectionTitle('Move application'),
           const SizedBox(height: 10),
@@ -1516,10 +1498,4 @@ class _StatusPill extends StatelessWidget {
       ),
     ),
   );
-}
-
-Future<void> launchResume(Uri uri) async {
-  if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-    throw StateError('No app could open this resume.');
-  }
 }

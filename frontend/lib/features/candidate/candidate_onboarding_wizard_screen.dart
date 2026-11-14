@@ -1,15 +1,11 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:file_picker/file_picker.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/responsive/responsive_layout.dart';
 import '../../core/widgets/bouncy_button.dart';
 import '../../core/services/firebase_auth_service.dart';
 import '../../core/services/location_service.dart';
-import '../../core/services/candidate_resume_service.dart';
 
 /// 4-Step Candidate Onboarding Wizard
 /// 1. Personal Info
@@ -36,7 +32,6 @@ class CandidateOnboardingWizardScreen extends StatefulWidget {
 class _CandidateOnboardingWizardScreenState
     extends State<CandidateOnboardingWizardScreen> {
   final FirebaseAuthService _authService = FirebaseAuthService();
-  final CandidateResumeService _resumeService = CandidateResumeService();
   final LocationService _locationService = LocationService();
   int _currentStep = 1; // 1, 2, 3, 4
   bool _isSaving = false;
@@ -73,9 +68,6 @@ class _CandidateOnboardingWizardScreenState
   final TextEditingController _jobTitleController = TextEditingController();
   final TextEditingController _salaryController = TextEditingController();
   String? _selectedNoticePeriod;
-  Uint8List? _selectedResumeBytes;
-  String? _selectedResumeFileName;
-  String? _savedResumeFileName;
 
   // --- Static Option Datasets ---
   static const List<String> _educationLevels = [
@@ -243,7 +235,6 @@ class _CandidateOnboardingWizardScreenState
         ? ''
         : salary;
     _selectedNoticePeriod = _emptyToNull(stringValue('noticePeriod'));
-    _savedResumeFileName = _emptyToNull(stringValue('resumeFileName'));
 
     // Existing profile editing should not trigger the initial location prompt.
     _hasPromptedLocation = true;
@@ -520,44 +511,6 @@ class _CandidateOnboardingWizardScreenState
     );
   }
 
-  Future<void> _pickResume() async {
-    final PlatformFile? file;
-    try {
-      file = await FilePicker.pickFile(
-        type: FileType.custom,
-        allowedExtensions: const ['pdf'],
-      );
-    } catch (_) {
-      _showValidationToast('Could not open the file picker. Try again.');
-      return;
-    }
-    if (file == null || !mounted) return;
-    try {
-      final size = await file.length();
-      if (size == null ||
-          size < 5 ||
-          size > 10 * 1024 * 1024 ||
-          file.name.length > 160) {
-        _showValidationToast('Choose a PDF up to 10 MB.');
-        return;
-      }
-      final bytes = await file.readAsBytes();
-      if (bytes.length < 5 || String.fromCharCodes(bytes.take(5)) != '%PDF-') {
-        _showValidationToast('That file does not appear to be a valid PDF.');
-        return;
-      }
-      final fileName = file.name;
-      if (mounted) {
-        setState(() {
-          _selectedResumeBytes = bytes;
-          _selectedResumeFileName = fileName;
-        });
-      }
-    } catch (_) {
-      _showValidationToast('Could not read that PDF. Choose it again.');
-    }
-  }
-
   // --- Final Save to Firestore ---
   Future<void> _saveAndCompleteOnboarding() async {
     setState(() => _isSaving = true);
@@ -614,16 +567,6 @@ class _CandidateOnboardingWizardScreenState
       }
       final uid = user.uid;
       final email = user.email ?? '';
-      if (_selectedResumeBytes != null && _selectedResumeFileName != null) {
-        await _resumeService.uploadPdf(
-          uid: uid,
-          bytes: _selectedResumeBytes!,
-          fileName: _selectedResumeFileName!,
-        );
-        _savedResumeFileName = _selectedResumeFileName;
-        _selectedResumeBytes = null;
-        _selectedResumeFileName = null;
-      }
       await _authService.saveCandidateOnboardingProfile(
         uid: uid,
         email: email,
@@ -635,7 +578,7 @@ class _CandidateOnboardingWizardScreenState
         setState(() => _isSaving = false);
         _showValidationToast(
           e is StateError
-              ? '${e.message} Remove the selected resume to finish without it.'
+              ? e.message
               : 'Could not finish your profile. Check your connection and try again.',
           duration: const Duration(seconds: 6),
         );
@@ -2387,77 +2330,6 @@ class _CandidateOnboardingWizardScreenState
             },
           ),
         ],
-        const SizedBox(height: 22),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFCBD5E1)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Resume (optional)',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 5),
-              const Text(
-                'Choose a PDF up to 10 MB. It uploads when you finish your profile.',
-                style: TextStyle(
-                  color: AppTheme.textSecondary,
-                  fontSize: 12,
-                  height: 1.4,
-                ),
-              ),
-              if (_selectedResumeFileName != null ||
-                  _savedResumeFileName != null) ...[
-                const SizedBox(height: 12),
-                Text(
-                  _selectedResumeFileName ?? _savedResumeFileName!,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppTheme.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: _isSaving ? null : _pickResume,
-                    icon: const Icon(Icons.upload_file_outlined, size: 18),
-                    label: Text(
-                      _selectedResumeFileName == null &&
-                              _savedResumeFileName == null
-                          ? 'Choose PDF'
-                          : 'Replace PDF',
-                    ),
-                  ),
-                  if (_selectedResumeFileName != null)
-                    TextButton(
-                      onPressed: _isSaving
-                          ? null
-                          : () => setState(() {
-                              _selectedResumeBytes = null;
-                              _selectedResumeFileName = null;
-                            }),
-                      child: const Text('Skip upload'),
-                    ),
-                ],
-              ),
-            ],
-          ),
-        ),
         const SizedBox(height: 24),
       ],
     );
