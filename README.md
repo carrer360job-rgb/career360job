@@ -1,6 +1,6 @@
 # Career360
 
-Career360 is an Android job portal built with Flutter, Firebase Authentication, Cloud Firestore, and an Express backend. Candidate profile photos use Cloudinary. The employer flow uses the backend for paid plans, job publishing, applicant decisions, and controlled candidate contact access.
+Career360 is an Android job portal built with Flutter, Firebase Authentication, Cloud Firestore, and an Express backend. Candidate profile files use Cloudinary. The employer flow uses the backend for paid plans, job publishing, applicant decisions, and secure resume access.
 
 ## Run the Android app
 
@@ -28,7 +28,7 @@ The Android Firebase configuration is `frontend/android/app/google-services.json
 
 ## Backend
 
-The backend handles candidate profile photo uploads, employer hiring actions, and Razorpay payment verification. Configure `backend/.env` from `backend/.env.example`, then run:
+The backend handles signed candidate resume uploads, employer hiring actions, and Razorpay payment verification. Configure `backend/.env` from `backend/.env.example`, then run:
 
 ```powershell
 cd backend
@@ -39,7 +39,9 @@ npm run dev
 The custom backend OTP flow has been removed from the API. Email/password sign-up and verification use Firebase Authentication.
 Candidate Google sign-in uses Firebase Authentication's single browser flow on Android; it does not open a separate native account picker first.
 
-For candidate profile photo uploads, follow [`docs/PROFILE_PHOTO_SETUP.md`](docs/PROFILE_PHOTO_SETUP.md). Run Flutter with `--dart-define=API_BASE_URL=https://YOUR_BACKEND` when testing another backend.
+For Android resume uploads, follow [`docs/CLOUDINARY_RESUME_SETUP.md`](docs/CLOUDINARY_RESUME_SETUP.md). Run Flutter with `--dart-define=API_BASE_URL=https://YOUR_BACKEND`.
+
+Candidate profile photos use the same backend and Cloudinary account; see [`docs/PROFILE_PHOTO_SETUP.md`](docs/PROFILE_PHOTO_SETUP.md).
 
 The employer registration, company approval, posting plan, Razorpay webhook, and USB preview steps are in [`docs/EMPLOYER_SETUP.md`](docs/EMPLOYER_SETUP.md).
 

@@ -3739,6 +3739,52 @@ class _MainShellScreenState extends State<MainShellScreen> {
     );
   }
 
+  Widget _buildProfileDetailRow({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback? onTap,
+    Widget? trailing,
+  }) {
+    return ListTile(
+      enabled: onTap != null,
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+      leading: Container(
+        width: 36,
+        height: 36,
+        decoration: const BoxDecoration(
+          color: AppTheme.primaryLight,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: AppTheme.primary, size: 19),
+      ),
+      title: Text(
+        title,
+        style: const TextStyle(
+          color: AppTheme.textPrimary,
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: AppTheme.textSecondary,
+          fontSize: 12,
+          height: 1.3,
+        ),
+      ),
+      trailing:
+          trailing ??
+          (onTap == null
+              ? null
+              : const Icon(Icons.chevron_right, color: AppTheme.textSecondary)),
+    );
+  }
+
   void _openCandidateProfileEditor(Map<String, dynamic>? profile) {
     Navigator.push(
       context,

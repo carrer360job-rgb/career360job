@@ -113,6 +113,9 @@ model CandidateProfile {
   preferredRole   String?
   preferredCategory String?
   preferredLocations String[]
+  resumeFileUrl   String?
+  resumeFileName  String?
+  resumeUpdatedAt DateTime?
   profileScore    Int      @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -262,6 +265,7 @@ model Application {
   job             Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
   candidateId     String
   candidate       CandidateProfile  @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  resumeUrlSnapshot String
   screeningAnswers Json?
   status          ApplicationStatus @default(SUBMITTED)
   hrNotes         String?

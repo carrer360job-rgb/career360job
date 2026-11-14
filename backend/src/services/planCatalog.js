@@ -13,15 +13,15 @@ export const initialPlanDrafts = [
   { id: 'standard_15', name: 'Starter', tier: 'standard', badge: '15 days', pricePaise: 236000,
     taxMode: 'inclusive', taxRateBps: 1800, jobCredits: 1, listingDays: 15,
     creditValidityDays: 15, profileUnlockLimit: 25, reach: 'district', sortOrder: 1,
-    features: ['One local job for 15 days', '25 applicant profile unlocks', 'Contact access for unlocked applicants'] },
+    features: ['One local job for 15 days', '25 applicant profile unlocks', 'Resume and contact access for unlocked applicants'] },
   { id: 'featured_30', name: 'Premium', tier: 'featured', badge: '30 days', pricePaise: 375000,
     taxMode: 'inclusive', taxRateBps: 1800, jobCredits: 1, listingDays: 30,
     creditValidityDays: 30, profileUnlockLimit: 100, reach: 'district', sortOrder: 2,
-    features: ['One featured local job for 30 days', '100 applicant profile unlocks', 'Contact access for unlocked applicants'] },
+    features: ['One featured local job for 30 days', '100 applicant profile unlocks', 'Resume and contact access for unlocked applicants'] },
   { id: 'elite_all_tn', name: 'Elite Tamil Nadu', tier: 'elite', badge: 'Statewide', pricePaise: 2000000,
     taxMode: 'inclusive', taxRateBps: 1800, jobCredits: 1, listingDays: 30,
     creditValidityDays: 30, profileUnlockLimit: 300, reach: 'statewide', sortOrder: 3,
-    features: ['One statewide job for 30 days', '300 applicant profile unlocks', 'Contact access for unlocked applicants'] },
+    features: ['One statewide job for 30 days', '300 applicant profile unlocks', 'Resume and contact access for unlocked applicants'] },
 ];
 
 function integer(value, min, max, name) {

@@ -96,7 +96,7 @@ class _EmployerGuidelinesScreenState extends State<EmployerGuidelinesScreen> {
                           _GuidelineRow(
                             icon: Icons.shield_outlined,
                             title: 'Respect candidate privacy',
-                            description: 'Use candidate contact details only for recruitment.',
+                            description: 'Use resumes and contact details only for recruitment.',
                           ),
                           _GuidelineRow(
                             icon: Icons.block_outlined,

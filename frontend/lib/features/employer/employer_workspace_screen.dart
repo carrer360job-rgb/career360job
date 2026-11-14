@@ -24,6 +24,7 @@ class EmployerWorkspaceScreen extends StatefulWidget {
   State<EmployerWorkspaceScreen> createState() =>
       _EmployerWorkspaceScreenState();
 }
+
 class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
   final _service = EmployerService();
   final _api = EmployerApiService();
@@ -109,6 +110,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
           ],
         ),
         actions: [
+          _planHeaderPill(widget.profile),
           IconButton(
             tooltip: 'Notifications',
             onPressed: () => Navigator.push(
@@ -119,6 +121,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
             ),
             icon: const Icon(Icons.notifications_none_rounded),
           ),
+          const SizedBox(width: 4),
         ],
       ),
       body: SafeArea(
