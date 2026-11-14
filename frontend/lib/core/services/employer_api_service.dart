@@ -35,7 +35,8 @@ class EmployerApiService {
     request.headers.addAll(headers);
     if (body != null) request.body = jsonEncode(body);
     final streamed = await request.send().timeout(const Duration(seconds: 15));
-    final response = await http.Response.fromStream(streamed);
+    final response = await http.Response.fromStream(streamed)
+        .timeout(const Duration(seconds: 15));
     Map<String, dynamic> data;
     try {
       data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -54,8 +55,8 @@ class EmployerApiService {
     return _request('GET', '/plans', null, false);
   }
 
-  Future<Map<String, dynamic>> createOrder([String planId = 'free_starter']) async {
-    return _request('POST', '/orders', {'planId': planId});
+  Future<Map<String, dynamic>> createOrder(String planId, int planVersion) async {
+    return _request('POST', '/orders', {'planId': planId, 'planVersion': planVersion});
   }
 
   Future<void> verifyPayment(String orderId, String paymentId, String signature) async {

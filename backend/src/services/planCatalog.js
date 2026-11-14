@@ -90,7 +90,7 @@ export function priceBreakdown(plan) {
 
 export function publicPlan(id, version, plan) {
   const price = priceBreakdown(plan);
-  const rupees = (paise) => `₹${(paise / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+  const rupees = (paise) => `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   return {
     id, version, ...plan, ...price, amountPaise: price.totalPaise, currency: 'INR',
     priceDisplay: rupees(price.totalPaise),

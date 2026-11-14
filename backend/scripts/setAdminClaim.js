@@ -8,10 +8,14 @@ if (!auth || !email || process.argv[3] !== '--confirm') {
   process.exit(1);
 }
 
-let user = await auth.getUserByEmail(email);
+const user = await auth.getUserByEmail(email);
 if (!user.emailVerified) {
-  user = await auth.updateUser(user.uid, { emailVerified: true });
-  console.log(`Marked ${email} as verified.`);
+  console.error('Verify this admin email through Firebase Authentication before granting access.');
+  process.exit(1);
+}
+if (!user.providerData.some((provider) => provider.providerId === 'password')) {
+  console.error('Create a Firebase email/password account for the admin website.');
+  process.exit(1);
 }
 
 const database = getFirestore(firebaseApp);

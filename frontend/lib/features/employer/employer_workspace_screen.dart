@@ -31,6 +31,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
   final _api = EmployerApiService();
   late Stream<List<JobModel>> _jobsStream;
   late Stream<List<Map<String, dynamic>>> _applicationsStream;
+  Future<Map<String, dynamic>>? _entitlementFuture;
   int _tab = 0;
 
   @override
@@ -40,6 +41,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
     _applicationsStream = widget.profile.isApproved
         ? _service.watchApplications(widget.profile.uid)
         : Stream.value(const <Map<String, dynamic>>[]);
+    if (widget.profile.isApproved) _entitlementFuture = _api.entitlement();
   }
 
   @override
@@ -53,6 +55,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
       _applicationsStream = widget.profile.isApproved
           ? _service.watchApplications(widget.profile.uid)
           : Stream.value(const <Map<String, dynamic>>[]);
+      _entitlementFuture = widget.profile.isApproved ? _api.entitlement() : null;
     }
   }
 
@@ -128,11 +131,18 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
                 stream: _applicationsStream,
                 builder: (context, applicationsSnapshot) {
                   if (jobsSnapshot.hasError || applicationsSnapshot.hasError) {
-                    return _StatePanel(
-                      icon: Icons.wifi_off_rounded,
-                      title: 'Could not load your workspace',
-                      detail: 'Check your connection and Firestore rules, then reopen this screen.',
-                    );
+                    return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.wifi_off_rounded, size: 36),
+                      const SizedBox(height: 10),
+                      const Text('Could not load your workspace'),
+                      const SizedBox(height: 10),
+                      OutlinedButton(onPressed: () => setState(() {
+                        _jobsStream = _service.watchJobs(widget.profile.uid);
+                        _applicationsStream = widget.profile.isApproved
+                            ? _service.watchApplications(widget.profile.uid)
+                            : Stream.value(const <Map<String, dynamic>>[]);
+                      }), child: const Text('Retry')),
+                    ]));
                   }
                   if (!jobsSnapshot.hasData || !applicationsSnapshot.hasData) {
                     return const Center(child: CircularProgressIndicator());
@@ -682,6 +692,18 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
         'Review candidates and move them through hiring.',
         style: TextStyle(color: AppTheme.textSecondary),
       ),
+      if (_entitlementFuture != null) FutureBuilder<Map<String, dynamic>>(
+        future: _entitlementFuture,
+        builder: (context, snapshot) {
+          final entitlement = snapshot.data?['entitlement'];
+          if (entitlement is! Map) return const SizedBox.shrink();
+          final limit = entitlement['profileUnlockLimit'] as int? ?? 0;
+          final used = entitlement['unlocksUsed'] as int? ?? 0;
+          return Padding(padding: const EdgeInsets.only(top: 10),
+            child: Text('${limit - used} of $limit profile unlocks left in this plan',
+              style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w600)));
+        },
+      ),
       const SizedBox(height: 16),
       if (applications.isEmpty)
         const _StatePanel(
@@ -697,12 +719,20 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
     margin: const EdgeInsets.only(bottom: 10),
     child: InkWell(
       borderRadius: BorderRadius.circular(16),
-      onTap: () => Navigator.push(
+      onTap: () async {
+        await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => EmployerApplicantScreen(application: application),
         ),
-      ),
+        );
+        if (mounted && widget.profile.isApproved) {
+          setState(() {
+            _entitlementFuture = _api.entitlement();
+            _applicationsStream = _service.watchApplications(widget.profile.uid);
+          });
+        }
+      },
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Row(
@@ -959,7 +989,47 @@ class EmployerApplicantScreen extends StatefulWidget {
 class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
   final _api = EmployerApiService();
   bool _busy = false;
+  bool _unlocked = false;
+  Map<String, dynamic>? _profile;
   late String _status = '${widget.application['status'] ?? 'Applied'}';
+
+  @override
+  void initState() {
+    super.initState();
+    _unlocked = widget.application['unlocked'] == true;
+    if (_unlocked) _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final profile = await _api.applicantProfile('${widget.application['id']}');
+      if (mounted) setState(() => _profile = profile);
+    } catch (error) {
+      if (mounted) _show(error);
+    }
+  }
+
+  Future<void> _unlock() async {
+    final confirm = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
+      title: const Text('Unlock applicant profile?'),
+      content: const Text('This uses one profile unlock from your current plan. The applicant’s contact details and resume will be available until the plan expires.'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Unlock')),
+      ],
+    ));
+    if (confirm != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await _api.unlockApplicant('${widget.application['id']}');
+      final profile = await _api.applicantProfile('${widget.application['id']}');
+      if (mounted) setState(() { _unlocked = true; _profile = profile; });
+    } catch (error) {
+      if (mounted) _show(error);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   Future<void> _changeStatus(String status) async {
     setState(() => _busy = true);
@@ -993,6 +1063,12 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (_unlocked && _profile?['profilePhotoUrl'] is String &&
+                      (_profile!['profilePhotoUrl'] as String).isNotEmpty) ...[
+                    CircleAvatar(radius: 26,
+                      backgroundImage: NetworkImage(_profile!['profilePhotoUrl'] as String)),
+                    const SizedBox(height: 8),
+                  ],
                   Text(
                     '${a['candidateName'] ?? 'Applicant'}',
                     style: const TextStyle(
@@ -1012,18 +1088,28 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
             ),
           ),
           const SizedBox(height: 14),
+          if (!_unlocked) Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              const Text('Contact details and resume are available after a profile unlock.'),
+              const SizedBox(height: 10),
+              FilledButton.icon(onPressed: _busy ? null : _unlock,
+                icon: const Icon(Icons.lock_open_outlined),
+                label: const Text('Unlock profile')),
+            ]),
+          ),
           Card(
             child: Column(
               children: [
                 ListTile(
                   leading: const Icon(Icons.email_outlined),
                   title: const Text('Email'),
-                  subtitle: Text('${a['candidateEmail'] ?? 'Not provided'}'),
+                  subtitle: Text(_unlocked ? '${_profile?['email'] ?? 'Loading…'}' : 'Locked'),
                 ),
                 ListTile(
                   leading: const Icon(Icons.call_outlined),
                   title: const Text('Phone'),
-                  subtitle: Text('${a['candidatePhone'] ?? 'Not provided'}'),
+                  subtitle: Text(_unlocked ? '${_profile?['phone'] ?? 'Loading…'}' : 'Locked'),
                 ),
                 ListTile(
                   leading: const Icon(Icons.school_outlined),
@@ -1041,8 +1127,8 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
             ),
           ),
           const SizedBox(height: 14),
-          OutlinedButton.icon(
-            onPressed: _busy
+          if (_unlocked) OutlinedButton.icon(
+            onPressed: _busy || _profile == null || _profile?['resumeFileName'] == null
                 ? null
                 : () async {
                     try {
@@ -1055,7 +1141,7 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
                     }
                   },
             icon: const Icon(Icons.picture_as_pdf_outlined),
-            label: const Text('View resume'),
+            label: Text(_profile?['resumeFileName'] == null ? 'No resume available' : 'View resume'),
           ),
           const SizedBox(height: 20),
           const _SectionTitle('Move application'),
@@ -1309,13 +1395,15 @@ class EmployerPaymentHistoryScreen extends StatelessWidget {
                     ? order['amountPaise'] as num
                     : 0) /
                 100;
+            final tax = ((order['taxPaise'] as num?) ?? 0) / 100;
             return Card(
               margin: const EdgeInsets.only(bottom: 9),
               child: ListTile(
-                title: Text('Starter · ₹${amount.toStringAsFixed(0)}'),
-                subtitle: Text('${order['id']}'),
+                title: Text('${order['planName'] ?? 'Hiring plan'} · ₹${amount.toStringAsFixed(2)}'),
+                subtitle: Text('GST ₹${tax.toStringAsFixed(2)} · Order ${order['id']}'),
                 trailing: _StatusPill(
-                  text: order['status'] == 'paid' ? 'Paid' : 'Pending',
+                  text: order['status'] == 'paid' ? 'Paid' :
+                      order['status'] == 'refunded' ? 'Refunded' : 'Pending',
                   positive: order['status'] == 'paid',
                 ),
               ),

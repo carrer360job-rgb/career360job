@@ -54,7 +54,7 @@ class _EmployerJobFormScreenState extends State<EmployerJobFormScreen> {
       _workMode = workModes.firstWhere((value) => value.toLowerCase() == existingMode.toLowerCase());
     }
     _isStatewide = widget.existingJob?.isStatewide ??
-        (widget.profile.isElitePlan && widget.existingJob == null);
+        (widget.profile.canPostStatewide && widget.existingJob == null);
     if (_isStatewide && _district.text.trim().isEmpty) {
       _district.text = 'All Tamil Nadu';
     }
@@ -142,7 +142,7 @@ class _EmployerJobFormScreenState extends State<EmployerJobFormScreen> {
             decoration: const InputDecoration(labelText: 'Work mode', border: OutlineInputBorder()),
             items: workModes.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
             onChanged: (v) => setState(() => _workMode = v ?? _workMode))),
-          if (widget.profile.isElitePlan) ...[
+          if (widget.profile.canPostStatewide) ...[
             Container(
               margin: const EdgeInsets.only(bottom: 14),
               padding: const EdgeInsets.all(14),
@@ -160,7 +160,7 @@ class _EmployerJobFormScreenState extends State<EmployerJobFormScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: const [
                         Text(
-                          'Broadcast to All 39 Districts',
+                          'Reach all Tamil Nadu districts',
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 14,
@@ -169,7 +169,7 @@ class _EmployerJobFormScreenState extends State<EmployerJobFormScreen> {
                         ),
                         SizedBox(height: 2),
                         Text(
-                          'Elite plan perk: Candidates across all of Tamil Nadu will discover this job.',
+                          'Candidates across Tamil Nadu can discover this job.',
                           style: TextStyle(fontSize: 12, color: Color(0xFF6D28D9)),
                         ),
                       ],
@@ -195,7 +195,7 @@ class _EmployerJobFormScreenState extends State<EmployerJobFormScreen> {
           ],
           if (!_isStatewide) ...[
             _input('District / work location', _district, min: 2, max: 80),
-            if (!widget.profile.isElitePlan)
+            if (!widget.profile.canPostStatewide)
               Padding(
                 padding: const EdgeInsets.only(bottom: 14),
                 child: InkWell(

@@ -1,4 +1,4 @@
-import { admin, firebaseApp } from '../config/firebase.js';
+import { auth, firebaseApp } from '../config/firebase.js';
 
 const verifyToken = (checkRevoked) => async (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -16,7 +16,7 @@ const verifyToken = (checkRevoked) => async (req, res, next) => {
     return res.status(401).json({ error: { message: 'Missing Firebase ID token.' } });
   }
 
-  if (!admin || !firebaseApp) {
+  if (!auth || !firebaseApp) {
     return res.status(503).json({
       error: {
         message: 'Firebase Authentication service is currently unavailable.'
@@ -25,7 +25,7 @@ const verifyToken = (checkRevoked) => async (req, res, next) => {
   }
 
   try {
-    const decodedToken = await admin.auth().verifyIdToken(token, checkRevoked);
+    const decodedToken = await auth.verifyIdToken(token, checkRevoked);
     req.user = decodedToken;
     next();
   } catch (error) {
@@ -40,4 +40,5 @@ const verifyToken = (checkRevoked) => async (req, res, next) => {
 };
 
 export const verifyFirebaseToken = verifyToken(false);
+export const verifySensitiveToken = verifyToken(true);
 export const verifyAdminToken = verifyToken(true);

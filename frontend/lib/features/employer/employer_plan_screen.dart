@@ -43,7 +43,7 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
     }
     setState(() => _busy = true);
     try {
-      final res = await _api.createOrder(plan['id'] ?? 'free_starter');
+      final res = await _api.createOrder(plan['id'] as String, plan['version'] as int);
       if (!mounted) return;
       final msg = res['message'] ?? 'Free Starter Plan activated! 1 free posting credit added.';
       await showDialog<void>(
@@ -76,12 +76,12 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
       return;
     }
     if (!ready) {
-      _message('Online payment is not configured yet. Contact support for instant activation.');
+      _message('Online payment is unavailable right now. Please try again later.');
       return;
     }
     setState(() => _busy = true);
     try {
-      final order = await _api.createOrder(plan['id']);
+      final order = await _api.createOrder(plan['id'] as String, plan['version'] as int);
       if (!mounted) return;
       final id = order['orderId'];
       final key = order['keyId'];
@@ -378,12 +378,12 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
             child: FutureBuilder<Map<String, dynamic>>(
               future: _planRequest,
               builder: (context, snapshot) {
-                final plansRaw = snapshot.data?['plans'] ?? EmployerApiService.defaultPlans;
-                final List<Map<String, dynamic>> plans = (plansRaw is List && plansRaw.isNotEmpty)
-                    ? plansRaw.whereType<Map<String, dynamic>>().toList()
-                    : EmployerApiService.defaultPlans;
+                final plansRaw = snapshot.data?['plans'];
+                final List<Map<String, dynamic>> plans = plansRaw is List
+                    ? plansRaw.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList()
+                    : [];
                 return TextButton(
-                  onPressed: () => _showCompareModal(plans),
+                  onPressed: plans.isEmpty ? null : () => _showCompareModal(plans),
                   style: TextButton.styleFrom(
                     backgroundColor: const Color(0xFFDC2626), // Nithra Red button
                     foregroundColor: Colors.white,
@@ -406,11 +406,23 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
           if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
+          if (snapshot.hasError) {
+            return Center(child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const Text('Could not load plans. Check your connection and try again.'),
+                const SizedBox(height: 12),
+                OutlinedButton(onPressed: () => setState(() => _planRequest = _api.plans()),
+                  child: const Text('Retry')),
+              ]),
+            ));
+          }
           final data = snapshot.data ?? const <String, dynamic>{};
-          final plansRaw = data['plans'] ?? EmployerApiService.defaultPlans;
-          final List<Map<String, dynamic>> plans = (plansRaw is List && plansRaw.isNotEmpty)
-              ? plansRaw.whereType<Map<String, dynamic>>().toList()
-              : EmployerApiService.defaultPlans;
+          final plansRaw = data['plans'];
+          final List<Map<String, dynamic>> plans = plansRaw is List
+              ? plansRaw.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList()
+              : [];
+          if (plans.isEmpty) return const Center(child: Text('Plans are being prepared. Please check back soon.'));
           final ready = data['checkoutReady'] != false;
 
           return ListView.builder(
@@ -421,8 +433,11 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
               final isExpanded = _expandedIndex == index;
               final isFree = (plan['amountPaise'] as num? ?? 0) == 0;
               final planNumber = index + 1;
-              final isCurrent = widget.profile.activePlan == plan['id'] ||
-                  (widget.profile.activePlan.isEmpty && plan['id'] == 'free_starter');
+              final isCurrent = widget.profile.activePlan == plan['id'] &&
+                  widget.profile.creditsExpireAt?.isAfter(DateTime.now()) == true;
+              final freeUsed = isFree && widget.profile.activePlan == 'free_starter';
+              final paidTermActive = widget.profile.planTier != 'free' &&
+                  widget.profile.creditsExpireAt?.isAfter(DateTime.now()) == true;
 
               return Card(
                 elevation: isExpanded ? 2 : 0,
@@ -543,7 +558,7 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
                             children: [
                               // Price and Subtitle
                               Text(
-                                '${plan['priceDisplay']}/-',
+                                '${plan['priceDisplay']}',
                                 style: const TextStyle(
                                   fontSize: 26,
                                   fontWeight: FontWeight.w900,
@@ -593,7 +608,7 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
                                   // Blue Action Button
                                   Expanded(
                                     child: ElevatedButton(
-                                      onPressed: _busy
+                                      onPressed: _busy || isCurrent || freeUsed || paidTermActive
                                           ? null
                                           : () {
                                               if (isFree) {
@@ -614,6 +629,12 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
                                       child: Text(
                                         _busy
                                             ? 'Processing…'
+                                            : isCurrent
+                                                ? 'Current plan'
+                                                : freeUsed
+                                                    ? 'Already used'
+                                                    : paidTermActive
+                                                        ? 'Renew after expiry'
                                             : isFree
                                                 ? 'Activate Free'
                                                 : 'Pay Now',
@@ -644,12 +665,14 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
     final locations = plan['locationsCovered'] ?? '1 / per job';
     final listingDays = plan['listingDays'] ?? 15;
     final planValidity = plan['creditValidityDays'] ?? 15;
+    final unlocks = plan['profileUnlockLimit'] ?? 0;
 
     final items = [
       'Job Count : $jobs',
       'Location Count : $locations',
       'Job Validity : $listingDays days',
       'Plan Validity : $planValidity days',
+      'Applicant profiles : $unlocks unlocks',
     ];
 
     return Padding(

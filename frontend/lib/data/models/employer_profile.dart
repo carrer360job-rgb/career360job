@@ -27,6 +27,7 @@ class EmployerProfile {
   final String activePlan;
   final String activePlanName;
   final String planTier;
+  final String planReach;
 
   const EmployerProfile({
     required this.uid,
@@ -52,26 +53,29 @@ class EmployerProfile {
     required this.postingCredits,
     this.listingDays = 7,
     required this.creditsExpireAt,
-    this.activePlan = 'free_starter',
-    this.activePlanName = 'Free Starter Plan',
-    this.planTier = 'free',
+    this.activePlan = '',
+    this.activePlanName = '',
+    this.planTier = '',
+    this.planReach = 'district',
   });
 
-  bool get isApproved => status != 'rejected';
+  bool get isApproved => status == 'approved' && reviewedBy.isNotEmpty;
   bool get hasActiveCredits =>
       postingCredits > 0 &&
       creditsExpireAt != null &&
       creditsExpireAt!.isAfter(DateTime.now());
 
-  bool get isFreePlan => planTier == 'free' || activePlan == 'free_starter';
+  bool get isFreePlan => activePlan.isNotEmpty &&
+      (planTier == 'free' || activePlan == 'free_starter');
   bool get isStandardPlan =>
       planTier == 'standard' || activePlan == 'standard_15';
   bool get isFeaturedPlan =>
       planTier == 'featured' || activePlan == 'featured_30';
   bool get isElitePlan => planTier == 'elite' || activePlan == 'elite_all_tn';
-  bool get canPostStatewide => isElitePlan;
+  bool get canPostStatewide => planReach == 'statewide';
 
   String get planBadgeText {
+    if (activePlan.isEmpty) return 'NO PLAN';
     if (isElitePlan) return 'ELITE ALL-TN 👑';
     if (isFeaturedPlan) return 'PREMIUM - 30 ⭐';
     if (isStandardPlan) return 'STARTER - 15';
@@ -123,13 +127,10 @@ class EmployerProfile {
       creditsExpireAt: data['creditsExpireAt'] is Timestamp
           ? (data['creditsExpireAt'] as Timestamp).toDate()
           : null,
-      activePlan: value('activePlan').isNotEmpty
-          ? value('activePlan')
-          : 'free_starter',
-      activePlanName: value('activePlanName').isNotEmpty
-          ? value('activePlanName')
-          : 'Free Starter Plan',
-      planTier: value('planTier').isNotEmpty ? value('planTier') : 'free',
+      activePlan: value('activePlan'),
+      activePlanName: value('activePlanName'),
+      planTier: value('planTier'),
+      planReach: value('planReach').isEmpty ? 'district' : value('planReach'),
     );
   }
 }

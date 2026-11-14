@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, writeBatch, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { doc, writeBatch, serverTimestamp, updateDoc, getDoc, setDoc } from 'firebase/firestore';
 
 const rulesPath = fileURLToPath(new URL('../../firestore.rules', import.meta.url));
 const environment = await initializeTestEnvironment({
@@ -66,7 +66,29 @@ try {
   await assertFails(updateDoc(doc(pending.database, 'employers', 'pending-employer'), {
     postingCredits: 1, updatedAt: serverTimestamp(),
   }));
-  console.log('Firestore rules: pending registration allowed; client approval and credits denied.');
+  await environment.withSecurityRulesDisabled(async (context) => {
+    const trusted = context.firestore();
+    await setDoc(doc(trusted, 'jobs', 'owned-job'), { employerUid: 'pending-employer', status: 'active' });
+    await setDoc(doc(trusted, 'applications', 'private-application'), {
+      employerUid: 'pending-employer', candidateUid: 'candidate-a', jobId: 'owned-job',
+      candidateEmail: 'candidate@example.com', candidatePhone: '9876543210', status: 'Applied',
+    });
+    await setDoc(doc(trusted, 'candidate_public_profiles', 'candidate-a'), { photoUrl: 'https://example.com/photo.jpg' });
+  });
+  await assertFails(setDoc(doc(pending.database, 'jobs', 'new-job'), { employerUid: 'pending-employer' }));
+  await assertFails(getDoc(doc(pending.database, 'applications', 'private-application')));
+  await assertFails(getDoc(doc(pending.database, 'candidate_public_profiles', 'candidate-a')));
+  await assertFails(setDoc(doc(pending.database, 'employer_entitlements', 'pending-employer'), { profileUnlockLimit: 100 }));
+  await assertFails(setDoc(doc(pending.database, 'employer_plans', 'forged'), { pricePaise: 0 }));
+  const adminDatabase = environment.authenticatedContext('claimed-admin', {
+    email_verified: true, admin: true,
+  }).firestore();
+  await assertFails(setDoc(doc(adminDatabase, 'users', 'claimed-admin'), {
+    uid: 'claimed-admin', email: 'admin@example.com', role: 'candidate',
+  }));
+  const candidate = environment.authenticatedContext('candidate-a', { email_verified: true }).firestore();
+  await assertSucceeds(getDoc(doc(candidate, 'applications', 'private-application')));
+  console.log('Firestore rules: client approval, plan/credit/job writes, employer application reads, and admin role mixing denied.');
 } finally {
   await environment.cleanup();
 }

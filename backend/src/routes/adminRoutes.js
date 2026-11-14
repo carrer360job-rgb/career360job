@@ -1,5 +1,5 @@
 import express from 'express';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { verifyAdminToken } from '../middlewares/authMiddleware.js';
 import { requireAdmin } from '../middlewares/adminMiddleware.js';
 import { catalogDb, publicPlan, seedPlanDrafts, validatePlanDraft } from '../services/planCatalog.js';
@@ -96,6 +96,42 @@ router.post('/plans/:id/archive', async (req, res) => {
       });
     });
     res.json({ status: 'archived' });
+  } catch (error) { fail(res, error); }
+});
+
+// Restore an already-issued legacy free term without adding credits or extending it.
+router.post('/employers/:uid/migrate-free-term', async (req, res) => {
+  try {
+    const uid = req.params.uid;
+    const database = catalogDb();
+    const employerRef = database.collection('employers').doc(uid);
+    const entitlementRef = database.collection('employer_entitlements').doc(uid);
+    await database.runTransaction(async (tx) => {
+      const [employer, entitlement] = await Promise.all([tx.get(employerRef), tx.get(entitlementRef)]);
+      const profile = employer.data();
+      if (entitlement.exists) throw Object.assign(new Error('Employer already has an entitlement.'), { status: 409 });
+      if (profile?.status !== 'approved' || typeof profile.reviewedBy !== 'string' ||
+          profile.reviewedBy.length === 0 ||
+          (profile.reviewedAt?.toMillis?.() ?? 0) <= 0 ||
+          profile.activePlan !== 'free_starter' ||
+          profile.freeStarterUsed !== true ||
+          typeof profile.creditsExpireAt?.toMillis !== 'function') {
+        throw Object.assign(new Error('No reviewed legacy free term is eligible.'), { status: 409 });
+      }
+      tx.create(entitlementRef, {
+        employerUid: uid, planId: 'free_starter', planVersion: 0,
+        planName: profile.activePlanName || 'Free Starter', tier: 'free', reach: 'district',
+        profileUnlockLimit: 0, unlocksUsed: 0, orderId: 'legacy_free_starter',
+        startsAt: Timestamp.fromMillis(profile.creditsExpireAt.toMillis() - 7 * 86400000),
+        expiresAt: profile.creditsExpireAt,
+        migratedBy: req.user.uid, updatedAt: FieldValue.serverTimestamp(),
+      });
+      tx.create(database.collection('admin_audit').doc(), {
+        action: 'legacy_free_migration', actorUid: req.user.uid,
+        employerUid: uid, createdAt: FieldValue.serverTimestamp(),
+      });
+    });
+    res.json({ status: 'migrated' });
   } catch (error) { fail(res, error); }
 });
 

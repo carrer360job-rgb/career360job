@@ -14,7 +14,9 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return verified() && request.auth.token.admin == true;
+      return verified()
+        && ('admin' in request.auth.token)
+        && request.auth.token.admin == true;
     }
 
     function validEmployerPhones(data) {
@@ -43,6 +45,7 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if owns(uid);
       allow create: if owns(uid)
+        && !isAdmin()
         && request.resource.data.uid == uid
         && request.resource.data.role in ['candidate', 'employer']
         && (request.resource.data.role == 'candidate'
@@ -64,6 +67,7 @@ service cloud.firestore {
     match /employers/{uid} {
       allow read: if owns(uid) || isAdmin();
       allow create: if owns(uid)
+        && !isAdmin()
         && !exists(/databases/$(database)/documents/candidates/$(uid))
         && getAfter(/databases/$(database)/documents/users/$(uid)).data.role == 'employer'
         && request.resource.data.uid == uid
@@ -121,6 +125,7 @@ service cloud.firestore {
     match /candidates/{uid} {
       allow read: if owns(uid);
       allow create: if owns(uid)
+        && !isAdmin()
         && request.resource.data.uid == uid
         && getAfter(/databases/$(database)/documents/users/$(uid)).data.role == 'candidate'
         && !request.resource.data.keys().hasAny([
@@ -137,9 +142,9 @@ service cloud.firestore {
     }
 
     // Only the backend publishes a candidate's chosen profile photo.
-    // Verified users may fetch a known candidate photo for an application.
+    // Employer photo access is included in the unlocked profile API.
     match /candidate_public_profiles/{uid} {
-      allow get: if verified();
+      allow get: if owns(uid);
       allow list, create, update, delete: if false;
     }
 

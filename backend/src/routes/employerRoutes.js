@@ -3,7 +3,7 @@ import express from 'express';
 import { FieldValue, Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { v2 as cloudinary } from 'cloudinary';
 import { auth, firebaseApp } from '../config/firebase.js';
-import { verifyFirebaseToken, verifyAdminToken } from '../middlewares/authMiddleware.js';
+import { verifyFirebaseToken, verifySensitiveToken, verifyAdminToken } from '../middlewares/authMiddleware.js';
 import { requireAdmin } from '../middlewares/adminMiddleware.js';
 import { listPublishedPlans, publishedPlan } from '../services/planCatalog.js';
 
@@ -109,7 +109,9 @@ async function grantCredits(orderId, payment) {
     const record = order.data();
     if (!record) throw Object.assign(new Error('Unknown payment order.'), { status: 404 });
     if (record.status === 'paid') return { alreadyGranted: true };
+    if (record.status === 'refunded') throw Object.assign(new Error('This order was refunded.'), { status: 409 });
     if (payment.order_id !== orderId || payment.status !== 'captured' ||
+        (payment.amount_refunded || 0) > 0 ||
         payment.amount !== record.amountPaise || payment.currency !== 'INR') {
       throw Object.assign(new Error('Payment details do not match the order.'), { status: 400 });
     }
@@ -132,12 +134,14 @@ async function grantCredits(orderId, payment) {
       activePlan: record.planId,
       activePlanName: record.planName,
       planTier: record.tier,
+      planReach: record.reach ?? 'district',
       updatedAt: FieldValue.serverTimestamp(),
     });
     transaction.set(entitlementRef, {
       employerUid: record.employerUid, planId: record.planId,
       planVersion: record.planVersion ?? 1, planName: record.planName,
-      tier: record.tier, profileUnlockLimit: record.profileUnlockLimit ?? 0,
+      tier: record.tier, reach: record.reach ?? 'district',
+      profileUnlockLimit: record.profileUnlockLimit ?? 0,
       unlocksUsed: 0, orderId,
       startsAt: Timestamp.fromMillis(now), expiresAt: Timestamp.fromMillis(termEnd),
       previousOrderId: previousEntitlement.data()?.orderId ?? null,
@@ -159,6 +163,38 @@ async function grantCredits(orderId, payment) {
   });
 }
 
+async function revokeFullyRefundedOrder(payment) {
+  if (!payment?.order_id || !payment?.id || payment.amount <= 0 ||
+      payment.amount_refunded < payment.amount) return;
+  const database = db();
+  const orderRef = database.collection('employer_orders').doc(payment.order_id);
+  const revoked = await database.runTransaction(async (tx) => {
+    const order = await tx.get(orderRef);
+    const record = order.data();
+    if (!record || record.amountPaise !== payment.amount || payment.currency !== 'INR' ||
+        (record.paymentId && record.paymentId !== payment.id)) return null;
+    if (record.status === 'refunded') return { employerUid: record.employerUid, orderId: payment.order_id };
+    const entitlementRef = database.collection('employer_entitlements').doc(record.employerUid);
+    const entitlement = await tx.get(entitlementRef);
+    tx.update(orderRef, { status: 'refunded', paymentId: payment.id,
+      refundedAt: FieldValue.serverTimestamp() });
+    if (entitlement.data()?.orderId === payment.order_id) {
+      tx.update(entitlementRef, { expiresAt: Timestamp.now(), updatedAt: FieldValue.serverTimestamp() });
+      tx.update(database.collection('employers').doc(record.employerUid), {
+        postingCredits: 0, creditsExpireAt: Timestamp.now(), updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+    return { employerUid: record.employerUid, orderId: payment.order_id };
+  });
+  if (!revoked) return;
+  const jobs = await database.collection('jobs').where('employerUid', '==', revoked.employerUid).get();
+  for (const job of jobs.docs) {
+    if (job.data().planOrderId === revoked.orderId && job.data().status === 'active') {
+      await job.ref.update({ status: 'closed', closedAt: FieldValue.serverTimestamp() });
+    }
+  }
+}
+
 function handleError(res, error) {
   console.error('[Employer API]', error);
   return res.status(error.status || 500).json({ error: { message: error.status ? error.message : 'Could not complete this request.' } });
@@ -173,12 +209,15 @@ employerRouter.get('/plans', async (req, res) => {
   }
 });
 
-employerRouter.post('/orders', verifyFirebaseToken, verified, async (req, res) => {
+employerRouter.post('/orders', verifySensitiveToken, verified, async (req, res) => {
   try {
     await approvedEmployer(req.user.uid);
     const planId = req.body?.planId;
     if (typeof planId !== 'string') return res.status(400).json({ error: { message: 'Choose a plan.' } });
     const plan = await publishedPlan(planId);
+    if (req.body?.planVersion !== plan.version) {
+      return res.status(409).json({ error: { message: 'This plan has changed. Refresh plans before checkout.' } });
+    }
 
     // Grant the starter credit once, atomically, after company approval.
     if (plan.amountPaise === 0) {
@@ -208,12 +247,14 @@ employerRouter.post('/orders', verifyFirebaseToken, verified, async (req, res) =
           activePlan: plan.id,
           activePlanName: plan.name,
           planTier: plan.tier,
+          planReach: plan.reach,
           freeStarterUsed: true,
           updatedAt: FieldValue.serverTimestamp(),
         });
         transaction.set(entitlementRef, {
           employerUid: req.user.uid, planId: plan.id, planVersion: plan.version,
-          planName: plan.name, tier: plan.tier, profileUnlockLimit: plan.profileUnlockLimit,
+          planName: plan.name, tier: plan.tier, reach: plan.reach,
+          profileUnlockLimit: plan.profileUnlockLimit,
           unlocksUsed: 0, orderId: 'free_starter',
           startsAt: Timestamp.fromMillis(now),
           expiresAt: Timestamp.fromMillis(now + plan.creditValidityDays * 86400000),
@@ -275,7 +316,7 @@ employerRouter.post('/orders', verifyFirebaseToken, verified, async (req, res) =
   } catch (error) { return handleError(res, error); }
 });
 
-employerRouter.post('/orders/verify', verifyFirebaseToken, verified, async (req, res) => {
+employerRouter.post('/orders/verify', verifySensitiveToken, verified, async (req, res) => {
   try {
     if (!paymentReady()) return res.status(503).json({ error: { message: 'Payments are unavailable.' } });
     const orderId = safeString(req.body?.orderId, 80);
@@ -287,6 +328,10 @@ employerRouter.post('/orders/verify', verifyFirebaseToken, verified, async (req,
     const order = await db().collection('employer_orders').doc(orderId).get();
     if (order.data()?.employerUid !== req.user.uid) return res.status(403).json({ error: { message: 'This order belongs to another account.' } });
     const payment = await razorpayRequest(`/payments/${encodeURIComponent(paymentId)}`);
+    if (payment.amount_refunded >= payment.amount) {
+      await revokeFullyRefundedOrder(payment);
+      return res.status(409).json({ error: { message: 'This payment was refunded.' } });
+    }
     const result = await grantCredits(orderId, payment);
     return res.json({ status: 'paid', ...result });
   } catch (error) { return handleError(res, error); }
@@ -301,8 +346,19 @@ employerWebhookRouter.post('/', express.raw({ type: 'application/json', limit: '
     }
     const event = JSON.parse(req.body.toString('utf8'));
     if (event.event === 'payment.captured') {
-      const payment = event.payload?.payment?.entity;
-      if (payment?.order_id && payment?.id) await grantCredits(payment.order_id, payment);
+      const paymentId = event.payload?.payment?.entity?.id;
+      if (paymentId) {
+        const payment = await razorpayRequest(`/payments/${encodeURIComponent(paymentId)}`);
+        if (payment.amount_refunded >= payment.amount) await revokeFullyRefundedOrder(payment);
+        else if (payment.order_id && payment.status === 'captured') await grantCredits(payment.order_id, payment);
+      }
+    } else if (event.event === 'refund.processed' || event.event === 'payment.refunded') {
+      const paymentId = event.event === 'refund.processed'
+        ? event.payload?.refund?.entity?.payment_id : event.payload?.payment?.entity?.id;
+      if (paymentId) {
+        const payment = await razorpayRequest(`/payments/${encodeURIComponent(paymentId)}`);
+        await revokeFullyRefundedOrder(payment);
+      }
     }
     return res.status(200).json({ received: true });
   } catch (error) { return handleError(res, error); }
@@ -332,7 +388,7 @@ employerRouter.post('/jobs', verifyFirebaseToken, verified, async (req, res) => 
       }
       const listingDays = Number.isInteger(profile.listingDays) ? profile.listingDays : 7;
       const isFeatured = grant.tier === 'featured' || grant.tier === 'elite';
-      const isStatewide = grant.tier === 'elite' && req.body?.isStatewide !== false;
+      const isStatewide = grant.reach === 'statewide' && req.body?.isStatewide !== false;
       if (!isStatewide && fields.locationCity === 'All Tamil Nadu') {
         throw Object.assign(new Error('Choose a district for this plan.'), { status: 400 });
       }
@@ -351,6 +407,7 @@ employerRouter.post('/jobs', verifyFirebaseToken, verified, async (req, res) => 
         isStatewide,
         planTier: profile.planTier || 'free',
         planName: profile.activePlanName || 'Free Starter Plan',
+        planOrderId: grant.orderId,
         postedAt: FieldValue.serverTimestamp(),
         expiresAt: Timestamp.fromMillis(Date.now() + listingDays * 86400000),
       });
@@ -397,7 +454,12 @@ employerRouter.patch('/applications/:applicationId/status', verifyFirebaseToken,
     await database.runTransaction(async (transaction) => {
       const application = await transaction.get(applicationRef);
       const data = application.data();
-      if (!data || data.employerUid !== req.user.uid) {
+      if (!data || data.employerUid !== req.user.uid || typeof data.jobId !== 'string' ||
+          typeof data.candidateUid !== 'string') {
+        throw Object.assign(new Error('Application not found.'), { status: 404 });
+      }
+      const job = await transaction.get(database.collection('jobs').doc(data.jobId));
+      if (!job.exists || job.data().employerUid !== req.user.uid) {
         throw Object.assign(new Error('Application not found.'), { status: 404 });
       }
       if (data.status === status) return;
@@ -421,7 +483,13 @@ function activeEntitlement(data) {
 
 async function ownedApplication(database, employerUid, id) {
   const application = await database.collection('applications').doc(id).get();
-  if (!application.exists || application.data().employerUid !== employerUid) {
+  if (!application.exists || application.data().employerUid !== employerUid ||
+      typeof application.data().jobId !== 'string' ||
+      typeof application.data().candidateUid !== 'string') {
+    throw Object.assign(new Error('Application not found.'), { status: 404 });
+  }
+  const job = await database.collection('jobs').doc(application.data().jobId).get();
+  if (!job.exists || job.data().employerUid !== employerUid) {
     throw Object.assign(new Error('Application not found.'), { status: 404 });
   }
   return application;
@@ -434,7 +502,7 @@ employerRouter.get('/entitlement', verifyFirebaseToken, verified, async (req, re
     const data = doc.data();
     res.set('Cache-Control', 'no-store');
     res.json({ entitlement: data ? {
-      planId: data.planId, planName: data.planName, tier: data.tier,
+      planId: data.planId, planName: data.planName, tier: data.tier, reach: data.reach,
       profileUnlockLimit: data.profileUnlockLimit || 0, unlocksUsed: data.unlocksUsed || 0,
       expiresAt: data.expiresAt?.toDate?.().toISOString() ?? null,
       active: Boolean(activeEntitlement(data)),
@@ -448,6 +516,8 @@ employerRouter.get('/applications', verifyFirebaseToken, verified, async (req, r
     const database = db();
     const snapshot = await database.collection('applications')
       .where('employerUid', '==', req.user.uid).limit(200).get();
+    const jobs = await database.collection('jobs').where('employerUid', '==', req.user.uid).get();
+    const ownedJobIds = new Set(jobs.docs.map((doc) => doc.id));
     const entitlement = await database.collection('employer_entitlements').doc(req.user.uid).get();
     const grant = entitlement.data();
     const unlocks = activeEntitlement(grant)
@@ -455,7 +525,7 @@ employerRouter.get('/applications', verifyFirebaseToken, verified, async (req, r
       : null;
     const unlockedCandidates = new Set(unlocks?.docs.filter((doc) => doc.data().orderId === grant.orderId)
       .map((doc) => doc.id) ?? []);
-    const applications = snapshot.docs.map((doc) => {
+    const applications = snapshot.docs.filter((doc) => ownedJobIds.has(doc.data().jobId)).map((doc) => {
       const a = doc.data();
       return {
         id: doc.id, candidateName: a.candidateName || 'Applicant',
@@ -472,7 +542,7 @@ employerRouter.get('/applications', verifyFirebaseToken, verified, async (req, r
   } catch (error) { return handleError(res, error); }
 });
 
-employerRouter.post('/applications/:applicationId/unlock', verifyFirebaseToken, verified, async (req, res) => {
+employerRouter.post('/applications/:applicationId/unlock', verifySensitiveToken, verified, async (req, res) => {
   try {
     await approvedEmployer(req.user.uid);
     const database = db();
@@ -482,7 +552,14 @@ employerRouter.post('/applications/:applicationId/unlock', verifyFirebaseToken, 
       const [entitlement, application] = await Promise.all([tx.get(entitlementRef), tx.get(appRef)]);
       const grant = entitlement.data();
       const a = application.data();
-      if (!a || a.employerUid !== req.user.uid) throw Object.assign(new Error('Application not found.'), { status: 404 });
+      if (!a || a.employerUid !== req.user.uid || typeof a.jobId !== 'string' ||
+          typeof a.candidateUid !== 'string') {
+        throw Object.assign(new Error('Application not found.'), { status: 404 });
+      }
+      const job = await tx.get(database.collection('jobs').doc(a.jobId));
+      if (!job.exists || job.data().employerUid !== req.user.uid) {
+        throw Object.assign(new Error('Application not found.'), { status: 404 });
+      }
       if (!activeEntitlement(grant)) throw Object.assign(new Error('Choose an active plan to unlock applicants.'), { status: 402 });
       const unlockRef = entitlementRef.collection('unlocks').doc(a.candidateUid);
       const unlocked = await tx.get(unlockRef);
@@ -517,7 +594,7 @@ async function requireUnlocked(database, employerUid, applicationId) {
   return application;
 }
 
-employerRouter.get('/applications/:applicationId/profile', verifyFirebaseToken, verified, async (req, res) => {
+employerRouter.get('/applications/:applicationId/profile', verifySensitiveToken, verified, async (req, res) => {
   try {
     await approvedEmployer(req.user.uid);
     const database = db();
@@ -540,7 +617,7 @@ employerRouter.get('/applications/:applicationId/profile', verifyFirebaseToken, 
   } catch (error) { return handleError(res, error); }
 });
 
-employerRouter.get('/applications/:applicationId/resume', verifyFirebaseToken, verified, async (req, res) => {
+employerRouter.get('/applications/:applicationId/resume', verifySensitiveToken, verified, async (req, res) => {
   try {
     await approvedEmployer(req.user.uid);
     const database = db();

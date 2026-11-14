@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { onIdTokenChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
+import { browserSessionPersistence, onIdTokenChanged, sendPasswordResetEmail, setPersistence, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
 import { ApiError, getAdminIdentity, type AdminIdentity } from './api';
 import { auth, missingConfiguration } from './firebase';
+import PlansPanel from './PlansPanel';
 
 type View =
   | { kind: 'configuration' }
@@ -24,6 +25,8 @@ function loginMessage(code: string): string {
   }
   if (code === 'auth/too-many-requests') return 'Too many attempts. Please try again later.';
   if (code === 'auth/network-request-failed') return 'Check your connection and try again.';
+  if (code === 'auth/operation-not-allowed') return 'Email/password sign-in is disabled for this Firebase project.';
+  if (code === 'auth/invalid-api-key' || code === 'auth/app-not-authorized') return 'Firebase web configuration needs review.';
   return 'Sign in could not be completed. Please try again.';
 }
 
@@ -34,6 +37,7 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  const [formNotice, setFormNotice] = useState('');
   const requestSequence = useRef(0);
 
   const checkAccess = useCallback(async (user: User) => {
@@ -50,7 +54,7 @@ export default function App() {
         setView({ kind: 'denied' });
       } else if (error instanceof ApiError && error.status === 401 && auth) {
         setFormError('Your session has expired. Sign in again.');
-        await signOut(auth);
+        try { await signOut(auth); } catch { setView({ kind: 'unavailable' }); }
       } else {
         setView({ kind: 'unavailable' });
       }
@@ -58,18 +62,25 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!auth) return;
-    const unsubscribe = onIdTokenChanged(auth, (user) => {
-      if (user) {
-        void checkAccess(user);
-      } else {
-        ++requestSequence.current;
-        setView({ kind: 'signedOut' });
-      }
-    }, () => setView({ kind: 'unavailable' }));
+    const adminAuth = auth;
+    if (!adminAuth) return;
+    let active = true;
+    let unsubscribe: (() => void) | undefined;
+    void setPersistence(adminAuth, browserSessionPersistence).then(() => {
+      if (!active) return;
+      unsubscribe = onIdTokenChanged(adminAuth, (user) => {
+        if (user) {
+          void checkAccess(user);
+        } else {
+          ++requestSequence.current;
+          setView({ kind: 'signedOut' });
+        }
+      }, () => setView({ kind: 'unavailable' }));
+    }).catch(() => { if (active) setView({ kind: 'unavailable' }); });
     return () => {
+      active = false;
       ++requestSequence.current;
-      unsubscribe();
+      unsubscribe?.();
     };
   }, [checkAccess]);
 
@@ -85,6 +96,7 @@ export default function App() {
     event.preventDefault();
     if (!auth || submitting) return;
     setFormError('');
+    setFormNotice('');
     setSubmitting(true);
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
@@ -98,12 +110,37 @@ export default function App() {
 
   async function handleSignOut() {
     if (!auth) return;
+    ++requestSequence.current;
     setFormError('');
+    setFormNotice('');
     setView({ kind: 'checking' });
     try {
       await signOut(auth);
     } catch {
       setView({ kind: 'unavailable' });
+    }
+  }
+
+  async function handlePasswordReset() {
+    if (!auth || submitting) return;
+    const address = email.trim();
+    if (!address) {
+      setFormError('Enter your admin email first.');
+      return;
+    }
+    setFormError('');
+    setFormNotice('');
+    setSubmitting(true);
+    try {
+      await sendPasswordResetEmail(auth, address);
+      setFormNotice('If this email has a password account, check its inbox for a reset link.');
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      setFormError(code === 'auth/invalid-email'
+        ? 'Enter a valid email address.'
+        : 'Could not send a reset link. Check your connection and try again.');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -119,11 +156,7 @@ export default function App() {
       <main className="dashboard-main">
         <p className="eyebrow">Administration</p>
         <h1>Dashboard</h1>
-        <div className="dashboard-empty" role="status">
-          <div className="empty-rule" />
-          <h2>Your workspace is ready.</h2>
-          <p>Management tools will appear here as they are added.</p>
-        </div>
+        <PlansPanel />
       </main>
     </div>;
   }
@@ -180,9 +213,12 @@ export default function App() {
                 onClick={() => setShowPassword((value) => !value)}>{showPassword ? 'Hide' : 'Show'}</button>
             </div>
             {formError && <p className="form-error" role="alert">{formError}</p>}
+            {formNotice && <p className="form-notice" role="status">{formNotice}</p>}
             <button className="primary-button" type="submit" disabled={submitting || !email.trim() || !password}>
               {submitting ? 'Signing in…' : 'Sign in'}
             </button>
+            <button className="reset-button" type="button" disabled={submitting}
+              onClick={() => void handlePasswordReset()}>Forgot password?</button>
           </form>
           <p className="access-note">Access is limited to authorized Career360 staff.</p>
         </>}
