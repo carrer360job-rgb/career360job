@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { browserSessionPersistence, onIdTokenChanged, setPersistence, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
 import { ApiError, getAdminIdentity, type AdminIdentity } from './api';
-import { auth, missingConfiguration } from './firebase';
+import { auth } from './firebase';
+import StatsOverview from './StatsOverview';
+import EmployersPanel from './EmployersPanel';
+import JobsPanel from './JobsPanel';
 import PlansPanel from './PlansPanel';
 
 type View =
@@ -12,11 +15,15 @@ type View =
   | { kind: 'denied' }
   | { kind: 'unavailable' };
 
+type ActiveTab = 'overview' | 'employers' | 'jobs' | 'plans';
+
 function Brand({ light = false }: { light?: boolean }) {
-  return <div className={`brand${light ? ' brand-light' : ''}`}>
-    <img src="/career360-icon.png" alt="" width="36" height="36" />
-    <span>Career<span className="brand-number">360</span><span className="brand-admin">Admin</span></span>
-  </div>;
+  return (
+    <div className={`brand${light ? ' brand-light' : ''}`}>
+      <span className="brand-logo-circle">360</span>
+      <span>Career<span className="brand-number">360</span><span className="brand-admin">Operations</span></span>
+    </div>
+  );
 }
 
 function loginMessage(code: string): string {
@@ -32,6 +39,7 @@ function loginMessage(code: string): string {
 
 export default function App() {
   const [view, setView] = useState<View>(auth ? { kind: 'checking' } : { kind: 'configuration' });
+  const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -119,81 +127,152 @@ export default function App() {
   }
 
   if (view.kind === 'authorized') {
-    return <div className="dashboard-page">
-      <header className="dashboard-header">
-        <Brand />
-        <div className="account-actions">
-          <span className="account-email" title={view.identity.email}>{view.identity.email}</span>
-          <button className="text-button" onClick={() => void handleSignOut()}>Sign out</button>
-        </div>
-      </header>
-      <main className="dashboard-main">
-        <p className="eyebrow">Administration</p>
-        <h1>Dashboard</h1>
-        <PlansPanel />
-      </main>
-    </div>;
+    return (
+      <div className="dashboard-page">
+        <header className="dashboard-header">
+          <Brand />
+          <nav className="dashboard-nav" aria-label="Main Navigation">
+            <button
+              className={`nav-tab ${activeTab === 'overview' ? 'active' : ''}`}
+              onClick={() => setActiveTab('overview')}
+            >
+              📊 Overview
+            </button>
+            <button
+              className={`nav-tab ${activeTab === 'employers' ? 'active' : ''}`}
+              onClick={() => setActiveTab('employers')}
+            >
+              🏢 Companies
+            </button>
+            <button
+              className={`nav-tab ${activeTab === 'jobs' ? 'active' : ''}`}
+              onClick={() => setActiveTab('jobs')}
+            >
+              💼 Live Jobs
+            </button>
+            <button
+              className={`nav-tab ${activeTab === 'plans' ? 'active' : ''}`}
+              onClick={() => setActiveTab('plans')}
+            >
+              💳 Pricing & Plans
+            </button>
+          </nav>
+          <div className="account-actions">
+            <span className="account-email" title={view.identity.email}>{view.identity.email}</span>
+            <button className="text-button" onClick={() => void handleSignOut()}>Sign out</button>
+          </div>
+        </header>
+
+        <main className="dashboard-main">
+          {activeTab === 'overview' && (
+            <>
+              <div className="tab-header">
+                <div>
+                  <p className="eyebrow">Platform Intelligence</p>
+                  <h1>Operations Overview</h1>
+                </div>
+              </div>
+              <StatsOverview onNavigateTab={(tab) => setActiveTab(tab)} />
+            </>
+          )}
+
+          {activeTab === 'employers' && (
+            <>
+              <div className="tab-header">
+                <div>
+                  <p className="eyebrow">Directory & Moderation</p>
+                  <h1>Registered Companies</h1>
+                </div>
+              </div>
+              <EmployersPanel />
+            </>
+          )}
+
+          {activeTab === 'jobs' && (
+            <>
+              <div className="tab-header">
+                <div>
+                  <p className="eyebrow">Quality & Moderation</p>
+                  <h1>Active Live Jobs</h1>
+                </div>
+              </div>
+              <JobsPanel />
+            </>
+          )}
+
+          {activeTab === 'plans' && (
+            <>
+              <div className="tab-header">
+                <div>
+                  <p className="eyebrow">Monetization & Catalog</p>
+                  <h1>Posting Plans & Pricing</h1>
+                </div>
+              </div>
+              <PlansPanel />
+            </>
+          )}
+        </main>
+      </div>
+    );
   }
 
-  return <div className="login-page">
-    <aside className="login-intro" aria-label="Career360 administration">
-      <Brand light />
-      <div className="intro-copy">
-        <p className="intro-kicker">OPERATIONS ACCESS</p>
-        <h1>A clear space to manage Career360.</h1>
-        <p>Sign in with your authorized admin account.</p>
-      </div>
-      <p className="intro-footnote">Career360 administration</p>
-    </aside>
-    <main className="login-main">
-      <div className="mobile-brand"><Brand /></div>
-      <section className="login-content" aria-labelledby="login-title">
-        {view.kind === 'configuration' ? <>
-          <p className="eyebrow">SETUP REQUIRED</p>
-          <h2 id="login-title">Admin setup is incomplete</h2>
-          <p className="supporting-copy">Set the Firebase web app and backend URL values before signing in.</p>
-          <p className="setup-hint">Missing: {missingConfiguration.join(', ')}</p>
-        </> : view.kind === 'checking' ? <div className="checking" role="status" aria-live="polite">
-          <span className="spinner" aria-hidden="true" />
-          <p>Checking your access…</p>
-        </div> : view.kind === 'denied' ? <>
-          <p className="eyebrow">ACCESS RESTRICTED</p>
-          <h2 id="login-title">Admin access required</h2>
-          <p className="supporting-copy">This account cannot open the admin workspace.</p>
-          <button className="primary-button" onClick={() => void handleSignOut()}>Use another account</button>
-        </> : view.kind === 'unavailable' ? <>
-          <p className="eyebrow">CONNECTION ISSUE</p>
-          <h2 id="login-title">Could not check your access</h2>
-          <p className="supporting-copy">Check your connection and try again.</p>
-          <button className="primary-button" onClick={() => {
-            if (auth?.currentUser) void checkAccess(auth.currentUser);
-            else setView({ kind: 'signedOut' });
-          }}>Try again</button>
-          <button className="secondary-button" onClick={() => void handleSignOut()}>Sign out</button>
-        </> : <>
+  return (
+    <div className="login-page">
+      <aside className="login-intro" aria-label="Career360 administration">
+        <Brand light />
+        <div className="intro-copy">
+          <p className="intro-kicker">SUPER ADMIN ACCESS</p>
+          <h1>A clear space to manage Career360.</h1>
+          <p>Verify employers, grant free starter plans, and oversee direct contact hiring across Tamil Nadu.</p>
+        </div>
+        <p className="intro-footnote">Career360 Operations Portal</p>
+      </aside>
+      <main className="login-main">
+        <div className="mobile-brand"><Brand /></div>
+        <section className="login-content" aria-labelledby="login-title">
           <p className="eyebrow">WELCOME BACK</p>
-          <h2 id="login-title">Sign in to admin</h2>
-          <p className="supporting-copy">Enter your Career360 admin email and password.</p>
-          <form onSubmit={(event) => void handleSignIn(event)}>
-            <label htmlFor="email">Email</label>
-            <input id="email" name="email" type="email" autoComplete="username" inputMode="email"
-              required value={email} onChange={(event) => setEmail(event.target.value)} />
-            <label htmlFor="password">Password</label>
-            <div className="password-field">
-              <input id="password" name="password" type={showPassword ? 'text' : 'password'}
-                autoComplete="current-password" required value={password}
-                onChange={(event) => setPassword(event.target.value)} />
-              <button type="button" className="show-password" aria-label={showPassword ? 'Hide password' : 'Show password'}
-                onClick={() => setShowPassword((value) => !value)}>{showPassword ? 'Hide' : 'Show'}</button>
+          <h1 id="login-title">Sign in to admin</h1>
+          <p className="login-subtitle">Enter your Career360 super admin email and password.</p>
+
+          <form className="login-form" onSubmit={(e) => void handleSignIn(e)}>
+            <label className="field-label" htmlFor="admin-email">Email</label>
+            <input
+              id="admin-email"
+              type="email"
+              autoComplete="username"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+
+            <div className="password-header">
+              <label className="field-label" htmlFor="admin-password">Password</label>
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
             </div>
-            {formError && <p className="form-error" role="alert">{formError}</p>}
-            <button className="primary-button" type="submit" disabled={submitting || !email.trim() || !password}>
+            <input
+              id="admin-password"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+
+            {formError && <p className="error-message" role="alert">{formError}</p>}
+
+            <button className="primary-button" type="submit" disabled={submitting}>
               {submitting ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
-          <p className="access-note">Access is limited to authorized Career360 staff.</p>
-        </>}
-      </section>
-    </main>
-  </div>;
+          <p className="login-footer-note">Access is strictly limited to authorized Career360 staff.</p>
+        </section>
+      </main>
+    </div>
+  );
 }

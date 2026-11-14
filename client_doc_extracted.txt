@@ -1,0 +1,419 @@
+Job Portal Mobile Application (Android)
+Project Documentation – Simple Guide
+Prepared for: Client review and approvalPrepared by: SkyGroupz Digital SolutionsVersion: 1.0Date: 02 November 2026
+1. Project at a Glance
+A job search app for Android, similar to Nithra Jobs. Candidates find and apply for jobs for free. Employers pay a subscription to post jobs. The owner controls everything from an admin dashboard.
+Item
+Details
+Project
+Job Portal Mobile Application (Android)
+Users
+Job Seekers, Employers / HR, Admin / Owner
+Technology
+Android (Kotlin), Laravel (backend), MySQL (database), Firebase (notifications)
+Advertising
+Google AdMob in the app; AdSense optional on web panels
+2. Who Uses the System
+User
+What they do
+Cost to user
+Job Seeker (Employee)
+Creates a profile, searches jobs, applies, tracks applications
+Free
+Employer / HR
+Creates a company profile, buys a plan, posts jobs, manages applicants
+Paid subscription
+Admin / Owner
+Manages users, employers, plans, payments, content and reports
+Not applicable
+Each user type can see only their own area. A candidate can never open an employer or admin dashboard.
+Where each part runs
+Part
+Format
+Job Seeker
+Android app
+Employer / HR
+Web dashboard (recommended); to be confirmed
+Admin / Owner
+Secure web dashboard
+Backend
+Central server connecting everything
+3. Job Seeker Features (Free)
+3.1 Account
+Sign up and log in with mobile number and OTP, or with email and password.
+Forgot password and account recovery.
+Accept Terms of Use and Privacy Policy.
+Request account deletion.
+3.2 Profile and resume
+Personal details: name, mobile, email, location, photo.
+Career details: education, experience, skills, current and expected salary, preferred role and location.
+Upload, replace or delete resume (PDF, DOC, DOCX).
+Profile completion indicator.
+3.3 Finding jobs
+Home screen: latest, recommended, featured and recently viewed jobs.
+Search by job title, keyword, company, skill or location.
+Filters: location, category, experience, salary, job type, education, date posted.
+Job detail page with description, requirements, salary, benefits, vacancies and deadline.
+Save jobs, share job links, report suspicious listings.
+3.4 Applying and tracking
+Apply using saved profile and resume.
+Answer employer screening questions (if enabled).
+Duplicate applications to the same job are blocked.
+My Applications page shows the status of each application:
+Status
+Meaning
+Submitted
+Application sent
+Viewed
+Employer opened it
+Shortlisted
+Employer selected you
+Interview
+Interview scheduled
+Rejected
+Not selected
+Hired
+Selected for the job
+Withdrawn
+Cancelled by the candidate
+3.5 Other features
+In-app notifications with read/unread state and preferences.
+Help and support, FAQs, feedback, report a problem.
+Secure logout.
+4. Employer / HR Features (Paid)
+4.1 Onboarding
+Register with HR contact details, email and mobile verification.
+Create company profile: name, logo, industry, website, address, description.
+Admin verifies the company. Status: Pending → Approved / Rejected / Suspended.
+Only approved employers can publish jobs.
+Multiple HR users per company (Owner, HR Manager, Recruiter) – optional.
+4.2 Dashboard
+Active plan name, start and expiry date.
+Job quota: total, used and remaining.
+Quick actions: Post a Job, Manage Jobs, View Applicants, Company Profile, Subscription, Billing, Support.
+Job performance: views, applications, shortlisted candidates.
+Warnings when quota is almost finished or the plan is about to expire.
+4.3 Posting and managing jobs
+Job details: title, category, description, responsibilities, skills, qualification, experience, salary, location, job type, vacancies, deadline.
+Work mode: on-site, remote or hybrid.
+Save as Draft (does not use quota).
+Publish only when the employer is approved, the plan is active and quota remains.
+Edit, pause, close, renew or delete a job.
+Job status
+Meaning
+Draft
+Saved, not live
+Pending Approval
+Waiting for admin review
+Published
+Live for candidates
+Paused
+Temporarily hidden
+Closed
+No longer accepting applications
+Expired
+Past deadline or plan expiry
+Rejected
+Not approved by admin
+4.4 Managing applicants
+View applicants for each job; filter by date, status, experience, qualification, location.
+Open candidate profile and resume (only if authorized).
+Update status: shortlist, reject, interview, hired.
+Add private HR notes; record interview date, time and instructions.
+Export applicant list to CSV/Excel (if enabled).
+4.5 Billing
+View plans, price, tax, quota and duration.
+Pay online through the payment gateway.
+Get invoice or receipt; view payment and subscription history.
+Renew, upgrade or change plan.
+If the plan is expired, suspended or out of quota, publishing is blocked.
+5. Subscription Plans and Job Quota
+5.1 Initial plans
+Plan
+Duration
+Job posts allowed
+Monthly
+1 month
+10
+Quarterly
+3 months
+50
+Yearly
+12 months
+150
+The admin can edit these limits at any time.
+5.2 Quota rules in simple words
+Rule
+How it works
+Tracking
+Quota is tracked per employer. Example: 10 allowed, 4 used, 6 remaining.
+What uses quota
+One job uses one unit when it is first published. Drafts do not use quota.
+Editing
+Editing a published job does not use more quota.
+Quota finished
+Publishing is blocked; employer is asked to renew or buy a plan.
+Plan expired
+New jobs cannot be published; live jobs are paused or closed (recommended).
+Renewal
+A successful payment creates or extends the subscription and assigns quota.
+Manual changes
+Admin can adjust quota only with a reason; every change is logged.
+5.3 Recommended default policy
+Quota belongs to the purchased period.
+Unused posts do not carry forward.
+Closing or deleting a job does not give the quota back.
+Admin can correct quota manually with a recorded reason.
+5.4 Subscription status
+Pending Payment, Active, Expired, Cancelled, Suspended, Failed. Payment status is stored separately, so a failed payment can never activate a plan.
+6. Admin / Owner Dashboard
+Area
+What the admin can do
+Overview
+See totals of candidates, employers, jobs, applications, subscriptions and payments; charts and filters; recent activity
+Candidates
+Search, view, activate, suspend or block; handle complaints and deletion requests (passwords and OTPs are never visible)
+Employers
+Verify documents; approve, reject, suspend or reactivate; view plan, quota and payment history; manually assign or extend a plan with a reason
+Plans & Quota
+Create, edit, activate or deactivate plans; change price, tax, duration and quota; coupons, trials and complimentary access
+Jobs & Content
+Approve, reject, edit, pause or remove jobs; manage categories, skills, locations; banners, featured jobs, FAQs, Terms and Privacy Policy
+Payments
+View transactions; handle failed payments, refunds and disputes; payment reports and exports
+Settings & Staff
+Admin roles (Super Admin, Operations, Content Moderator, Finance); notification templates; SMS/email/Firebase settings; maintenance mode; system and audit logs
+7. How a Job Goes Live (Workflow)
+Step
+Action
+What the system does
+1
+Employer registers
+Verifies contact details; stays Pending until approved
+2
+Employer buys a plan
+Payment confirmed; plan becomes Active; quota assigned
+3
+Employer creates a job
+Saved as Draft; no quota used
+4
+Employer publishes
+Checks approval, plan dates and quota; uses one quota unit
+5
+Admin review (if enabled)
+Approves or rejects; reason sent to employer
+6
+Candidate applies
+Application saved; employer notified
+7
+HR reviews
+HR updates status; candidate notified
+8
+Job closes or expires
+New applications stop; history is kept
+8. Notifications
+Push notifications use Firebase. Every notification is also saved in the app, so nothing is lost if a push is missed.
+Event
+Who gets it
+Message
+OTP / new account
+Candidate, Employer
+Verification code or confirmation
+New application
+Employer
+A candidate applied to your job
+Status change
+Candidate
+Viewed, shortlisted, interview, rejected or hired
+Payment
+Employer
+Success or failure with receipt reference
+Quota warning
+Employer
+Quota low or finished
+Plan expiry
+Employer
+Plan expiring soon or expired
+Job moderation
+Employer
+Job approved, rejected, paused or removed, with reason
+Admin alerts
+Admin
+New approvals, reported jobs, payment issues
+Channels: Push (Firebase), SMS (OTP and updates), Email (receipts and important updates), WhatsApp (optional, needs an approved provider).
+9. Payments, Security and Privacy
+Payments
+One client-approved gateway (for example Razorpay).
+Payment is always verified server-to-server; the app's success screen alone is never trusted.
+Duplicate payment callbacks cannot give quota twice.
+Invoice, receipt and renewal are supported.
+GST, invoice format and refund policy must be confirmed by the client.
+Security
+Role-based access for candidates, employers and admins.
+Secure password storage, OTP limits and login throttling.
+HTTPS everywhere; all inputs validated.
+Resumes and documents are private and shown only to authorized users.
+Protection against common attacks (SQL injection, XSS, CSRF, unauthorized API access).
+Audit logs for sensitive actions; passwords, OTPs and payment secrets are never logged.
+Card details and CVV are never stored.
+Privacy
+Terms and Privacy Policy acceptance.
+Consent controls, data retention rules and account deletion.
+10. Advertising (Google AdMob)
+The Android app earns from ads through Google AdMob. Google AdSense works only on websites, so AdMob is the correct product for the app, and AdSense can optionally be used on the web panels. Both use the same Google account and pay the client directly.
+Ad format
+Where it appears
+Rule
+Banner
+Bottom of Home, Search results and Job list screens
+Small and fixed; never covers buttons
+Native ad
+Between job cards, after every few listings (number set by admin)
+Clearly labelled "Ad"; must not look like a job
+Interstitial (full screen)
+After a job application is submitted, or after several job views
+Limited frequency, for example once every few minutes
+Rewarded (optional)
+Future use only
+Not part of the first release
+10.1 Ad rules
+Ads show to job seekers only. Employer and admin screens stay ad-free (to be confirmed).
+No ads on login, OTP, payment, resume upload or application form screens.
+Every ad is clearly marked "Ad".
+Google test ads are used during development; live ads only after release.
+Users are never asked or encouraged to click ads.
+10.2 Admin controls
+Switch ads on or off for the whole app or for each placement.
+Set ad unit IDs, how often native and full-screen ads appear, and which screens show them.
+View ad performance (impressions, clicks, estimated earnings) from the AdMob account.
+10.3 Setup and compliance
+Client creates the Google AdMob account, links the payment profile and approves the app in AdMob.
+Privacy Policy is updated to explain ads and the advertising ID.
+The Google Play "Data safety" form declares that the app contains ads.
+A consent message is shown where the law requires it.
+Ads follow Google AdMob and Google Play policies; the app must not click its own ads.
+11. Reports
+Report
+Contents
+Candidates
+Registrations, active/inactive, location, profile completion
+Employers
+Registrations, approved/pending/suspended, active plans, renewals
+Subscriptions
+Plan sales, active/expired, revenue, failed payments
+Quota
+Purchased, used, remaining, employers with zero quota
+Jobs
+Created, published, closed, expired, category and location split
+Applications
+Total, per job, status split, hiring results
+All reports have date filters and CSV/Excel export for authorized admins.
+12. Quality Expectations
+Area
+Expectation
+Performance
+Fast screens using pagination, caching and optimized images
+Availability
+Production hosting, monitoring and backups (uptime target to be agreed)
+Scalability
+Handles growth in users, jobs, applications and resumes
+Usability
+Clear navigation, validation messages, loading and empty states
+Compatibility
+Agreed minimum Android version; employer/admin portals on major browsers
+Reliability
+No duplicate applications, duplicate payment activation or wrong quota
+Backup
+Scheduled database and file backups
+Maintainability
+Documented APIs, logs, version control, deployment steps
+13. Main Data Records
+Record
+Purpose
+Users
+Login identity, role, status
+Candidate Profiles
+Education, experience, skills, resume
+Companies
+Company profile and verification status
+Employer Members
+HR users linked to a company
+Plans
+Name, duration, price, tax, quota
+Subscriptions
+Employer, plan, dates, assigned and used quota
+Payments / Invoices
+Transaction IDs, amount, tax, status, refunds
+Jobs
+Job details, status, dates, quota reference
+Applications
+Candidate, job, resume, status
+Notifications
+Recipient, message, read status
+Audit Logs
+Who did what, when and why
+14. Acceptance Checklist
+The project is complete when all of these work:
+☐ Candidate can register, build a profile, search and apply without paying.
+☐ Employer cannot publish until approved and subscribed.
+☐ Monthly, Quarterly and Yearly plans give 10, 50 and 150 posts.
+☐ Admin can change plan quotas and see used and remaining quota per employer.
+☐ Drafts do not use quota; first publication uses one unit.
+☐ Publishing is blocked when quota is finished or plan has expired.
+☐ Candidate sees application history and gets status updates.
+☐ HR can view applicants and update their status.
+☐ Admin can approve or reject employers and jobs and manage users, plans, payments and settings.
+☐ Payment, activation and quota assignment are reliable and cannot be duplicated.
+☐ Reports show correct totals.
+☐ Ads show only in the agreed placements, and admin can switch them on or off.
+15. Decisions Needed From the Client
+Topic
+Question
+Recommended default
+Employer portal
+Web dashboard or separate app?
+Responsive web dashboard
+Admin portal
+Need multiple staff roles?
+Responsive web dashboard
+Prices and tax
+Monthly, quarterly, yearly prices, GST, invoice details
+To be provided
+Quota counting
+How are rejected jobs and re-publishing counted?
+Count once on first publish
+Unused quota
+Carry forward?
+No carry-forward
+Plan expiry
+Do live jobs stay visible?
+Pause or close them
+Renewal
+Start now, extend, or queue? Quota reset?
+To be decided
+Moderation
+Does every job need admin approval?
+To be decided
+Payments
+Gateway, merchant account, refund policy, auto-renewal
+To be decided
+Candidate contact
+When can employers see mobile/email?
+After application or shortlist
+Extra features
+Job alerts, chat, interview scheduling, WhatsApp: launch or later?
+Later enhancement
+Launch
+Minimum Android version, hosting, domain, SMS/email providers, policies
+To be decided
+Advertising
+Which screens show ads, how often, and are employer screens ad-free?
+Banner and native ads for job seekers only; employer and admin ad-free
+AdMob account
+Does the client have a Google AdMob / AdSense account and payment profile?
+Client creates the account; developer adds the ad unit IDs
+16. Approval Note
+This document describes the proposed scope. Any feature, workflow or third-party service not described here is an additional requirement and will be reviewed for its effect on cost, timeline and delivery. The client should approve the open decisions in Section 15 before development begins.
+Client approval: ______________________  Date: ______________
+SkyGroupz representative: ______________________  Date: ______________
+www.skygroupz.com

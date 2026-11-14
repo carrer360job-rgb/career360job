@@ -59,6 +59,86 @@ export const publishPlan = (token: string, id: string) =>
 export const archivePlan = (token: string, id: string) =>
   adminRequest<{ status: string }>(token, `/plans/${encodeURIComponent(id)}/archive`, 'POST');
 
+export type PlatformStats = {
+  totalCandidates: number;
+  totalEmployers: number;
+  pendingEmployers: number;
+  approvedEmployers: number;
+  rejectedEmployers: number;
+  totalJobs: number;
+  activeJobs: number;
+  closedJobs: number;
+  totalApplications: number;
+};
+
+export type EmployerRecord = {
+  uid: string;
+  companyName: string;
+  contactName: string;
+  designation: string;
+  email: string;
+  phone: string;
+  whatsappPhone: string;
+  industry: string;
+  companySize: string;
+  state: string;
+  district: string;
+  address: string;
+  postalCode: string;
+  registrationNumber: string;
+  status: 'pending' | 'approved' | 'rejected';
+  postingCredits: number;
+  activePlan: string;
+  rejectionReason: string | null;
+  reviewedBy: string | null;
+  createdAt: string | null;
+  reviewedAt: string | null;
+};
+
+export type JobRecord = {
+  id: string;
+  title: string;
+  companyName: string;
+  category: string;
+  locationCity: string;
+  workMode: string;
+  salaryText: string;
+  vacanciesCount: number;
+  phone: string;
+  whatsappNumber: string;
+  email: string;
+  contactName: string;
+  status: 'active' | 'closed';
+  isVerified: boolean;
+  postedAt: string | null;
+  expiresAt: string | null;
+};
+
+export const getStats = (token: string) => adminRequest<PlatformStats>(token, '/stats');
+
+export const listEmployers = (token: string, status = 'all', search = '') =>
+  adminRequest<{ employers: EmployerRecord[] }>(
+    token,
+    `/employers?status=${encodeURIComponent(status)}&search=${encodeURIComponent(search)}`
+  );
+
+export const reviewEmployer = (token: string, uid: string, decision: 'approved' | 'rejected', notes?: string) =>
+  adminRequest<{ uid: string; status: string }>(
+    token,
+    `/employers/${encodeURIComponent(uid)}/review`,
+    'POST',
+    { decision, notes }
+  );
+
+export const listJobs = (token: string, status = 'all', search = '') =>
+  adminRequest<{ jobs: JobRecord[] }>(
+    token,
+    `/jobs?status=${encodeURIComponent(status)}&search=${encodeURIComponent(search)}`
+  );
+
+export const closeJob = (token: string, jobId: string) =>
+  adminRequest<{ status: string }>(token, `/jobs/${encodeURIComponent(jobId)}/close`, 'POST');
+
 export async function getAdminIdentity(token: string): Promise<AdminIdentity> {
   const identity: unknown = await adminRequest(token, '/me');
   if (!identity || typeof identity !== 'object' ||

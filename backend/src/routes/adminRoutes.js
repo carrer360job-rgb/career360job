@@ -1,5 +1,6 @@
 import express from 'express';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp, getFirestore } from 'firebase-admin/firestore';
+import { firebaseApp } from '../config/firebase.js';
 import { verifyAdminToken } from '../middlewares/authMiddleware.js';
 import { requireAdmin } from '../middlewares/adminMiddleware.js';
 import { catalogDb, publicPlan, seedPlanDrafts, validatePlanDraft } from '../services/planCatalog.js';
@@ -18,10 +19,271 @@ router.get('/me', verifyAdminToken, requireAdmin, (req, res) => {
 router.use(verifyAdminToken, requireAdmin);
 
 function fail(res, error) {
-  console.error('[Admin plans]', error);
-  return res.status(error.status || 500).json({ error: { message: error.status ? error.message : 'Plan request failed.' } });
+  console.error('[Admin API]', error);
+  return res.status(error.status || 500).json({ error: { message: error.status ? error.message : 'Admin request failed.' } });
 }
 
+// 1. Platform Statistics Dashboard
+router.get('/stats', async (req, res) => {
+  try {
+    const db = getFirestore(firebaseApp);
+    const [employersSnap, candidatesSnap, jobsSnap, applicationsSnap] = await Promise.all([
+      db.collection('employers').get(),
+      db.collection('candidates').get(),
+      db.collection('jobs').get(),
+      db.collection('applications').get(),
+    ]);
+
+    let pendingEmployers = 0;
+    let approvedEmployers = 0;
+    let rejectedEmployers = 0;
+    employersSnap.forEach((doc) => {
+      const st = doc.data().status;
+      if (st === 'pending') pendingEmployers++;
+      else if (st === 'approved') approvedEmployers++;
+      else if (st === 'rejected') rejectedEmployers++;
+    });
+
+    let activeJobs = 0;
+    let closedJobs = 0;
+    jobsSnap.forEach((doc) => {
+      if (doc.data().status === 'active') activeJobs++;
+      else closedJobs++;
+    });
+
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      totalCandidates: candidatesSnap.size,
+      totalEmployers: employersSnap.size,
+      pendingEmployers,
+      approvedEmployers,
+      rejectedEmployers,
+      totalJobs: jobsSnap.size,
+      activeJobs,
+      closedJobs,
+      totalApplications: applicationsSnap.size,
+    });
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+// 2. Employers List with Filtering
+router.get('/employers', async (req, res) => {
+  try {
+    const db = getFirestore(firebaseApp);
+    const statusFilter = req.query.status || 'all';
+    const search = (req.query.search || '').trim().toLowerCase();
+
+    let query = db.collection('employers');
+    if (['pending', 'approved', 'rejected'].includes(statusFilter)) {
+      query = query.where('status', '==', statusFilter);
+    }
+
+    const snap = await query.get();
+    let employers = snap.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        uid: doc.id,
+        companyName: data.companyName || '',
+        contactName: data.contactName || '',
+        designation: data.designation || '',
+        email: data.email || '',
+        phone: data.phone || '',
+        whatsappPhone: data.whatsappPhone || data.phone || '',
+        industry: data.industry || '',
+        companySize: data.companySize || '',
+        state: data.state || '',
+        district: data.district || '',
+        address: data.address || '',
+        postalCode: data.postalCode || '',
+        registrationNumber: data.registrationNumber || '',
+        status: data.status || 'pending',
+        postingCredits: data.postingCredits || 0,
+        activePlan: data.activePlan || 'free_starter',
+        rejectionReason: data.rejectionReason || null,
+        reviewedBy: data.reviewedBy || null,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
+        reviewedAt: data.reviewedAt?.toDate?.()?.toISOString() || null,
+      };
+    });
+
+    if (search) {
+      employers = employers.filter((e) =>
+        e.companyName.toLowerCase().includes(search) ||
+        e.contactName.toLowerCase().includes(search) ||
+        e.email.toLowerCase().includes(search) ||
+        e.phone.includes(search) ||
+        e.district.toLowerCase().includes(search)
+      );
+    }
+
+    // Sort pending first, then by createdAt desc
+    employers.sort((a, b) => {
+      if (a.status === 'pending' && b.status !== 'pending') return -1;
+      if (a.status !== 'pending' && b.status === 'pending') return 1;
+      return (b.createdAt || '').localeCompare(a.createdAt || '');
+    });
+
+    res.set('Cache-Control', 'no-store');
+    res.json({ employers });
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+// 3. Employer Review (Approve / Reject)
+router.post('/employers/:uid/review', async (req, res) => {
+  try {
+    const uid = req.params.uid;
+    const { decision, notes } = req.body || {};
+    if (!['approved', 'rejected'].includes(decision)) {
+      return res.status(400).json({ error: { message: 'Decision must be "approved" or "rejected".' } });
+    }
+
+    const db = getFirestore(firebaseApp);
+    const employerRef = db.collection('employers').doc(uid);
+    const userRef = db.collection('users').doc(uid);
+
+    const result = await db.runTransaction(async (tx) => {
+      const employerDoc = await tx.get(employerRef);
+      if (!employerDoc.exists) {
+        throw Object.assign(new Error('Employer account not found.'), { status: 404 });
+      }
+      const data = employerDoc.data();
+      const now = Date.now();
+      const updates = {
+        status: decision,
+        reviewedBy: req.user.uid,
+        reviewedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+
+      if (decision === 'approved') {
+        const existingExpiry = data.creditsExpireAt?.toMillis?.() ?? 0;
+        const activeCredits = existingExpiry > now ? (data.postingCredits ?? 0) : 0;
+        const newCredits = Math.max(activeCredits, 1);
+        const nextExpiry = Math.max(existingExpiry, now + 7 * 86400000);
+
+        updates.postingCredits = newCredits;
+        updates.listingDays = data.listingDays || 7;
+        updates.creditsExpireAt = Timestamp.fromMillis(nextExpiry);
+        updates.activePlan = data.activePlan || 'free_starter';
+        updates.rejectionReason = FieldValue.delete();
+      } else {
+        updates.rejectionReason = notes ? String(notes).trim().slice(0, 500) : 'Company verification could not be completed.';
+      }
+
+      tx.update(employerRef, updates);
+
+      // In-app notification
+      const notifRef = userRef.collection('notifications').doc();
+      tx.create(notifRef, {
+        title: decision === 'approved' ? 'Company Verified ✔️' : 'Company Verification Update',
+        body: decision === 'approved'
+          ? 'Your company profile has been approved! 1 free job posting credit is ready in your account.'
+          : `Verification note: ${updates.rejectionReason}`,
+        type: 'employer_review',
+        decision,
+        createdAt: FieldValue.serverTimestamp(),
+        readAt: null,
+      });
+
+      // Audit log
+      tx.create(db.collection('admin_audit').doc(), {
+        action: `employer_${decision}`,
+        actorUid: req.user.uid,
+        employerUid: uid,
+        notes: notes || null,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+
+      return { uid, status: decision };
+    });
+
+    res.json(result);
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+// 4. Jobs Moderation List
+router.get('/jobs', async (req, res) => {
+  try {
+    const db = getFirestore(firebaseApp);
+    const status = req.query.status || 'all';
+    const search = (req.query.search || '').trim().toLowerCase();
+
+    let query = db.collection('jobs');
+    if (['active', 'closed'].includes(status)) {
+      query = query.where('status', '==', status);
+    }
+
+    const snap = await query.get();
+    let jobs = snap.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        title: data.title || '',
+        companyName: data.companyName || '',
+        category: data.category || '',
+        locationCity: data.locationCity || '',
+        workMode: data.workMode || 'On-site',
+        salaryText: data.salaryText || '',
+        vacanciesCount: data.vacanciesCount || 1,
+        phone: data.phone || '',
+        whatsappNumber: data.whatsappNumber || '',
+        email: data.email || '',
+        contactName: data.contactName || '',
+        status: data.status || 'active',
+        isVerified: data.isVerified === true,
+        postedAt: data.postedAt?.toDate?.()?.toISOString() || null,
+        expiresAt: data.expiresAt?.toDate?.()?.toISOString() || null,
+      };
+    });
+
+    if (search) {
+      jobs = jobs.filter((j) =>
+        j.title.toLowerCase().includes(search) ||
+        j.companyName.toLowerCase().includes(search) ||
+        j.locationCity.toLowerCase().includes(search) ||
+        j.contactName.toLowerCase().includes(search)
+      );
+    }
+
+    jobs.sort((a, b) => (b.postedAt || '').localeCompare(a.postedAt || ''));
+    res.set('Cache-Control', 'no-store');
+    res.json({ jobs });
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+// 5. Force Close Job (Takedown Spam)
+router.post('/jobs/:id/close', async (req, res) => {
+  try {
+    const db = getFirestore(firebaseApp);
+    const jobRef = db.collection('jobs').doc(req.params.id);
+    const job = await jobRef.get();
+    if (!job.exists) return res.status(404).json({ error: { message: 'Job not found.' } });
+    await jobRef.update({
+      status: 'closed',
+      closedBy: 'admin',
+      closedAt: FieldValue.serverTimestamp(),
+    });
+    await db.collection('admin_audit').doc().create({
+      action: 'job_force_closed',
+      actorUid: req.user.uid,
+      jobId: req.params.id,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    res.json({ status: 'closed' });
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+// Plans Catalog Management
 router.get('/plans', async (req, res) => {
   try {
     const snapshot = await catalogDb().collection('employer_plans').get();

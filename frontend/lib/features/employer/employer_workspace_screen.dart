@@ -323,13 +323,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
         const Icon(Icons.campaign_outlined, color: AppTheme.accent, size: 30),
         const SizedBox(height: 12),
         Text(
-          !profile.isApproved
-              ? (profile.status == 'rejected'
-                    ? 'Company review needed'
-                    : 'Company review in progress')
-              : live == 0
-              ? 'Find your next great hire'
-              : 'Keep your hiring moving',
+          live == 0 ? 'Find your next great hire' : 'Keep your hiring moving',
           style: const TextStyle(
             color: Colors.white,
             fontSize: 23,
@@ -338,28 +332,22 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
         ),
         const SizedBox(height: 6),
         Text(
-          !profile.isApproved
-              ? (profile.status == 'rejected'
-                    ? 'Your company needs another review before posting jobs.'
-                    : 'You can choose a posting plan after your company is approved.')
-              : live == 0
-              ? 'Publish a job and reach Career360 candidates.'
+          live == 0
+              ? 'Publish a job and reach Career360 candidates across Tamil Nadu.'
               : '$live live jobs · $applicants applications',
           style: const TextStyle(color: Color(0xFFCBD5E1), height: 1.35),
         ),
-        if (profile.isApproved) ...[
-          const SizedBox(height: 17),
-          FilledButton.icon(
-            onPressed: () => _openJobForm(),
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: AppTheme.primaryDark,
-            ),
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('Post a job'),
+        const SizedBox(height: 17),
+        FilledButton.icon(
+          onPressed: () => _openJobForm(),
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.white,
+            foregroundColor: AppTheme.primaryDark,
           ),
-        ],
-        if (profile.isApproved && !profile.hasActiveCredits)
+          icon: const Icon(Icons.add_rounded),
+          label: const Text('Post a job'),
+        ),
+        if (!profile.hasActiveCredits)
           TextButton(
             onPressed: _openPlans,
             style: TextButton.styleFrom(foregroundColor: Colors.white),
