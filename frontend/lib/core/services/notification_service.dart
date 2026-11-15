@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'supabase_service.dart';
 
 class AppNotification {
   final String id;
@@ -17,61 +17,68 @@ class AppNotification {
     required this.isRead,
   });
 
-  factory AppNotification.fromDocument(
-    QueryDocumentSnapshot<Map<String, dynamic>> document,
-  ) {
-    final data = document.data();
+  factory AppNotification.fromMap(Map<String, dynamic> data) {
     final title = data['title'];
-    final body = data['body'];
+    final body = data['body'] ?? data['message'];
     final type = data['type'];
-    final createdAt = data['createdAt'];
+    final rawCreated = data['created_at'] ?? data['createdAt'];
+    DateTime? created;
+    if (rawCreated is DateTime) {
+      created = rawCreated;
+    } else if (rawCreated is String) {
+      created = DateTime.tryParse(rawCreated);
+    }
     return AppNotification(
-      id: document.id,
+      id: data['id']?.toString() ?? '',
       title: title is String && title.trim().isNotEmpty
           ? title.trim()
           : 'Update',
       body: body is String ? body.trim() : '',
       type: type is String ? type : 'general',
-      createdAt: createdAt is Timestamp ? createdAt.toDate() : null,
-      isRead: data['readAt'] != null,
+      createdAt: created,
+      isRead: data['is_read'] == true || data['readAt'] != null,
     );
   }
 }
 
 class NotificationService {
-  final FirebaseFirestore _firestore;
+  Stream<List<AppNotification>> watchLatest(String uid) {
+    if (uid.isEmpty) return Stream.value([]);
+    try {
+      return SupabaseService.client
+          .from('notifications')
+          .stream(primaryKey: ['id'])
+          .eq('user_id', uid)
+          .order('created_at', ascending: false)
+          .map((rows) => rows.map(AppNotification.fromMap).toList());
+    } catch (_) {
+      return Stream.value([]);
+    }
+  }
 
-  NotificationService({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
-
-  CollectionReference<Map<String, dynamic>> _collection(String uid) =>
-      _firestore.collection('users').doc(uid).collection('notifications');
-
-  Stream<List<AppNotification>> watchLatest(String uid) => _collection(uid)
-      .orderBy('createdAt', descending: true)
-      .limit(100)
-      .snapshots()
-      .map(
-        (snapshot) => snapshot.docs.map(AppNotification.fromDocument).toList(),
-      );
-
-  Future<void> markRead(String uid, String notificationId) =>
-      _collection(uid)
-          .doc(notificationId)
-          .update({'readAt': FieldValue.serverTimestamp()});
+  Future<void> markRead(String uid, String notificationId) async {
+    try {
+      await SupabaseService.client
+          .from('notifications')
+          .update({'is_read': true})
+          .eq('id', notificationId);
+    } catch (_) {}
+  }
 
   Future<void> markAllRead(
     String uid,
     List<AppNotification> notifications,
   ) async {
-    final unread = notifications.where((item) => !item.isRead).toList();
-    if (unread.isEmpty) return;
-    final batch = _firestore.batch();
-    for (final item in unread) {
-      batch.update(_collection(uid).doc(item.id), {
-        'readAt': FieldValue.serverTimestamp(),
-      });
-    }
-    await batch.commit();
+    final unreadIds = notifications
+        .where((item) => !item.isRead)
+        .map((i) => i.id)
+        .toList();
+    if (unreadIds.isEmpty) return;
+    try {
+      await SupabaseService.client
+          .from('notifications')
+          .update({'is_read': true})
+          .inFilter('id', unreadIds);
+    } catch (_) {}
   }
 }

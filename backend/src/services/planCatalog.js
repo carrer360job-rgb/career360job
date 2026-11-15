@@ -1,5 +1,15 @@
-import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { supabaseAdmin } from '../config/supabase.js';
 import { firebaseApp } from '../config/firebase.js';
+import { getFirestore } from 'firebase-admin/firestore';
+
+export function catalogDb() {
+  if (firebaseApp) {
+    try {
+      return getFirestore(firebaseApp);
+    } catch (_) {}
+  }
+  return null;
+}
 
 const tiers = new Set(['standard', 'featured', 'elite']);
 const taxModes = new Set(['inclusive', 'exclusive']);
@@ -97,43 +107,96 @@ export function publicPlan(id, version, plan) {
   };
 }
 
-export function catalogDb() {
-  if (!firebaseApp) throw Object.assign(new Error('Firebase Admin is unavailable.'), { status: 503 });
-  return getFirestore(firebaseApp);
-}
-
 export async function listPublishedPlans() {
-  const snapshot = await catalogDb().collection('employer_plans').get();
-  return snapshot.docs.flatMap((doc) => {
-    const { published, version } = doc.data();
-    return published?.active && Number.isInteger(published.pricePaise) && published.pricePaise >= 100 &&
-      ['standard', 'featured', 'elite'].includes(published.tier)
-      ? [publicPlan(doc.id, version, published)] : [];
-  }).sort((a, b) => a.sortOrder - b.sortOrder);
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('employer_plans')
+      .select('*')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true });
+
+    if (!error && data && data.length > 0) {
+      return data.map((d) => {
+        const planData = {
+          name: d.name,
+          tier: d.tier || 'standard',
+          badge: d.badge || '',
+          pricePaise: d.price_paise || (d.price ? Math.round(d.price * 100) : 236000),
+          taxMode: d.tax_mode || 'inclusive',
+          taxRateBps: d.tax_rate_bps || 1800,
+          jobCredits: d.job_credits || d.job_post_quota || 1,
+          listingDays: d.listing_days || 30,
+          creditValidityDays: d.credit_validity_days || 30,
+          profileUnlockLimit: d.profile_unlock_limit || 25,
+          reach: d.reach || 'district',
+          sortOrder: d.sort_order || 0,
+          features: Array.isArray(d.features) ? d.features : ['Verified job posting', 'Applicant unlocks'],
+        };
+        return publicPlan(d.id, d.version || 1, planData);
+      });
+    }
+  } catch (_) {}
+
+  return initialPlanDrafts.map((draft) => publicPlan(draft.id, 1, draft));
 }
 
 export async function publishedPlan(id) {
-  const snapshot = await catalogDb().collection('employer_plans').doc(id).get();
-  const { published, version } = snapshot.data() ?? {};
-  if (!published?.active || !Number.isInteger(published.pricePaise) || published.pricePaise < 100 ||
-      !['standard', 'featured', 'elite'].includes(published.tier)) {
-    throw Object.assign(new Error('This plan is unavailable.'), { status: 404 });
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('employer_plans')
+      .select('*')
+      .eq('id', id)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (!error && data) {
+      const planData = {
+        name: data.name,
+        tier: data.tier || 'standard',
+        badge: data.badge || '',
+        pricePaise: data.price_paise || (data.price ? Math.round(data.price * 100) : 236000),
+        taxMode: data.tax_mode || 'inclusive',
+        taxRateBps: data.tax_rate_bps || 1800,
+        jobCredits: data.job_credits || data.job_post_quota || 1,
+        listingDays: data.listing_days || 30,
+        creditValidityDays: data.credit_validity_days || 30,
+        profileUnlockLimit: data.profile_unlock_limit || 25,
+        reach: data.reach || 'district',
+        sortOrder: data.sort_order || 0,
+        features: Array.isArray(data.features) ? data.features : [],
+      };
+      return publicPlan(data.id, data.version || 1, planData);
+    }
+  } catch (_) {}
+
+  const local = initialPlanDrafts.find((p) => p.id === id);
+  if (local) {
+    return publicPlan(local.id, 1, local);
   }
-  return publicPlan(id, version, published);
+
+  throw Object.assign(new Error('This plan is unavailable.'), { status: 404 });
 }
 
 export async function seedPlanDrafts(adminUid) {
-  const database = catalogDb();
-  const existing = await database.collection('employer_plans').get();
-  const existingIds = new Set(existing.docs.map((doc) => doc.id));
-  const missing = initialPlanDrafts.filter(({ id }) => !existingIds.has(id));
-  if (!missing.length) throw Object.assign(new Error('Paid plan drafts already exist.'), { status: 409 });
-  const batch = database.batch();
-  for (const { id, ...draft } of missing) {
-    batch.create(database.collection('employer_plans').doc(id), {
-      draft: validatePlanDraft(draft), version: 0, createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(), updatedBy: adminUid,
+  for (const draft of initialPlanDrafts) {
+    const valid = validatePlanDraft(draft);
+    await supabaseAdmin.from('employer_plans').upsert({
+      id: draft.id,
+      name: valid.name,
+      tier: valid.tier,
+      badge: valid.badge,
+      price_paise: valid.pricePaise,
+      tax_mode: valid.taxMode,
+      tax_rate_bps: valid.taxRateBps,
+      job_credits: valid.jobCredits,
+      listing_days: valid.listingDays,
+      credit_validity_days: valid.creditValidityDays,
+      profile_unlock_limit: valid.profileUnlockLimit,
+      reach: valid.reach,
+      sort_order: valid.sortOrder,
+      features: valid.features,
+      is_active: true,
+      updated_at: new Date().toISOString(),
     });
   }
-  await batch.commit();
 }
