@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { requireAdmin } from '../src/middlewares/adminMiddleware.js';
+import { mapSupabaseIdentity } from '../src/middlewares/authMiddleware.js';
 
 function authorize(user) {
   let status = 200;
@@ -26,6 +27,21 @@ test('admin access requires both verified email and trusted claim', () => {
   }
 });
 
+test('Supabase admin role comes only from trusted app metadata', () => {
+  const identity = mapSupabaseIdentity({
+    id: 'test-user', email: 'person@example.invalid', email_confirmed_at: new Date().toISOString(),
+    user_metadata: { role: 'ADMIN' }, app_metadata: {},
+  }, { role: 'CANDIDATE' });
+  assert.equal(authorize(identity).status, 403);
+  assert.equal(identity.admin, false);
+
+  const admin = mapSupabaseIdentity({
+    id: 'trusted-admin', email: 'admin@example.invalid',
+    email_confirmed_at: new Date().toISOString(), app_metadata: { role: 'admin' },
+  }, { role: 'ADMIN' });
+  assert.equal(authorize(admin).passed, true);
+});
+
 test('admin endpoint rejects missing tokens and does not allow arbitrary browser origins', async (t) => {
   process.env.VERCEL = '1';
   process.env.NODE_ENV = 'test';
@@ -38,6 +54,11 @@ test('admin endpoint rejects missing tokens and does not allow arbitrary browser
 
   const missingToken = await fetch(url);
   assert.equal(missingToken.status, 401);
+
+  const missingAuthToken = await fetch(url.replace('/api/admin/me', '/api/auth/me'));
+  assert.equal(missingAuthToken.status, 401);
+  const missingEmployerToken = await fetch(url.replace('/api/admin/me', '/api/employer/me'));
+  assert.equal(missingEmployerToken.status, 401);
 
   const allowed = await fetch(url, { headers: { Origin: 'http://localhost:5173' } });
   assert.equal(allowed.headers.get('access-control-allow-origin'), 'http://localhost:5173');

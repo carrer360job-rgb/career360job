@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -69,7 +68,9 @@ class _Career360BootstrapState extends State<Career360Bootstrap> {
     }
     try {
       await Firebase.initializeApp();
-      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      FirebaseMessaging.onBackgroundMessage(
+        _firebaseMessagingBackgroundHandler,
+      );
       final messaging = FirebaseMessaging.instance;
       await messaging.requestPermission(alert: true, badge: true, sound: true);
       final token = await messaging.getToken();
@@ -437,13 +438,38 @@ class AccountSessionGate extends StatelessWidget {
     required this.onRetry,
   });
 
+  Stream<List<Map<String, dynamic>>> _streamAccountProfile(String uid) async* {
+    try {
+      final row = await SupabaseService.client
+          .from('profiles')
+          .select()
+          .eq('id', uid)
+          .maybeSingle();
+      if (row != null) {
+        yield [row];
+      } else {
+        yield [];
+      }
+    } catch (e) {
+      debugPrint('[Account role fetch notice] $e');
+      yield [];
+    }
+
+    try {
+      yield* SupabaseService.client
+          .from('profiles')
+          .stream(primaryKey: ['id'])
+          .eq('id', uid)
+          .handleError((err) {
+            debugPrint('[Profiles Realtime Notice] $err');
+          });
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) =>
       StreamBuilder<List<Map<String, dynamic>>>(
-        stream: SupabaseService.client
-            .from('profiles')
-            .stream(primaryKey: ['id'])
-            .eq('id', user.uid),
+        stream: _streamAccountProfile(user.uid),
         builder: (context, snapshot) {
           if (user.emailVerified != true) {
             return EmailVerificationRequiredScreen(user: user);
@@ -636,6 +662,36 @@ class CandidateSessionGate extends StatelessWidget {
     required this.onRetry,
   });
 
+  Stream<List<Map<String, dynamic>>> _streamCandidateProfile(
+    String uid,
+  ) async* {
+    try {
+      final row = await SupabaseService.client
+          .from('candidate_profiles')
+          .select()
+          .eq('user_id', uid)
+          .maybeSingle();
+      if (row != null) {
+        yield [row];
+      } else {
+        yield [];
+      }
+    } catch (e) {
+      debugPrint('[Candidate profile fetch notice] $e');
+      yield [];
+    }
+
+    try {
+      yield* SupabaseService.client
+          .from('candidate_profiles')
+          .stream(primaryKey: ['id'])
+          .eq('user_id', uid)
+          .handleError((err) {
+            debugPrint('[Candidate profile Realtime Notice] $err');
+          });
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     if (user.emailVerified != true) {
@@ -643,10 +699,7 @@ class CandidateSessionGate extends StatelessWidget {
     }
 
     return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: SupabaseService.client
-          .from('candidate_profiles')
-          .stream(primaryKey: ['id'])
-          .eq('user_id', user.uid),
+      stream: _streamCandidateProfile(user.uid),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           debugPrint('[Candidate profile stream] ${snapshot.error}');
@@ -662,7 +715,8 @@ class CandidateSessionGate extends StatelessWidget {
         }
 
         final rows = snapshot.data ?? const [];
-        final onboardingComplete = rows.isNotEmpty &&
+        final onboardingComplete =
+            rows.isNotEmpty &&
             (rows.first['full_name'] as String?)?.trim().isNotEmpty == true;
         if (!onboardingComplete) {
           return CandidateOnboardingWizardScreen(
@@ -706,7 +760,12 @@ class AuthStateLoadFailure extends StatelessWidget {
   final Future<void> Function()? onRetry;
   final Future<void> Function()? onSignOut;
 
-  const AuthStateLoadFailure({super.key, this.error, this.onRetry, this.onSignOut});
+  const AuthStateLoadFailure({
+    super.key,
+    this.error,
+    this.onRetry,
+    this.onSignOut,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -714,7 +773,11 @@ class AuthStateLoadFailure extends StatelessWidget {
       body: Center(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: _AuthLoadFailureContent(error: error, onRetry: onRetry, onSignOut: onSignOut),
+          child: _AuthLoadFailureContent(
+            error: error,
+            onRetry: onRetry,
+            onSignOut: onSignOut,
+          ),
         ),
       ),
     );
@@ -775,10 +838,7 @@ class _AuthLoadFailureContentState extends State<_AuthLoadFailureContent> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          _failureMessage,
-          textAlign: TextAlign.center,
-        ),
+        Text(_failureMessage, textAlign: TextAlign.center),
         if (kDebugMode && widget.error != null) ...[
           const SizedBox(height: 8),
           SelectableText(
@@ -807,7 +867,7 @@ class _AuthLoadFailureContentState extends State<_AuthLoadFailureContent> {
                     if (widget.onSignOut != null) {
                       await widget.onSignOut!();
                     } else {
-                      await FirebaseAuth.instance.signOut();
+                      await AppAuthBridge.signOut();
                     }
                   } catch (error) {
                     debugPrint('[Session sign out] $error');
@@ -845,11 +905,11 @@ class _EmailVerificationRequiredScreenState
         _message =
             'Verification email sent. Open the link, then tap I verified.';
       });
-    } on FirebaseAuthException catch (error) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
         _isSending = false;
-        _message = error.message ?? 'Could not send a verification email.';
+        _message = 'Could not send a verification email.';
       });
     }
   }
@@ -857,20 +917,19 @@ class _EmailVerificationRequiredScreenState
   Future<void> _refreshVerificationStatus() async {
     setState(() => _isSending = true);
     try {
-      await FirebaseAuth.instance.currentUser?.reload();
-      await FirebaseAuth.instance.currentUser?.getIdToken(true);
-      final isVerified =
-          FirebaseAuth.instance.currentUser?.emailVerified ?? false;
+      final response = await SupabaseService.client.auth.getUser();
+      final isVerified = response.user?.emailConfirmedAt != null;
+      if (isVerified) await SupabaseService.client.auth.refreshSession();
       if (!mounted) return;
       setState(() {
         _isSending = false;
         _message = isVerified ? 'Email verified. Loading your profile...' : 'The email is not verified yet. Open the link from your inbox and retry.';
       });
-    } on FirebaseAuthException catch (error) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
         _isSending = false;
-        _message = error.message ?? 'Could not check verification status.';
+        _message = 'Could not check verification status.';
       });
     }
   }
@@ -951,11 +1010,11 @@ class MainShellScreen extends StatefulWidget {
 class _MainShellScreenState extends State<MainShellScreen> {
   final SupabaseService _firestoreService = SupabaseService();
   final CandidatePhotoService _candidatePhotoService = CandidatePhotoService();
-  final PlatformContentService _platformContentService = PlatformContentService();
+  final PlatformContentService _platformContentService =
+      PlatformContentService();
   List<Map<String, dynamic>> _managedCategories = const [];
   List<Map<String, dynamic>> _managedAnnouncements = const [];
-  String get _currentUid =>
-      AppAuthBridge.currentUser?.uid ?? 'guest_candidate';
+  String get _currentUid => AppAuthBridge.currentUser?.uid ?? 'guest_candidate';
 
   int _selectedTabIndex = 0;
   String _selectedLocation = 'All Locations';
@@ -1677,47 +1736,104 @@ class _MainShellScreenState extends State<MainShellScreen> {
     var message = '';
     final report = await showDialog<Map<String, String>>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(builder: (context, setDialogState) => AlertDialog(
-        title: const Text('Report this job'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          DropdownButtonFormField<String>(
-            initialValue: reason,
-            decoration: const InputDecoration(labelText: 'Reason'),
-            items: const [
-              DropdownMenuItem(value: 'fraud', child: Text('Looks fraudulent')),
-              DropdownMenuItem(value: 'misleading', child: Text('Misleading details')),
-              DropdownMenuItem(value: 'duplicate', child: Text('Duplicate listing')),
-              DropdownMenuItem(value: 'inappropriate', child: Text('Inappropriate content')),
-              DropdownMenuItem(value: 'other', child: Text('Other')),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Report this job'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: reason,
+                decoration: const InputDecoration(labelText: 'Reason'),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'fraud',
+                    child: Text('Looks fraudulent'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'misleading',
+                    child: Text('Misleading details'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'duplicate',
+                    child: Text('Duplicate listing'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'inappropriate',
+                    child: Text('Inappropriate content'),
+                  ),
+                  DropdownMenuItem(value: 'other', child: Text('Other')),
+                ],
+                onChanged: (value) => setDialogState(() {
+                  reason = value ?? 'fraud';
+                  message = '';
+                }),
+              ),
+              if (reason == 'other')
+                TextField(
+                  controller: detailsController,
+                  maxLength: 500,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: 'Tell us more'),
+                ),
+              if (message.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    message,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ),
             ],
-            onChanged: (value) => setDialogState(() { reason = value ?? 'fraud'; message = ''; }),
           ),
-          if (reason == 'other') TextField(
-            controller: detailsController, maxLength: 500, maxLines: 3,
-            decoration: const InputDecoration(labelText: 'Tell us more'),
-          ),
-          if (message.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8),
-            child: Text(message, style: const TextStyle(color: Colors.red))),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-          FilledButton(onPressed: () {
-            if (reason == 'other' && detailsController.text.trim().length < 5) {
-              setDialogState(() => message = 'Please add at least five characters.');
-              return;
-            }
-            Navigator.pop(dialogContext, {'reason': reason, 'details': detailsController.text.trim()});
-          }, child: const Text('Submit report')),
-        ],
-      )),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (reason == 'other' &&
+                    detailsController.text.trim().length < 5) {
+                  setDialogState(
+                    () => message = 'Please add at least five characters.',
+                  );
+                  return;
+                }
+                Navigator.pop(dialogContext, {
+                  'reason': reason,
+                  'details': detailsController.text.trim(),
+                });
+              },
+              child: const Text('Submit report'),
+            ),
+          ],
+        ),
+      ),
     );
     detailsController.dispose();
     if (report == null || !mounted) return;
     try {
-      await _platformContentService.reportJob(job.id, report['reason']!, report['details']!);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Thanks. Your report was sent for review.')));
+      await _platformContentService.reportJob(
+        job.id,
+        report['reason']!,
+        report['details']!,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Thanks. Your report was sent for review.'),
+          ),
+        );
+      }
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString().replaceFirst('Bad state: ', ''))));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Bad state: ', '')),
+          ),
+        );
+      }
     }
   }
 
@@ -1927,9 +2043,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
   void _openNotifications() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => NotificationCenterScreen(
-          uid: AppAuthBridge.currentUser?.uid,
-        ),
+        builder: (_) =>
+            NotificationCenterScreen(uid: AppAuthBridge.currentUser?.uid),
       ),
     );
   }
@@ -2543,7 +2658,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
                   ...jobs.take(3).map(_buildReferenceJobCard),
                 if (_managedAnnouncements.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  ..._managedAnnouncements.take(2).map(_buildManagedAnnouncement),
+                  ..._managedAnnouncements
+                      .take(2)
+                      .map(_buildManagedAnnouncement),
                 ],
                 const SizedBox(height: 12),
                 Row(
@@ -2718,19 +2835,36 @@ class _MainShellScreenState extends State<MainShellScreen> {
     width: double.infinity,
     margin: const EdgeInsets.only(bottom: 8),
     padding: const EdgeInsets.all(13),
-    decoration: BoxDecoration(color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: AppTheme.border)),
-    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Icon(Icons.campaign_outlined, color: AppTheme.primary, size: 20),
-      const SizedBox(width: 10),
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(item['title'] as String? ?? 'Career360 update', style: const TextStyle(fontWeight: FontWeight.w800)),
-        if ((item['content'] as String? ?? '').isNotEmpty) ...[
-          const SizedBox(height: 3),
-          Text(item['content'] as String, style: const TextStyle(fontSize: 12, height: 1.35)),
-        ],
-      ])),
-    ]),
+    decoration: BoxDecoration(
+      color: AppTheme.primaryLight,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: AppTheme.border),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.campaign_outlined, color: AppTheme.primary, size: 20),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item['title'] as String? ?? 'Career360 update',
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              if ((item['content'] as String? ?? '').isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Text(
+                  item['content'] as String,
+                  style: const TextStyle(fontSize: 12, height: 1.35),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    ),
   );
 
   Widget _buildCategoryGrid() {
@@ -2772,15 +2906,17 @@ class _MainShellScreenState extends State<MainShellScreen> {
         'iconColor': const Color(0xFFD97706),
       },
     ];
-    final categories = _managedCategories.isEmpty ? defaults : _managedCategories.map((item) {
-      final index = (_managedCategories.indexOf(item)) % defaults.length;
-      return <String, dynamic>{
-        'name': (item['title'] as String?) ?? 'Category',
-        'icon': defaults[index]['icon'],
-        'color': defaults[index]['color'],
-        'iconColor': defaults[index]['iconColor'],
-      };
-    }).toList();
+    final categories = _managedCategories.isEmpty
+        ? defaults
+        : _managedCategories.map((item) {
+            final index = (_managedCategories.indexOf(item)) % defaults.length;
+            return <String, dynamic>{
+              'name': (item['title'] as String?) ?? 'Category',
+              'icon': defaults[index]['icon'],
+              'color': defaults[index]['color'],
+              'iconColor': defaults[index]['iconColor'],
+            };
+          }).toList();
 
     return SizedBox(
       height: 72,
@@ -2922,7 +3058,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
                             decoration: BoxDecoration(
                               color: const Color(0xFFFEF3C7),
                               borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFFDE68A)),
+                              border: Border.all(
+                                color: const Color(0xFFFDE68A),
+                              ),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -2954,7 +3092,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
                             decoration: BoxDecoration(
                               color: const Color(0xFFF5F3FF),
                               borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFDDD6FE)),
+                              border: Border.all(
+                                color: const Color(0xFFDDD6FE),
+                              ),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -5152,7 +5292,8 @@ class _CandidateApplicationsScreenState
                   application['companyName']?.toString() ?? 'Company';
               final location = application['locationCity']?.toString() ?? '';
               final status = application['status']?.toString() ?? 'Applied';
-              final appliedAt = application['appliedAt'] ?? application['created_at'];
+              final appliedAt =
+                  application['appliedAt'] ?? application['created_at'];
               final appliedDate = appliedAt is DateTime
                   ? appliedAt
                   : appliedAt is String

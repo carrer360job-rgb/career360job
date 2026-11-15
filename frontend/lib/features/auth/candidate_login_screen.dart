@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
@@ -7,7 +8,7 @@ import '../../core/services/supabase_auth_service.dart';
 import '../../core/widgets/bouncy_button.dart';
 import '../legal/privacy_policy_screen.dart';
 
-enum AuthScreenState { signIn, signUp, forgotPassword }
+enum AuthScreenState { signIn, signUp, verifyEmail, forgotPassword }
 
 class CandidateLoginScreen extends StatefulWidget {
   final VoidCallback onBack;
@@ -52,6 +53,11 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   final TextEditingController _signUpEmailController = TextEditingController();
   final TextEditingController _signUpPasswordController =
       TextEditingController();
+  final TextEditingController _emailOtpController = TextEditingController();
+  String? _pendingSignupEmail;
+  String? _pendingSignupRole;
+  Timer? _resendCooldownTimer;
+  int _resendCountdown = 0;
   bool _obscureSignUpPassword = true;
 
   // Forgot Password Controllers
@@ -75,15 +81,35 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
 
   @override
   void dispose() {
+    _resendCooldownTimer?.cancel();
     _signInEmailController.dispose();
     _signInPasswordController.dispose();
     _signUpNameController.dispose();
     _signUpEmailController.dispose();
     _signUpPasswordController.dispose();
+    _emailOtpController.dispose();
     _forgotEmailController.dispose();
     _termsRecognizer.dispose();
     _privacyRecognizer.dispose();
     super.dispose();
+  }
+
+  void _startResendCooldown([int seconds = 60]) {
+    _resendCooldownTimer?.cancel();
+    if (!mounted) return;
+    setState(() => _resendCountdown = seconds);
+    _resendCooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_resendCountdown <= 1) {
+        timer.cancel();
+        setState(() => _resendCountdown = 0);
+      } else {
+        setState(() => _resendCountdown--);
+      }
+    });
   }
 
   // --- Handlers ---
@@ -106,10 +132,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
 
     try {
       // 1. Authenticate with Supabase Auth (Primary)
-      await _supabaseAuth.signInWithEmail(
-        email: email,
-        password: password,
-      );
+      await _supabaseAuth.signInWithEmail(email: email, password: password);
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -148,7 +171,6 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // 1. Sign up with Supabase Auth
       await _supabaseAuth.signUpWithEmail(
         fullName: name,
         email: email,
@@ -159,13 +181,13 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _screenState = AuthScreenState.signIn;
-          _signInEmailController.text = email;
-          _signInPasswordController.clear();
+          _pendingSignupEmail = email;
+          _pendingSignupRole = widget.isEmployer ? 'EMPLOYER' : 'CANDIDATE';
+          _emailOtpController.clear();
+          _screenState = AuthScreenState.verifyEmail;
         });
-        _showSuccess(
-          'Account created successfully! You can now sign in.',
-        );
+        _startResendCooldown(60);
+        _showSuccess('Verification code sent to $email.');
       }
     } on AuthException catch (e) {
       if (mounted) {
@@ -175,7 +197,88 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        _showError('Sign up failed: ${e.toString()}');
+        _showError(
+          e is StateError
+              ? e.message
+              : 'Could not create the account. Try again.',
+        );
+      }
+    }
+  }
+
+  Future<void> _handleVerifyEmailOtp() async {
+    final email = _pendingSignupEmail;
+    final role = _pendingSignupRole;
+    final code = _emailOtpController.text.trim();
+    if (_isLoading || email == null || role == null) return;
+    if (!RegExp(r'^\d{6}$').hasMatch(code)) {
+      _showError('Enter the 6-digit code from your email.');
+      return;
+    }
+    setState(() => _isLoading = true);
+    try {
+      await _supabaseAuth.verifySignupOtp(
+        email: email,
+        token: code,
+        role: role,
+      );
+      if (mounted) setState(() => _isLoading = false);
+      // The verified Supabase session moves the app to onboarding.
+    } on AuthException catch (error) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        final msg = error.message.toLowerCase();
+        if (msg.contains('expired')) {
+          _showError('This code has expired. Tap "Resend code" for a fresh code.');
+        } else if (msg.contains('invalid') || msg.contains('wrong') || msg.contains('incorrect') || msg.contains('match')) {
+          _showError('Incorrect 6-digit code. Please check your email and try again.');
+        } else if (msg.contains('rate') || msg.contains('limit') || msg.contains('seconds')) {
+          _showError('Too many attempts. Please wait a moment before trying again.');
+        } else {
+          _showError(error.message);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        _showError(
+          e is StateError
+              ? e.message
+              : 'The code could not be verified. Request a new code and try again.',
+        );
+      }
+    }
+  }
+
+  Future<void> _handleResendEmailOtp() async {
+    final email = _pendingSignupEmail;
+    if (_isLoading || email == null) return;
+    if (_resendCountdown > 0) {
+      _showError('Please wait $_resendCountdown seconds before requesting another code.');
+      return;
+    }
+    setState(() => _isLoading = true);
+    try {
+      await _supabaseAuth.resendSignupOtp(email);
+      if (mounted) {
+        setState(() => _isLoading = false);
+        _startResendCooldown(60);
+        _showSuccess('A new verification code was sent to $email.');
+      }
+    } on AuthException catch (error) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        final msg = error.message.toLowerCase();
+        if (msg.contains('rate') || msg.contains('limit') || msg.contains('seconds')) {
+          _showError('Rate limit reached. Please wait a moment before requesting another code.');
+        } else {
+          _showError(error.message);
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        _showError('Could not resend the code. Try again.');
       }
     }
   }
@@ -254,6 +357,12 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     } else if (_screenState == AuthScreenState.signUp) {
       setState(() {
         _screenState = AuthScreenState.signIn;
+      });
+    } else if (_screenState == AuthScreenState.verifyEmail) {
+      _resendCooldownTimer?.cancel();
+      setState(() {
+        _resendCountdown = 0;
+        _screenState = AuthScreenState.signUp;
       });
     } else {
       widget.onBack();
@@ -425,6 +534,11 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       description = widget.isEmployer
           ? 'Create your account to register your company and start hiring.'
           : 'Join Career360 and take the next step in your career.';
+    } else if (_screenState == AuthScreenState.verifyEmail) {
+      badgeText = 'Email Verification';
+      badgeIcon = Icons.mark_email_read_outlined;
+      heading = 'Check Your Email';
+      description = 'Enter the verification code to continue.';
     } else if (_screenState == AuthScreenState.forgotPassword) {
       badgeText = 'Account Security';
       badgeIcon = Icons.lock_reset_rounded;
@@ -598,6 +712,8 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       return _buildSignInForm();
     } else if (_screenState == AuthScreenState.signUp) {
       return _buildSignUpForm();
+    } else if (_screenState == AuthScreenState.verifyEmail) {
+      return _buildVerifyEmailForm();
     } else {
       return _buildForgotPasswordForm();
     }
@@ -760,6 +876,126 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
 
         // Google Sign-In Button
         _buildGoogleSignInButton(),
+      ],
+    );
+  }
+
+  Widget _buildVerifyEmailForm() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF0F9FF),
+            borderRadius: BorderRadius.circular(_inputRadius),
+            border: Border.all(color: const Color(0xFFB9E6FE), width: 1.2),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.mark_email_read_outlined,
+                color: _primaryBlue,
+                size: 22,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Check your inbox',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: _deepNavy,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'We sent a 6-digit confirmation code to ${_pendingSignupEmail ?? 'your email'}.',
+                      style: const TextStyle(fontSize: 12.5, color: _secondaryText, height: 1.3),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        _buildFieldLabel('6-Digit Verification Code'),
+        const SizedBox(height: 6),
+        SizedBox(
+          height: _inputHeight,
+          child: TextFormField(
+            controller: _emailOtpController,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 8,
+              color: _navyText,
+            ),
+            decoration: InputDecoration(
+              counterText: '',
+              hintText: '• • • • • •',
+              hintStyle: const TextStyle(
+                fontSize: 18,
+                letterSpacing: 6,
+                color: Color(0xFF98A2B3),
+              ),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(_inputRadius),
+                borderSide: const BorderSide(color: _inputBorder, width: 1.2),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(_inputRadius),
+                borderSide: const BorderSide(color: _primaryBlue, width: 1.8),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        _buildPrimaryButton(
+          label: 'Verify Email & Continue',
+          onPressed: _handleVerifyEmailOtp,
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            TextButton(
+              onPressed: () {
+                _resendCooldownTimer?.cancel();
+                setState(() {
+                  _resendCountdown = 0;
+                  _emailOtpController.clear();
+                  _screenState = AuthScreenState.signUp;
+                });
+              },
+              child: const Text('Change email'),
+            ),
+            TextButton(
+              onPressed: _resendCountdown > 0 ? null : _handleResendEmailOtp,
+              child: Text(
+                _resendCountdown > 0 ? 'Resend in ${_resendCountdown}s' : 'Resend code',
+                style: TextStyle(
+                  color: _resendCountdown > 0 ? _secondaryText : _primaryBlue,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }

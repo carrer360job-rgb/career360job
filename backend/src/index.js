@@ -59,7 +59,7 @@ app.use((err, req, res, next) => {
   console.error('[Unhandled Error]', err);
   res.status(err.status || 500).json({
     error: {
-      message: err.message || 'Internal Server Error',
+      message: err.status && err.status < 500 ? err.message : 'Internal Server Error',
     },
   });
 });

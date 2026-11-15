@@ -270,84 +270,72 @@ class SupabaseService {
     String? category,
     String? locationCity,
     String? searchQuery,
-  }) {
+  }) async* {
+    List<JobModel> filterJobs(List<JobModel> jobs) {
+      return jobs.where((job) {
+        if (!job.isOpen) return false;
+        if (locationCity != null &&
+            locationCity != 'All Locations' &&
+            !job.isStatewide &&
+            !job.locationCity
+                .toLowerCase()
+                .contains(locationCity.toLowerCase())) {
+          return false;
+        }
+        if (category != null &&
+            category != 'All' &&
+            category != 'All Categories' &&
+            !job.category
+                .toLowerCase()
+                .contains(category.toLowerCase())) {
+          return false;
+        }
+        if (searchQuery != null && searchQuery.trim().isNotEmpty) {
+          final q = searchQuery.toLowerCase();
+          return job.title.toLowerCase().contains(q) ||
+              job.companyName.toLowerCase().contains(q) ||
+              job.locationCity.toLowerCase().contains(q) ||
+              job.category.toLowerCase().contains(q) ||
+              job.description.toLowerCase().contains(q);
+        }
+        return true;
+      }).toList();
+    }
+
     try {
-      return client
+      final rows = await client
+          .from('jobs')
+          .select()
+          .order('created_at', ascending: false);
+      final liveJobs = (rows as List)
+          .map((r) => JobModel.fromMap(r as Map<String, dynamic>))
+          .toList();
+      final filtered = filterJobs(liveJobs);
+      if (filtered.isNotEmpty || kReleaseMode) {
+        yield filtered;
+      } else {
+        yield filterJobs(SampleJobs.all);
+      }
+    } catch (_) {
+      yield filterJobs(SampleJobs.all);
+    }
+
+    try {
+      yield* client
           .from('jobs')
           .stream(primaryKey: ['id'])
           .map((rows) {
-            final liveJobs = rows
-                .map((row) => JobModel.fromMap(row))
-                .where((job) {
-                  if (!job.isOpen) return false;
-                  if (locationCity != null &&
-                      locationCity != 'All Locations' &&
-                      !job.isStatewide &&
-                      !job.locationCity
-                          .toLowerCase()
-                          .contains(locationCity.toLowerCase())) {
-                    return false;
-                  }
-                  if (category != null &&
-                      category != 'All' &&
-                      category != 'All Categories' &&
-                      !job.category
-                          .toLowerCase()
-                          .contains(category.toLowerCase())) {
-                    return false;
-                  }
-                  if (searchQuery != null && searchQuery.trim().isNotEmpty) {
-                    final q = searchQuery.toLowerCase();
-                    return job.title.toLowerCase().contains(q) ||
-                        job.companyName.toLowerCase().contains(q) ||
-                        job.locationCity.toLowerCase().contains(q) ||
-                        job.category.toLowerCase().contains(q) ||
-                        job.description.toLowerCase().contains(q);
-                  }
-                  return true;
-                })
-                .toList()
-              ..sort((a, b) {
-                if (a.isFeatured != b.isFeatured) {
-                  return a.isFeatured ? -1 : 1;
-                }
-                return b.postedAt.compareTo(a.postedAt);
-              });
-
-            if (liveJobs.isEmpty && !kReleaseMode) {
-              return SampleJobs.all.where((job) {
-                if (category != null &&
-                    category != 'All' &&
-                    category != 'All Categories' &&
-                    !job.category
-                        .toLowerCase()
-                        .contains(category.toLowerCase())) {
-                  return false;
-                }
-                if (locationCity != null &&
-                    locationCity != 'All Locations' &&
-                    !job.isStatewide &&
-                    !job.locationCity
-                        .toLowerCase()
-                        .contains(locationCity.toLowerCase())) {
-                  return false;
-                }
-                if (searchQuery != null && searchQuery.trim().isNotEmpty) {
-                  final q = searchQuery.toLowerCase();
-                  return job.title.toLowerCase().contains(q) ||
-                      job.companyName.toLowerCase().contains(q) ||
-                      job.locationCity.toLowerCase().contains(q) ||
-                      job.category.toLowerCase().contains(q) ||
-                      job.description.toLowerCase().contains(q);
-                }
-                return true;
-              }).toList();
+            final liveJobs = rows.map((row) => JobModel.fromMap(row)).toList();
+            final filtered = filterJobs(liveJobs);
+            if (filtered.isNotEmpty || kReleaseMode) {
+              return filtered;
             }
-            return liveJobs;
+            return filterJobs(SampleJobs.all);
+          })
+          .handleError((err) {
+            debugPrint('[Jobs Realtime Notice]: $err');
           });
-    } catch (_) {
-      return Stream.value(SampleJobs.all);
-    }
+    } catch (_) {}
   }
 
   Future<String> createJobPost(JobModel job) async {
@@ -474,17 +462,32 @@ class SupabaseService {
     }
   }
 
-  Stream<Map<String, dynamic>?> streamCandidateProfile(String uid) {
-    if (uid.isEmpty) return Stream.value(null);
+  Stream<Map<String, dynamic>?> streamCandidateProfile(String uid) async* {
+    if (uid.isEmpty) {
+      yield null;
+      return;
+    }
     try {
-      return client
+      final initial = await client
+          .from('candidate_profiles')
+          .select()
+          .eq('user_id', uid)
+          .maybeSingle();
+      if (initial != null) {
+        yield initial;
+      }
+    } catch (_) {}
+
+    try {
+      yield* client
           .from('candidate_profiles')
           .stream(primaryKey: ['id'])
           .eq('user_id', uid)
-          .map((rows) => rows.isNotEmpty ? rows.first : null);
-    } catch (_) {
-      return Stream.value(null);
-    }
+          .map((rows) => rows.isNotEmpty ? rows.first : null)
+          .handleError((err) {
+            debugPrint('[SupabaseService] streamCandidateProfile error: $err');
+          });
+    } catch (_) {}
   }
 
   Stream<String?> streamCandidatePublicPhoto(String uid) {

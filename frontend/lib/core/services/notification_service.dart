@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'supabase_service.dart';
 
 class AppNotification {
@@ -50,7 +51,10 @@ class NotificationService {
           .stream(primaryKey: ['id'])
           .eq('user_id', uid)
           .order('created_at', ascending: false)
-          .map((rows) => rows.map(AppNotification.fromMap).toList());
+          .map((rows) => rows.map(AppNotification.fromMap).toList())
+          .handleError((err) {
+            debugPrint('[NotificationService] watchLatest error: $err');
+          });
     } catch (_) {
       return Stream.value([]);
     }

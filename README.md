@@ -1,6 +1,6 @@
 # Career360
 
-Career360 is an Android job portal built with Flutter, Firebase Authentication, Cloud Firestore, and an Express backend. Candidate profile photos use Cloudinary. Employers use paid plans for job publishing, applicant decisions, and plan-limited contact access.
+Career360 is an Android job portal built with Flutter, Supabase Auth and Postgres, and an Express backend. Some employer, admin, and payment handlers still use legacy Firestore data. The current Auth and protected-route setup is in [`docs/SUPABASE_AUTH_ROUTES.md`](docs/SUPABASE_AUTH_ROUTES.md).
 
 ## Run the Android app
 
@@ -36,8 +36,7 @@ npm install
 npm run dev
 ```
 
-The custom backend OTP flow has been removed from the API. Email/password sign-up and verification use Firebase Authentication.
-Candidate Google sign-in uses Firebase Authentication's single browser flow on Android; it does not open a separate native account picker first.
+The custom backend OTP flow has been removed from the API. Email/password sign-up and email-code verification use Supabase Auth. Candidate Google sign-in uses Supabase OAuth's browser flow on Android. Configure the project email settings as described in [`docs/EMAIL_OTP_SETUP.md`](docs/EMAIL_OTP_SETUP.md).
 
 Candidate profile photos use Cloudinary; see [`docs/PROFILE_PHOTO_SETUP.md`](docs/PROFILE_PHOTO_SETUP.md). Run Flutter with `--dart-define=API_BASE_URL=https://YOUR_BACKEND` when using a different backend URL.
 

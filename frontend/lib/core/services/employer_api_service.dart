@@ -1,31 +1,26 @@
 import 'dart:convert';
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
+
 import 'supabase_service.dart';
 
 class EmployerApiService {
   static const _defaultBaseUrl = 'https://career360job-backend.vercel.app';
   static const _configuredBaseUrl = String.fromEnvironment('API_BASE_URL');
-  static String get _baseUrl => _configuredBaseUrl.isEmpty
-      ? _defaultBaseUrl
-      : _configuredBaseUrl;
+  static String get _baseUrl =>
+      _configuredBaseUrl.isEmpty ? _defaultBaseUrl : _configuredBaseUrl;
 
-  Uri _uri(String path) => Uri.parse(
-    '${_baseUrl.replaceAll(RegExp(r"/+$"), "")}/api/employer$path',
-  );
+  Uri _uri(String path) =>
+      Uri.parse('${_baseUrl.replaceAll(RegExp(r"/+$"), "")}/api/employer$path');
 
   Future<Map<String, String>> _headers() async {
-    final supabaseToken = SupabaseService.client.auth.currentSession?.accessToken;
+    final supabaseToken =
+        SupabaseService.client.auth.currentSession?.accessToken;
     if (supabaseToken != null && supabaseToken.isNotEmpty) {
-      return {'Authorization': 'Bearer $supabaseToken', 'Content-Type': 'application/json'};
-    }
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      final token = await user.getIdToken();
-      if (token != null) {
-        return {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'};
-      }
+      return {
+        'Authorization': 'Bearer $supabaseToken',
+        'Content-Type': 'application/json',
+      };
     }
     throw StateError('Sign in again to continue.');
   }
@@ -54,7 +49,9 @@ class EmployerApiService {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final error = data['error'];
       final message = error is Map ? error['message'] : null;
-      throw StateError(message is String ? message : 'Request failed. Try again.');
+      throw StateError(
+        message is String ? message : 'Request failed. Try again.',
+      );
     }
     return data;
   }
@@ -63,11 +60,21 @@ class EmployerApiService {
     return _request('GET', '/plans', null, false);
   }
 
-  Future<Map<String, dynamic>> createOrder(String planId, int planVersion) async {
-    return _request('POST', '/orders', {'planId': planId, 'planVersion': planVersion});
+  Future<Map<String, dynamic>> createOrder(
+    String planId,
+    int planVersion,
+  ) async {
+    return _request('POST', '/orders', {
+      'planId': planId,
+      'planVersion': planVersion,
+    });
   }
 
-  Future<void> verifyPayment(String orderId, String paymentId, String signature) async {
+  Future<void> verifyPayment(
+    String orderId,
+    String paymentId,
+    String signature,
+  ) async {
     await _request('POST', '/orders/verify', {
       'orderId': orderId,
       'paymentId': paymentId,
@@ -76,7 +83,10 @@ class EmployerApiService {
   }
 
   Future<void> markPaymentFailed(String orderId, String code) async {
-    await _request('POST', '/orders/failure', {'orderId': orderId, 'code': code});
+    await _request('POST', '/orders/failure', {
+      'orderId': orderId,
+      'code': code,
+    });
   }
 
   Future<void> publishJob(Map<String, dynamic> fields) async {
@@ -99,15 +109,18 @@ class EmployerApiService {
 
   Future<Map<String, dynamic>> entitlement() => _request('GET', '/entitlement');
 
-  Future<Map<String, dynamic>> applications() => _request('GET', '/applications');
+  Future<Map<String, dynamic>> applications() =>
+      _request('GET', '/applications');
 
   Future<void> unlockApplicant(String id) async {
     await _request('POST', '/applications/${Uri.encodeComponent(id)}/unlock');
   }
 
   Future<Map<String, dynamic>> applicantProfile(String id) async {
-    final data = await _request('GET', '/applications/${Uri.encodeComponent(id)}/profile');
+    final data = await _request(
+      'GET',
+      '/applications/${Uri.encodeComponent(id)}/profile',
+    );
     return (data['profile'] as Map).cast<String, dynamic>();
   }
-
 }

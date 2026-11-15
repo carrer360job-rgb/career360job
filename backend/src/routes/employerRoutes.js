@@ -2,13 +2,31 @@ import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import express from 'express';
 import { FieldValue, Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { auth, firebaseApp } from '../config/firebase.js';
-import { verifyFirebaseToken, verifySensitiveToken, verifyAdminToken } from '../middlewares/authMiddleware.js';
+import { supabaseAdmin } from '../config/supabase.js';
+import { verifySupabaseToken, verifyFirebaseToken, verifySensitiveToken, verifyAdminToken } from '../middlewares/authMiddleware.js';
 import { requireAdmin } from '../middlewares/adminMiddleware.js';
 import { listPublishedPlans, publishedPlan } from '../services/planCatalog.js';
 import { sendNotificationToUser } from '../services/fcmService.js';
 
 export const employerRouter = express.Router();
 export const employerWebhookRouter = express.Router();
+
+employerRouter.get('/me', verifySupabaseToken, async (req, res) => {
+  if (req.user.role !== 'EMPLOYER') {
+    return res.status(403).json({ error: { message: 'Employer account required.' } });
+  }
+  const { data, error } = await supabaseAdmin.from('employers')
+    .select('id,company_name,is_verified,posting_credits')
+    .eq('user_id', req.user.uid).maybeSingle();
+  if (error) {
+    return res.status(503).json({ error: { message: 'Employer profile is unavailable.' } });
+  }
+  if (!data) {
+    return res.status(404).json({ error: { message: 'Employer profile not found.' } });
+  }
+  res.set('Cache-Control', 'no-store');
+  return res.json({ employer: data });
+});
 
 const statuses = new Set(['Shortlisted', 'Interview', 'Rejected', 'Hired']);
 

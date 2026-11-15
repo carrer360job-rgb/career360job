@@ -574,7 +574,6 @@ class _CandidateOnboardingWizardScreenState
           'email': email.toLowerCase().trim(),
           'phone': onboardingData['phone'],
           'role': 'CANDIDATE',
-          'status': 'ACTIVE',
           'updated_at': DateTime.now().toIso8601String(),
         });
         await SupabaseService.upsertCandidateProfile(
@@ -592,9 +591,7 @@ class _CandidateOnboardingWizardScreenState
       if (mounted) {
         setState(() => _isSaving = false);
         _showValidationToast(
-          e is StateError
-              ? e.message
-              : 'Could not finish your profile. Check your connection and try again.',
+          e is StateError ? e.message : 'Could not finish your profile. Check your connection and try again.',
           duration: const Duration(seconds: 6),
         );
       }

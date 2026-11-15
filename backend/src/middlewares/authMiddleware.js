@@ -1,60 +1,53 @@
 import { supabaseAdmin } from '../config/supabase.js';
-import { auth, firebaseApp } from '../config/firebase.js';
 
-const verifyToken = (checkRevoked) => async (req, res, next) => {
-  const authHeader = req.headers.authorization;
+export function mapSupabaseIdentity(user, profile) {
+  const isAdmin = user.app_metadata?.role?.toString().toUpperCase() === 'ADMIN';
+  return {
+    uid: user.id,
+    email: user.email,
+    email_verified: Boolean(user.email_confirmed_at),
+    admin: isAdmin,
+    role: isAdmin ? 'ADMIN' : (profile?.role || 'CANDIDATE'),
+  };
+}
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({
-      error: {
-        message: 'Missing or malformed Authorization header. Expected Bearer <token>'
-      }
-    });
+export async function verifySupabaseToken(req, res, next) {
+  const authorization = req.headers.authorization;
+  if (!authorization?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: { message: 'A bearer token is required.' } });
   }
 
-  const token = authHeader.slice('Bearer '.length).trim();
+  const token = authorization.slice(7).trim();
   if (!token) {
-    return res.status(401).json({ error: { message: 'Missing authentication token.' } });
+    return res.status(401).json({ error: { message: 'A bearer token is required.' } });
   }
 
-  // 1. Verify via Supabase Auth
   try {
     const { data, error } = await supabaseAdmin.auth.getUser(token);
-    if (!error && data?.user) {
-      const user = data.user;
-      const isAdmin = user.email === 'carrer360job@gmail.com' ||
-        user.app_metadata?.role === 'admin' ||
-        user.user_metadata?.role === 'ADMIN';
-
-      req.user = {
-        uid: user.id,
-        email: user.email,
-        admin: isAdmin,
-        role: isAdmin ? 'admin' : (user.user_metadata?.role || 'candidate'),
-      };
-      return next();
+    if (error || !data?.user) {
+      return res.status(401).json({ error: { message: 'Invalid or expired session.' } });
     }
-  } catch (_) {
-    // Continue to legacy fallback if any
-  }
 
-  // 2. Fallback verification via Firebase if legacy token provided
-  if (auth && firebaseApp) {
-    try {
-      const decodedToken = await auth.verifyIdToken(token, checkRevoked);
-      req.user = decodedToken;
-      return next();
-    } catch (_) {}
-  }
-
-  return res.status(401).json({
-    error: {
-      message: 'Invalid or expired authentication token',
-      code: 'UNAUTHORIZED'
+    const user = data.user;
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('role,status')
+      .eq('id', user.id)
+      .maybeSingle();
+    if (profileError) throw profileError;
+    if (profile?.status === 'SUSPENDED' || profile?.status === 'BLOCKED') {
+      return res.status(403).json({ error: { message: 'This account is unavailable.' } });
     }
-  });
-};
 
-export const verifyFirebaseToken = verifyToken(false);
-export const verifySensitiveToken = verifyToken(true);
-export const verifyAdminToken = verifyToken(true);
+    req.user = mapSupabaseIdentity(user, profile);
+    return next();
+  } catch (error) {
+    console.error('[Supabase Auth]', error);
+    return res.status(503).json({ error: { message: 'Authentication is temporarily unavailable.' } });
+  }
+}
+
+// Preserve route imports while all protected routes use Supabase Auth.
+export const verifyFirebaseToken = verifySupabaseToken;
+export const verifySensitiveToken = verifySupabaseToken;
+export const verifyAdminToken = verifySupabaseToken;
