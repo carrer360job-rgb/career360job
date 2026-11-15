@@ -68,6 +68,9 @@ class SupabaseService {
     required Uint8List bytes,
     required String fileExtension,
   }) async {
+    if (bytes.lengthInBytes > 3 * 1024 * 1024) {
+      throw Exception('Profile photo must be 3 MB or less.');
+    }
     final path = '$userId/avatar.$fileExtension';
     await client.storage.from('profile-photos').uploadBinary(
           path,
@@ -82,6 +85,9 @@ class SupabaseService {
     required Uint8List bytes,
     required String fileName,
   }) async {
+    if (bytes.lengthInBytes > 5 * 1024 * 1024) {
+      throw Exception('Resume file must be 5 MB or less.');
+    }
     final sanitized = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
     final path = '$userId/$sanitized';
     await client.storage.from('resumes').uploadBinary(
@@ -227,5 +233,21 @@ class SupabaseService {
         .eq('is_active', true)
         .order('price_paise', ascending: true);
     return List<Map<String, dynamic>>.from(response);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Push Notification FCM Device Token Registration
+  // ---------------------------------------------------------------------------
+
+  static Future<void> registerDeviceFcmToken(String fcmToken, {String deviceType = 'android'}) async {
+    final userId = client.auth.currentUser?.id;
+    if (userId == null || fcmToken.trim().isEmpty) return;
+    try {
+      await client.from('profiles').update({
+        'fcm_token': fcmToken.trim(),
+        'device_type': deviceType,
+        'last_active_at': DateTime.now().toIso8601String(),
+      }).eq('id', userId);
+    } catch (_) {}
   }
 }

@@ -1,44 +1,26 @@
 {
   "project_info": {
-    "project_number": "91724152546",
-    "project_id": "career360-7f60f",
-    "storage_bucket": "career360-7f60f.firebasestorage.app"
+    "project_number": "81350877440",
+    "project_id": "carrer360-fa344",
+    "storage_bucket": "carrer360-fa344.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:91724152546:android:3e5c539b78fc603ba328bb",
+        "mobilesdk_app_id": "1:81350877440:android:9869bc98c8f2bc10f313e5",
         "android_client_info": {
           "package_name": "com.career360.candidate"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "91724152546-3k8t915o8u6lljt9vi68c12jp19lggq2.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.career360.candidate",
-            "certificate_hash": "9815ae65f9106682d08227b1830b7fc7e85b125c"
-          }
-        },
-        {
-          "client_id": "91724152546-vtc0vna61drcpn0as33hsbkh7pq118k9.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyDIRLQgyXnV-QljBHb3rwJaqAYls0ZUbx8"
+          "current_key": "AIzaSyA0JRZw6aP67yMJZTpjSjY6jdiJQN0njig"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "91724152546-vtc0vna61drcpn0as33hsbkh7pq118k9.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     }

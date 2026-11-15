@@ -98,6 +98,23 @@ class SupabaseAuthService {
     );
   }
 
+  /// Sign In with Google OAuth (Browser redirect flow)
+  Future<bool> signInWithGoogle({String? redirectTo}) async {
+    try {
+      final redirect = redirectTo ?? (kIsWeb ? null : 'io.supabase.career360://login-callback/');
+      return await _client.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: redirect,
+      );
+    } on AuthException catch (e) {
+      debugPrint('[SupabaseAuthService] Google OAuth error: ${e.message}');
+      rethrow;
+    } catch (e) {
+      debugPrint('[SupabaseAuthService] Google sign-in failure: $e');
+      rethrow;
+    }
+  }
+
   /// Send Password Reset Email
   Future<void> resetPassword({required String email}) async {
     await _client.auth.resetPasswordForEmail(email.trim());

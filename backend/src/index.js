@@ -3,7 +3,6 @@ import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import authRoutes from './routes/authRoutes.js';
-import profilePhotoRoutes from './routes/profilePhotoRoutes.js';
 import { employerRouter, employerWebhookRouter } from './routes/employerRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import contentRoutes from './routes/contentRoutes.js';
@@ -53,7 +52,6 @@ app.get('/', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/content', contentRoutes);
-app.use('/api/profile-photo', profilePhotoRoutes);
 app.use('/api/employer', employerRouter);
 
 // Global Error Handler
