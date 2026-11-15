@@ -23,7 +23,7 @@ class FirestoreService {
     String? locationCity,
     String? searchQuery,
   }) {
-    Query query = _jobsRef;
+    Query query = _jobsRef.where('status', isEqualTo: 'active');
     if (category != null && category != 'All' && category != 'All Categories') {
       query = query.where('category', isEqualTo: category);
     }

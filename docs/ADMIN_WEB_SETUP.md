@@ -1,6 +1,6 @@
 # Career360 admin web setup
 
-The admin website lives in `admin-web/`. It uses Firebase Authentication for email/password sign-in and the existing Express backend for authorization. Its dashboard manages the employer plan catalog.
+The admin website lives in `admin-web/`. It uses Firebase Authentication for email/password sign-in and the existing Express backend for authorization. Its dashboard manages users, employers, jobs, paid plans, payment records, categories, announcements, and job reports.
 
 ## Firebase setup
 
@@ -20,13 +20,17 @@ The admin password and Firebase service account private key must never be placed
 
 `GET /api/admin/me` requires a Firebase ID token with a verified email and `admin: true` claim. The backend checks token revocation and returns only the admin UID, email and role. Missing tokens return 401; ordinary signed-in users return 403.
 
-The website opens its dashboard only after this backend check succeeds. It uses the configured `VITE_API_BASE_URL` for every admin request and does not try another backend if that one is unavailable. Admin sign-in persists for the current browser tab session; closing the tab clears it. If the password is forgotten, use **Forgot password?** on the login page. The reset email is sent only when that button is pressed.
+The website opens its dashboard only after this backend check succeeds. It uses the configured `VITE_API_BASE_URL` for every admin request and does not try another backend if that one is unavailable. Admin sign-in persists for the current browser tab session; closing the tab clears it.
 
 ## Vercel deployment
 
 Deploy `admin-web/` as a **separate Vercel project** with root directory `admin-web`, build command `npm run build`, and output directory `dist`. Set all five `VITE_` variables in that project's environment; `VITE_API_BASE_URL` should point to the deployed backend. Set `CLIENT_URL_ADMIN` in the backend project's environment to the admin website's exact HTTPS origin (no trailing slash), then redeploy the backend. Add the admin website hostname to Firebase Authentication's authorized domains.
 
 The web app will show a setup message until the required configuration is present. No admin account, Firebase web app, or production deployment is created automatically by this repository.
+
+## Payments and refunds
+
+The Payments tab lists paid, pending, failed, and refunded orders with their GST breakdown. An administrator can request a **full refund** for a captured payment with a recorded reason, then reconcile a delayed Razorpay response. The server locks an order against duplicate refund requests and revokes the associated entitlement only after Razorpay confirms the full refund. Test this flow with Razorpay test credentials before enabling live payments.
 
 ## Plan management
 
@@ -36,4 +40,4 @@ The draft prices and 18% GST setting are examples, not a determination of the ap
 
 ## Employer review during this first release
 
-New employer registrations remain `pending` until a verified admin reviews them. The backend exposes protected employer review endpoints documented in `EMPLOYER_SETUP.md`; the current admin website manages plans only. A trusted operator must use those backend endpoints for review. Employer actions require the review record written by that endpoint, so any older `approved` profile without `reviewedBy` and `reviewedAt` must be reviewed again. The free starter credit can be activated only once after approval.
+New employer registrations remain `pending` until an authorized admin reviews them in the Companies tab. The admin website also manages candidate/employer accounts, jobs, paid plans, payment records, platform content, and job reports. Employer actions require the trusted review record; an older `approved` profile without `reviewedBy` and `reviewedAt` must be reviewed again. Approval never grants job-posting credits; employers need an active paid entitlement.

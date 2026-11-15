@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/services/employer_api_service.dart';
+import '../../core/services/platform_content_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/models/employer_profile.dart';
 import '../../data/models/job_model.dart';
@@ -40,6 +41,7 @@ class _EmployerJobFormScreenState extends State<EmployerJobFormScreen> {
   String _workMode = 'On-site';
   bool _busy = false;
   late bool _isStatewide;
+  List<String> _categories = categories;
 
   static const categories = ['IT & Software', 'Manufacturing', 'Sales',
     'Marketing', 'Finance', 'Healthcare', 'Education', 'Design',
@@ -49,6 +51,7 @@ class _EmployerJobFormScreenState extends State<EmployerJobFormScreen> {
   @override void initState() {
     super.initState();
     if (categories.contains(widget.existingJob?.category)) _category = widget.existingJob!.category;
+    Future.microtask(_loadManagedCategories);
     final existingMode = widget.existingJob?.workMode;
     if (existingMode != null && workModes.any((value) => value.toLowerCase() == existingMode.toLowerCase())) {
       _workMode = workModes.firstWhere((value) => value.toLowerCase() == existingMode.toLowerCase());
@@ -57,6 +60,24 @@ class _EmployerJobFormScreenState extends State<EmployerJobFormScreen> {
         (widget.profile.canPostStatewide && widget.existingJob == null);
     if (_isStatewide && _district.text.trim().isEmpty) {
       _district.text = 'All Tamil Nadu';
+    }
+  }
+
+  Future<void> _loadManagedCategories() async {
+    try {
+      final items = await PlatformContentService().list('category');
+      final managed = items.map((item) => item['title']).whereType<String>()
+          .map((name) => name.trim()).where((name) => name.isNotEmpty).toList();
+      if (!mounted || managed.isEmpty) return;
+      if (widget.existingJob != null && !managed.contains(widget.existingJob!.category)) {
+        managed.add(widget.existingJob!.category);
+      }
+      setState(() {
+        _categories = managed;
+        if (!_categories.contains(_category)) _category = _categories.first;
+      });
+    } catch (_) {
+      // Keep the bundled category list when the content service is offline.
     }
   }
 
@@ -135,7 +156,7 @@ class _EmployerJobFormScreenState extends State<EmployerJobFormScreen> {
           Padding(padding: const EdgeInsets.only(bottom: 14), child: DropdownButtonFormField<String>(
             initialValue: _category,
             decoration: const InputDecoration(labelText: 'Category', border: OutlineInputBorder()),
-            items: categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+            items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
             onChanged: (v) => setState(() => _category = v ?? _category))),
           Padding(padding: const EdgeInsets.only(bottom: 14), child: DropdownButtonFormField<String>(
             initialValue: _workMode,
@@ -352,7 +373,7 @@ class _EmployerJobFormScreenState extends State<EmployerJobFormScreen> {
                     ? '⭐ Featured Priority Plan: 30 days validity with gold Featured badge and prioritized ranking.'
                     : profile.isStandardPlan
                         ? '✓ Standard Plan: 15 days validity in your designated district.'
-                        : '✓ Free Starter Plan: 7 days validity in your local district.',
+                        : 'A paid posting plan is required before you can publish this job.',
             style: TextStyle(
               fontSize: 13,
               color: (isElite || isFeatured) ? const Color(0xFFE2E8F0) : AppTheme.textSecondary,

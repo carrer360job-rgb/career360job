@@ -62,11 +62,9 @@ class EmployerProfile {
   bool get isApproved => status == 'approved' && reviewedBy.isNotEmpty;
   bool get hasActiveCredits =>
       postingCredits > 0 &&
+      const {'standard', 'featured', 'elite'}.contains(planTier) &&
       creditsExpireAt != null &&
       creditsExpireAt!.isAfter(DateTime.now());
-
-  bool get isFreePlan => activePlan.isNotEmpty &&
-      (planTier == 'free' || activePlan == 'free_starter');
   bool get isStandardPlan =>
       planTier == 'standard' || activePlan == 'standard_15';
   bool get isFeaturedPlan =>
@@ -79,7 +77,7 @@ class EmployerProfile {
     if (isElitePlan) return 'ELITE ALL-TN 👑';
     if (isFeaturedPlan) return 'PREMIUM - 30 ⭐';
     if (isStandardPlan) return 'STARTER - 15';
-    return 'FREE STARTER';
+    return 'NO ACTIVE PLAN';
   }
 
   int get daysRemaining {

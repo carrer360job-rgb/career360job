@@ -16,6 +16,7 @@ import 'core/services/firebase_auth_service.dart';
 import 'core/services/candidate_photo_service.dart';
 import 'core/services/firestore_service.dart';
 import 'core/services/employer_service.dart';
+import 'core/services/platform_content_service.dart';
 import 'core/widgets/bouncy_button.dart';
 import 'data/models/job_model.dart';
 import 'data/models/employer_profile.dart';
@@ -31,36 +32,47 @@ import 'features/employer/employer_registration_screen.dart';
 import 'features/employer/employer_workspace_screen.dart';
 import 'features/legal/privacy_policy_screen.dart';
 import 'features/notifications/notification_center_screen.dart';
+import 'core/services/supabase_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const FirebaseBootstrap());
+  runApp(const Career360Bootstrap());
 }
 
-class FirebaseBootstrap extends StatefulWidget {
-  const FirebaseBootstrap({super.key});
+class Career360Bootstrap extends StatefulWidget {
+  const Career360Bootstrap({super.key});
 
   @override
-  State<FirebaseBootstrap> createState() => _FirebaseBootstrapState();
+  State<Career360Bootstrap> createState() => _Career360BootstrapState();
 }
 
-class _FirebaseBootstrapState extends State<FirebaseBootstrap> {
-  late final Future<FirebaseApp> _firebaseInitialization;
+class _Career360BootstrapState extends State<Career360Bootstrap> {
+  late final Future<void> _bootstrapInitialization;
 
   @override
   void initState() {
     super.initState();
-    _firebaseInitialization = Firebase.initializeApp();
+    _bootstrapInitialization = _initApp();
+  }
+
+  Future<void> _initApp() async {
+    try {
+      await SupabaseService.initialize();
+    } catch (e) {
+      debugPrint('[Supabase Initialization Notice] $e');
+    }
+    try {
+      await Firebase.initializeApp();
+    } catch (_) {
+      // Firebase is reserved for push notifications when configured
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<FirebaseApp>(
-      future: _firebaseInitialization,
+    return FutureBuilder<void>(
+      future: _bootstrapInitialization,
       builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return FirebaseConfigurationFailure(error: snapshot.error.toString());
-        }
         if (snapshot.connectionState != ConnectionState.done) {
           return const MaterialApp(
             debugShowCheckedModeBanner: false,
@@ -91,6 +103,8 @@ class _FirebaseBootstrapState extends State<FirebaseBootstrap> {
     );
   }
 }
+
+typedef FirebaseBootstrap = Career360Bootstrap;
 
 class FirebaseConfigurationFailure extends StatelessWidget {
   final String error;
@@ -158,6 +172,19 @@ class _Career360AppState extends State<Career360App> {
   bool _showEmployerGuidelines = false;
   bool _showEmployerLogin = false;
   AppUserRole? _currentRole;
+  int _sessionGeneration = 0;
+
+  Future<void> _retrySessionStreams() async {
+    if (mounted) setState(() => _sessionGeneration++);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      await user?.reload();
+      await user?.getIdToken(true);
+    } catch (error) {
+      debugPrint('[Session retry] Firebase refresh failed: $error');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+  }
 
   void _onSplashFinished() {
     setState(() {
@@ -311,9 +338,17 @@ class _Career360AppState extends State<Career360App> {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       home: StreamBuilder<User?>(
+        key: ValueKey('auth_stream_$_sessionGeneration'),
         stream: widget.authChanges ?? FirebaseAuth.instance.userChanges(),
         builder: (context, snapshot) {
-          if (snapshot.hasError) return const AuthStateLoadFailure();
+          if (snapshot.hasError) {
+            debugPrint('[Auth state stream] ${snapshot.error}');
+            return AuthStateLoadFailure(
+              error: snapshot.error,
+              onRetry: _retrySessionStreams,
+              onSignOut: _signOutToRoleSelection,
+            );
+          }
           if (snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData) {
             return const SessionLoadingScreen();
@@ -322,7 +357,7 @@ class _Career360AppState extends State<Career360App> {
           final user = snapshot.data;
           if (user != null) {
             return AccountSessionGate(
-              key: ValueKey('account_session_${user.uid}'),
+              key: ValueKey('account_session_${user.uid}_$_sessionGeneration'),
               user: user,
               requestedRole: _currentRole,
               onRoleSelected: _onRoleSelected,
@@ -330,6 +365,7 @@ class _Career360AppState extends State<Career360App> {
               onRoleChanged: _onRoleSelected,
               onSwitchRoleRequested: _signOutToRoleSelection,
               onSignOutRequested: _signOutToRoleSelection,
+              onRetry: _retrySessionStreams,
             );
           }
 
@@ -370,6 +406,7 @@ class AccountSessionGate extends StatelessWidget {
   final ValueChanged<AppUserRole> onRoleChanged;
   final VoidCallback onSwitchRoleRequested;
   final VoidCallback onSignOutRequested;
+  final Future<void> Function() onRetry;
 
   const AccountSessionGate({
     super.key,
@@ -380,6 +417,7 @@ class AccountSessionGate extends StatelessWidget {
     required this.onRoleChanged,
     required this.onSwitchRoleRequested,
     required this.onSignOutRequested,
+    required this.onRetry,
   });
 
   @override
@@ -393,7 +431,14 @@ class AccountSessionGate extends StatelessWidget {
           if (!user.emailVerified) {
             return EmailVerificationRequiredScreen(user: user);
           }
-          if (snapshot.hasError) return const AuthStateLoadFailure();
+          if (snapshot.hasError) {
+            debugPrint('[Account role stream] ${snapshot.error}');
+            return AuthStateLoadFailure(
+              error: snapshot.error,
+              onRetry: onRetry,
+              onSignOut: () async => onSignOutRequested(),
+            );
+          }
           if (!snapshot.hasData) return const SessionLoadingScreen();
           final storedRole = snapshot.data?.data()?['role'] as String?;
           final selectedRole = storedRole == 'employer'
@@ -465,6 +510,7 @@ class AccountSessionGate extends StatelessWidget {
             return EmployerSessionGate(
               user: user,
               onSignOut: onSignOutRequested,
+              onRetry: onRetry,
             );
           }
           return CandidateSessionGate(
@@ -473,6 +519,7 @@ class AccountSessionGate extends StatelessWidget {
             onRoleChanged: onRoleChanged,
             onSwitchRoleRequested: onSwitchRoleRequested,
             onSignOutRequested: onSignOutRequested,
+            onRetry: onRetry,
           );
         },
       );
@@ -481,11 +528,13 @@ class AccountSessionGate extends StatelessWidget {
 class EmployerSessionGate extends StatefulWidget {
   final User user;
   final VoidCallback onSignOut;
+  final Future<void> Function() onRetry;
 
   const EmployerSessionGate({
     super.key,
     required this.user,
     required this.onSignOut,
+    required this.onRetry,
   });
 
   @override
@@ -510,7 +559,14 @@ class _EmployerSessionGateState extends State<EmployerSessionGate> {
     return StreamBuilder<EmployerProfile?>(
       stream: _profileStream,
       builder: (context, snapshot) {
-        if (snapshot.hasError) return const AuthStateLoadFailure();
+        if (snapshot.hasError) {
+          debugPrint('[Employer profile stream] ${snapshot.error}');
+          return AuthStateLoadFailure(
+            error: snapshot.error,
+            onRetry: widget.onRetry,
+            onSignOut: () async => widget.onSignOut(),
+          );
+        }
         if (!snapshot.hasData &&
             snapshot.connectionState == ConnectionState.waiting) {
           return const SessionLoadingScreen();
@@ -545,6 +601,7 @@ class CandidateSessionGate extends StatelessWidget {
   final ValueChanged<AppUserRole> onRoleChanged;
   final VoidCallback onSwitchRoleRequested;
   final VoidCallback onSignOutRequested;
+  final Future<void> Function() onRetry;
 
   const CandidateSessionGate({
     super.key,
@@ -553,6 +610,7 @@ class CandidateSessionGate extends StatelessWidget {
     required this.onRoleChanged,
     required this.onSwitchRoleRequested,
     required this.onSignOutRequested,
+    required this.onRetry,
   });
 
   @override
@@ -567,7 +625,14 @@ class CandidateSessionGate extends StatelessWidget {
           .doc(user.uid)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.hasError) return const AuthStateLoadFailure();
+        if (snapshot.hasError) {
+          debugPrint('[Candidate profile stream] ${snapshot.error}');
+          return AuthStateLoadFailure(
+            error: snapshot.error,
+            onRetry: onRetry,
+            onSignOut: () async => onSignOutRequested(),
+          );
+        }
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
           return const SessionLoadingScreen();
@@ -600,7 +665,7 @@ class SessionLoadingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       body: Center(
         child: SizedBox(
           width: 24,
@@ -613,15 +678,19 @@ class SessionLoadingScreen extends StatelessWidget {
 }
 
 class AuthStateLoadFailure extends StatelessWidget {
-  const AuthStateLoadFailure({super.key});
+  final Object? error;
+  final Future<void> Function()? onRetry;
+  final Future<void> Function()? onSignOut;
+
+  const AuthStateLoadFailure({super.key, this.error, this.onRetry, this.onSignOut});
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       body: Center(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: _AuthLoadFailureContent(),
+          child: _AuthLoadFailureContent(error: error, onRetry: onRetry, onSignOut: onSignOut),
         ),
       ),
     );
@@ -629,7 +698,11 @@ class AuthStateLoadFailure extends StatelessWidget {
 }
 
 class _AuthLoadFailureContent extends StatefulWidget {
-  const _AuthLoadFailureContent();
+  final Object? error;
+  final Future<void> Function()? onRetry;
+  final Future<void> Function()? onSignOut;
+
+  const _AuthLoadFailureContent({this.error, this.onRetry, this.onSignOut});
 
   @override
   State<_AuthLoadFailureContent> createState() =>
@@ -642,13 +715,35 @@ class _AuthLoadFailureContentState extends State<_AuthLoadFailureContent> {
   Future<void> _retry() async {
     setState(() => _isRetrying = true);
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      await user?.reload();
-      await user?.getIdToken(true);
-    } catch (_) {
-      // The auth/profile streams will report the current state again on retry.
+      if (widget.onRetry != null) {
+        await widget.onRetry!();
+      } else {
+        final user = FirebaseAuth.instance.currentUser;
+        await user?.reload();
+        await user?.getIdToken(true);
+      }
+    } catch (error) {
+      debugPrint('[Session retry] $error');
     }
     if (mounted) setState(() => _isRetrying = false);
+  }
+
+  String get _failureMessage {
+    final error = widget.error;
+    if (error is FirebaseException) {
+      switch (error.code) {
+        case 'permission-denied':
+          return 'Firebase denied access to this account. Check that the latest Firestore rules are published and that this account has the correct role.';
+        case 'unavailable':
+        case 'deadline-exceeded':
+          return 'Career360 cannot reach Firebase right now. Check the phone’s internet connection and try again.';
+        case 'failed-precondition':
+          return 'The Firebase database setup is incomplete. Check the Firestore indexes and configuration.';
+        case 'unauthenticated':
+          return 'Your sign-in session expired. Retry to refresh it, or sign in again.';
+      }
+    }
+    return 'We could not load your account right now. Check your connection and try again.';
   }
 
   @override
@@ -656,10 +751,18 @@ class _AuthLoadFailureContentState extends State<_AuthLoadFailureContent> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text(
-          'We could not load your account right now. Check your connection and try again.',
+        Text(
+          _failureMessage,
           textAlign: TextAlign.center,
         ),
+        if (kDebugMode && widget.error != null) ...[
+          const SizedBox(height: 8),
+          SelectableText(
+            widget.error.toString(),
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 11, color: Colors.black54),
+          ),
+        ],
         const SizedBox(height: 16),
         FilledButton(
           onPressed: _isRetrying ? null : _retry,
@@ -670,6 +773,23 @@ class _AuthLoadFailureContentState extends State<_AuthLoadFailureContent> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Text('Retry'),
+        ),
+        const SizedBox(height: 6),
+        TextButton(
+          onPressed: _isRetrying
+              ? null
+              : () async {
+                  try {
+                    if (widget.onSignOut != null) {
+                      await widget.onSignOut!();
+                    } else {
+                      await FirebaseAuth.instance.signOut();
+                    }
+                  } catch (error) {
+                    debugPrint('[Session sign out] $error');
+                  }
+                },
+          child: const Text('Sign out'),
         ),
       ],
     );
@@ -807,6 +927,9 @@ class MainShellScreen extends StatefulWidget {
 class _MainShellScreenState extends State<MainShellScreen> {
   final FirestoreService _firestoreService = FirestoreService();
   final CandidatePhotoService _candidatePhotoService = CandidatePhotoService();
+  final PlatformContentService _platformContentService = PlatformContentService();
+  List<Map<String, dynamic>> _managedCategories = const [];
+  List<Map<String, dynamic>> _managedAnnouncements = const [];
   String get _currentUid =>
       FirebaseAuth.instance.currentUser?.uid ?? 'guest_candidate';
 
@@ -841,6 +964,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(_loadManagedCategories());
     _savedSub = _firestoreService.streamSavedJobIds(_currentUid).listen((ids) {
       if (mounted) {
         setState(
@@ -861,6 +985,25 @@ class _MainShellScreenState extends State<MainShellScreen> {
         );
       }
     });
+  }
+
+  Future<void> _loadManagedCategories() async {
+    try {
+      final results = await Future.wait([
+        _platformContentService.list('category'),
+        _platformContentService.list('announcement'),
+      ]);
+      if (mounted) {
+        setState(() {
+          if (results[0].isNotEmpty) {
+            _managedCategories = results[0];
+          }
+          _managedAnnouncements = results[1];
+        });
+      }
+    } catch (_) {
+      // Keep the bundled categories available when the content service is offline.
+    }
   }
 
   @override
@@ -1462,6 +1605,14 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     ),
                   ),
                   const SizedBox(height: 32),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () => _reportJob(job),
+                      icon: const Icon(Icons.flag_outlined, size: 17),
+                      label: const Text('Report this job'),
+                    ),
+                  ),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
@@ -1494,6 +1645,56 @@ class _MainShellScreenState extends State<MainShellScreen> {
         );
       },
     );
+  }
+
+  Future<void> _reportJob(JobModel job) async {
+    final detailsController = TextEditingController();
+    var reason = 'fraud';
+    var message = '';
+    final report = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(builder: (context, setDialogState) => AlertDialog(
+        title: const Text('Report this job'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          DropdownButtonFormField<String>(
+            initialValue: reason,
+            decoration: const InputDecoration(labelText: 'Reason'),
+            items: const [
+              DropdownMenuItem(value: 'fraud', child: Text('Looks fraudulent')),
+              DropdownMenuItem(value: 'misleading', child: Text('Misleading details')),
+              DropdownMenuItem(value: 'duplicate', child: Text('Duplicate listing')),
+              DropdownMenuItem(value: 'inappropriate', child: Text('Inappropriate content')),
+              DropdownMenuItem(value: 'other', child: Text('Other')),
+            ],
+            onChanged: (value) => setDialogState(() { reason = value ?? 'fraud'; message = ''; }),
+          ),
+          if (reason == 'other') TextField(
+            controller: detailsController, maxLength: 500, maxLines: 3,
+            decoration: const InputDecoration(labelText: 'Tell us more'),
+          ),
+          if (message.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8),
+            child: Text(message, style: const TextStyle(color: Colors.red))),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+          FilledButton(onPressed: () {
+            if (reason == 'other' && detailsController.text.trim().length < 5) {
+              setDialogState(() => message = 'Please add at least five characters.');
+              return;
+            }
+            Navigator.pop(dialogContext, {'reason': reason, 'details': detailsController.text.trim()});
+          }, child: const Text('Submit report')),
+        ],
+      )),
+    );
+    detailsController.dispose();
+    if (report == null || !mounted) return;
+    try {
+      await _platformContentService.reportJob(job.id, report['reason']!, report['details']!);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Thanks. Your report was sent for review.')));
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString().replaceFirst('Bad state: ', ''))));
+    }
   }
 
   Widget _buildRequirementBullet(String text) {
@@ -2316,6 +2517,10 @@ class _MainShellScreenState extends State<MainShellScreen> {
                   _buildHomeEmptyState(hasActiveFilters: hasActiveFilters)
                 else
                   ...jobs.take(3).map(_buildReferenceJobCard),
+                if (_managedAnnouncements.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  ..._managedAnnouncements.take(2).map(_buildManagedAnnouncement),
+                ],
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -2485,8 +2690,27 @@ class _MainShellScreenState extends State<MainShellScreen> {
     );
   }
 
+  Widget _buildManagedAnnouncement(Map<String, dynamic> item) => Container(
+    width: double.infinity,
+    margin: const EdgeInsets.only(bottom: 8),
+    padding: const EdgeInsets.all(13),
+    decoration: BoxDecoration(color: AppTheme.primaryLight, borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: AppTheme.border)),
+    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Icon(Icons.campaign_outlined, color: AppTheme.primary, size: 20),
+      const SizedBox(width: 10),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(item['title'] as String? ?? 'Career360 update', style: const TextStyle(fontWeight: FontWeight.w800)),
+        if ((item['content'] as String? ?? '').isNotEmpty) ...[
+          const SizedBox(height: 3),
+          Text(item['content'] as String, style: const TextStyle(fontSize: 12, height: 1.35)),
+        ],
+      ])),
+    ]),
+  );
+
   Widget _buildCategoryGrid() {
-    final categories = [
+    final defaults = [
       {
         'name': 'IT & Software',
         'icon': Icons.code,
@@ -2524,6 +2748,15 @@ class _MainShellScreenState extends State<MainShellScreen> {
         'iconColor': const Color(0xFFD97706),
       },
     ];
+    final categories = _managedCategories.isEmpty ? defaults : _managedCategories.map((item) {
+      final index = (_managedCategories.indexOf(item)) % defaults.length;
+      return <String, dynamic>{
+        'name': (item['title'] as String?) ?? 'Category',
+        'icon': defaults[index]['icon'],
+        'color': defaults[index]['color'],
+        'iconColor': defaults[index]['iconColor'],
+      };
+    }).toList();
 
     return SizedBox(
       height: 72,
@@ -3736,52 +3969,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
           TextButton(onPressed: onTap, child: Text(actionLabel)),
         ],
       ),
-    );
-  }
-
-  Widget _buildProfileDetailRow({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback? onTap,
-    Widget? trailing,
-  }) {
-    return ListTile(
-      enabled: onTap != null,
-      onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-      leading: Container(
-        width: 36,
-        height: 36,
-        decoration: const BoxDecoration(
-          color: AppTheme.primaryLight,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, color: AppTheme.primary, size: 19),
-      ),
-      title: Text(
-        title,
-        style: const TextStyle(
-          color: AppTheme.textPrimary,
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: AppTheme.textSecondary,
-          fontSize: 12,
-          height: 1.3,
-        ),
-      ),
-      trailing:
-          trailing ??
-          (onTap == null
-              ? null
-              : const Icon(Icons.chevron_right, color: AppTheme.textSecondary)),
     );
   }
 

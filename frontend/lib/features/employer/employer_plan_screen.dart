@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 import '../../core/services/employer_api_service.dart';
@@ -34,40 +34,6 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
   void dispose() {
     _razorpay.clear();
     super.dispose();
-  }
-
-  Future<void> _activateFreePlan(Map<String, dynamic> plan) async {
-    if (!widget.profile.isApproved) {
-      _message('Company approval is required before activating plans.');
-      return;
-    }
-    setState(() => _busy = true);
-    try {
-      final res = await _api.createOrder(plan['id'] as String, plan['version'] as int);
-      if (!mounted) return;
-      final msg = res['message'] ?? 'Free Starter Plan activated! 1 free posting credit added.';
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.check_circle_rounded, color: AppTheme.success, size: 54),
-          title: const Text('Plan Activated!', style: TextStyle(fontWeight: FontWeight.bold)),
-          content: Text(msg.toString(), textAlign: TextAlign.center),
-          actions: [
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                Navigator.pop(context, true);
-              },
-              child: const Text('Start Hiring'),
-            ),
-          ],
-        ),
-      );
-    } catch (error) {
-      _message(error.toString().replaceFirst('Bad state: ', ''));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
   }
 
   Future<void> _buyPaidPlan(Map<String, dynamic> plan, bool ready) async {
@@ -146,6 +112,12 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
   }
 
   void _onFailure(PaymentFailureResponse response) {
+    final orderId = _expectedOrderId;
+    _expectedOrderId = null;
+    if (orderId != null) {
+      _api.markPaymentFailed(orderId, response.code?.toString() ?? 'payment_not_completed')
+          .catchError((_) {});
+    }
     _message(response.message ?? 'Payment was not completed.');
     if (mounted) setState(() => _busy = false);
   }
@@ -268,86 +240,24 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
               ),
               const SizedBox(height: 16),
               const Text(
-                'Plan Comparison',
+                'Available plans',
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 6),
               const Text(
-                'Direct candidate contact (WhatsApp, Call, Email) is enabled across all plans.',
+                'Plan prices, GST treatment and access limits are set by Career360 and shown from the live catalog.',
                 style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
               ),
               const SizedBox(height: 18),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
-                  headingRowColor: WidgetStateProperty.all(const Color(0xFFF1F5F9)),
-                  columns: const [
-                    DataColumn(label: Text('Feature', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Free Starter', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Starter - 15', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Premium - 30', style: TextStyle(fontWeight: FontWeight.bold))),
-                    DataColumn(label: Text('Elite All-TN', style: TextStyle(fontWeight: FontWeight.bold))),
-                  ],
-                  rows: const [
-                    DataRow(cells: [
-                      DataCell(Text('Price', style: TextStyle(fontWeight: FontWeight.bold))),
-                      DataCell(Text('₹0 (Free)')),
-                      DataCell(Text('₹2,360')),
-                      DataCell(Text('₹3,750')),
-                      DataCell(Text('₹20,000')),
-                    ]),
-                    DataRow(cells: [
-                      DataCell(Text('Job Count')),
-                      DataCell(Text('1 Job')),
-                      DataCell(Text('1 Job')),
-                      DataCell(Text('1 Job')),
-                      DataCell(Text('1 Job')),
-                    ]),
-                    DataRow(cells: [
-                      DataCell(Text('Location Reach')),
-                      DataCell(Text('1 Local District')),
-                      DataCell(Text('1 District')),
-                      DataCell(Text('1 District')),
-                      DataCell(Text('All 39 Districts (TN)')),
-                    ]),
-                    DataRow(cells: [
-                      DataCell(Text('Listing Validity')),
-                      DataCell(Text('7 Days')),
-                      DataCell(Text('15 Days')),
-                      DataCell(Text('30 Days')),
-                      DataCell(Text('30 Days')),
-                    ]),
-                    DataRow(cells: [
-                      DataCell(Text('Candidate Phone Calls')),
-                      DataCell(Icon(Icons.check, color: AppTheme.success, size: 18)),
-                      DataCell(Icon(Icons.check, color: AppTheme.success, size: 18)),
-                      DataCell(Icon(Icons.check, color: AppTheme.success, size: 18)),
-                      DataCell(Icon(Icons.check, color: AppTheme.success, size: 18)),
-                    ]),
-                    DataRow(cells: [
-                      DataCell(Text('Direct WhatsApp Chat')),
-                      DataCell(Icon(Icons.check, color: AppTheme.success, size: 18)),
-                      DataCell(Icon(Icons.check, color: AppTheme.success, size: 18)),
-                      DataCell(Icon(Icons.check, color: AppTheme.success, size: 18)),
-                      DataCell(Icon(Icons.check, color: AppTheme.success, size: 18)),
-                    ]),
-                    DataRow(cells: [
-                      DataCell(Text('Direct Email Inquiries')),
-                      DataCell(Icon(Icons.check, color: AppTheme.success, size: 18)),
-                      DataCell(Icon(Icons.check, color: AppTheme.success, size: 18)),
-                      DataCell(Icon(Icons.check, color: AppTheme.success, size: 18)),
-                      DataCell(Icon(Icons.check, color: AppTheme.success, size: 18)),
-                    ]),
-                    DataRow(cells: [
-                      DataCell(Text('Featured Highlight')),
-                      DataCell(Text('Standard')),
-                      DataCell(Text('Standard')),
-                      DataCell(Text('Featured Badge', style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold))),
-                      DataCell(Text('Statewide Blast', style: TextStyle(color: Colors.deepPurple, fontWeight: FontWeight.bold))),
-                    ]),
-                  ],
-                ),
-              ),
+              ...plans.map((plan) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('${plan['name'] ?? 'Hiring plan'} Â· ${plan['priceDisplay'] ?? ''}',
+                  style: const TextStyle(fontWeight: FontWeight.w800)),
+                subtitle: Text('${plan['jobCredits'] ?? 0} job posts Â· ${plan['listingDays'] ?? 0} days each Â· '
+                    '${plan['locationsCovered'] ?? 'One district'} Â· ${plan['profileUnlockLimit'] ?? 0} applicant profile unlocks\n'
+                    '${plan['gstDisplay'] ?? ''}'),
+                isThreeLine: true,
+              )),
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
@@ -431,12 +341,13 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
             itemBuilder: (context, index) {
               final plan = plans[index];
               final isExpanded = _expandedIndex == index;
-              final isFree = (plan['amountPaise'] as num? ?? 0) == 0;
+              final isFree = (plan['amountPaise'] as num? ?? 0) <= 0 ||
+                  plan['tier'] == 'free';
               final planNumber = index + 1;
               final isCurrent = widget.profile.activePlan == plan['id'] &&
                   widget.profile.creditsExpireAt?.isAfter(DateTime.now()) == true;
-              final freeUsed = isFree && widget.profile.activePlan == 'free_starter';
-              final paidTermActive = widget.profile.planTier != 'free' &&
+              final paidTermActive = widget.profile.planTier.isNotEmpty &&
+                  widget.profile.planTier != 'free' &&
                   widget.profile.creditsExpireAt?.isAfter(DateTime.now()) == true;
 
               return Card(
@@ -521,24 +432,6 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
                                   ),
                                 ),
                               ),
-                            if (isFree)
-                              Container(
-                                margin: const EdgeInsets.only(right: 8),
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFDCFCE7),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: const Color(0xFF86EFAC)),
-                                ),
-                                child: const Text(
-                                  'FREE',
-                                  style: TextStyle(
-                                    color: Color(0xFF15803D),
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ),
                             Icon(
                               isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
                               color: const Color(0xFF2563EB),
@@ -581,7 +474,7 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
 
                               const SizedBox(height: 20),
 
-                              // Bottom Buttons: "See Features" & "Pay Now" / "Activate Free Plan"
+                              // Plan details and checkout actions.
                               Row(
                                 children: [
                                   // Yellow "See Features" Button
@@ -608,15 +501,9 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
                                   // Blue Action Button
                                   Expanded(
                                     child: ElevatedButton(
-                                      onPressed: _busy || isCurrent || freeUsed || paidTermActive
+                                      onPressed: _busy || isFree || isCurrent || paidTermActive
                                           ? null
-                                          : () {
-                                              if (isFree) {
-                                                _activateFreePlan(plan);
-                                              } else {
-                                                _buyPaidPlan(plan, ready);
-                                              }
-                                            },
+                                          : () => _buyPaidPlan(plan, ready),
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: const Color(0xFF2563EB),
                                         foregroundColor: Colors.white,
@@ -628,16 +515,14 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
                                       ),
                                       child: Text(
                                         _busy
-                                            ? 'Processing…'
+                                            ? 'Processingâ€¦'
                                             : isCurrent
                                                 ? 'Current plan'
-                                                : freeUsed
-                                                    ? 'Already used'
-                                                    : paidTermActive
-                                                        ? 'Renew after expiry'
-                                            : isFree
-                                                ? 'Activate Free'
-                                                : 'Pay Now',
+                                            : paidTermActive
+                                                ? 'Renew after expiry'
+                                                : isFree
+                                                    ? 'Unavailable'
+                                                    : 'Pay Now',
                                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                                       ),
                                     ),

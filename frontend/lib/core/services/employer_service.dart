@@ -26,13 +26,7 @@ class EmployerService {
       'uid': user.uid,
       'email': user.email!.toLowerCase().trim(),
       ...details,
-      'status': 'approved',
-      'postingCredits': 1,
-      'listingDays': 7,
-      'creditsExpireAt': Timestamp.fromDate(
-        DateTime.now().add(const Duration(days: 7)),
-      ),
-      'activePlan': 'free_starter',
+      'status': 'pending',
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });

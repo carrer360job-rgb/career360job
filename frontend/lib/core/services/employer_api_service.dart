@@ -67,6 +67,10 @@ class EmployerApiService {
     });
   }
 
+  Future<void> markPaymentFailed(String orderId, String code) async {
+    await _request('POST', '/orders/failure', {'orderId': orderId, 'code': code});
+  }
+
   Future<void> publishJob(Map<String, dynamic> fields) async {
     await _request('POST', '/jobs', fields);
   }

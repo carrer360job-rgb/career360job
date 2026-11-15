@@ -107,6 +107,9 @@ async function grantCredits(orderId, payment) {
     const order = await transaction.get(orderRef);
     const record = order.data();
     if (!record) throw Object.assign(new Error('Unknown payment order.'), { status: 404 });
+    if (!['standard', 'featured', 'elite'].includes(record.tier) || record.amountPaise < 100) {
+      throw Object.assign(new Error('This order does not contain an eligible paid plan.'), { status: 409 });
+    }
     if (record.status === 'paid') return { alreadyGranted: true };
     if (record.status === 'refunded') throw Object.assign(new Error('This order was refunded.'), { status: 409 });
     if (payment.order_id !== orderId || payment.status !== 'captured' ||
@@ -162,7 +165,7 @@ async function grantCredits(orderId, payment) {
   });
 }
 
-async function revokeFullyRefundedOrder(payment) {
+export async function revokeFullyRefundedOrder(payment) {
   if (!payment?.order_id || !payment?.id || payment.amount <= 0 ||
       payment.amount_refunded < payment.amount) return;
   const database = db();
@@ -218,55 +221,8 @@ employerRouter.post('/orders', verifySensitiveToken, verified, async (req, res) 
       return res.status(409).json({ error: { message: 'This plan has changed. Refresh plans before checkout.' } });
     }
 
-    // Grant the starter credit once, atomically, after company approval.
-    if (plan.amountPaise === 0) {
-      const now = Date.now();
-      const database = db();
-      const employerRef = database.collection('employers').doc(req.user.uid);
-      await database.runTransaction(async (transaction) => {
-        const employer = await transaction.get(employerRef);
-        const profile = employer.data();
-        if (!hasTrustedApproval(profile)) {
-          throw Object.assign(new Error('Company approval is required.'), { status: 403 });
-        }
-        if (profile.freeStarterUsed === true || profile.activePlan === 'free_starter') {
-          throw Object.assign(new Error('The free starter plan has already been used.'), { status: 409 });
-        }
-        const entitlementRef = database.collection('employer_entitlements').doc(req.user.uid);
-        const existingEntitlement = await transaction.get(entitlementRef);
-        const activePaid = existingEntitlement.data()?.tier !== 'free' &&
-          (existingEntitlement.data()?.expiresAt?.toMillis?.() ?? 0) > now;
-        if (activePaid) throw Object.assign(new Error('Your paid plan is still active.'), { status: 409 });
-        const existingExpiry = profile.creditsExpireAt?.toMillis?.() ?? 0;
-        const activeCredits = existingExpiry > now ? profile.postingCredits ?? 0 : 0;
-        transaction.update(employerRef, {
-          postingCredits: activeCredits + plan.jobCredits,
-          listingDays: plan.listingDays,
-          creditsExpireAt: Timestamp.fromMillis(Math.max(existingExpiry, now + plan.creditValidityDays * 86400000)),
-          activePlan: plan.id,
-          activePlanName: plan.name,
-          planTier: plan.tier,
-          planReach: plan.reach,
-          freeStarterUsed: true,
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-        transaction.set(entitlementRef, {
-          employerUid: req.user.uid, planId: plan.id, planVersion: plan.version,
-          planName: plan.name, tier: plan.tier, reach: plan.reach,
-          profileUnlockLimit: plan.profileUnlockLimit,
-          unlocksUsed: 0, orderId: 'free_starter',
-          startsAt: Timestamp.fromMillis(now),
-          expiresAt: Timestamp.fromMillis(now + plan.creditValidityDays * 86400000),
-          updatedAt: FieldValue.serverTimestamp(),
-        });
-      });
-
-      return res.json({
-        isFree: true,
-        status: 'activated',
-        planId: plan.id,
-        message: 'Free Starter Plan activated! 1 free job posting credit has been added.',
-      });
+    if (plan.amountPaise < 100 || !['standard', 'featured', 'elite'].includes(plan.tier)) {
+      return res.status(409).json({ error: { message: 'Free employer plans are not available. Choose a paid plan.' } });
     }
 
     // One paid term at a time; renewal is manual after expiry.
@@ -336,6 +292,23 @@ employerRouter.post('/orders/verify', verifySensitiveToken, verified, async (req
   } catch (error) { return handleError(res, error); }
 });
 
+employerRouter.post('/orders/failure', verifySensitiveToken, verified, async (req, res) => {
+  try {
+    const orderId = safeString(req.body?.orderId, 80);
+    const code = safeString(req.body?.code, 80, 1);
+    const orderRef = orderId ? db().collection('employer_orders').doc(orderId) : null;
+    if (!orderRef) return res.status(400).json({ error: { message: 'Payment order is required.' } });
+    await db().runTransaction(async (tx) => {
+      const order = await tx.get(orderRef);
+      if (order.data()?.employerUid !== req.user.uid) throw Object.assign(new Error('This order belongs to another account.'), { status: 403 });
+      if (order.data()?.status !== 'created') return;
+      tx.update(orderRef, { status: 'failed', failureCode: code || 'payment_not_completed',
+        failedAt: FieldValue.serverTimestamp() });
+    });
+    res.json({ status: 'recorded' });
+  } catch (error) { return handleError(res, error); }
+});
+
 employerWebhookRouter.post('/', express.raw({ type: 'application/json', limit: '256kb' }), async (req, res) => {
   try {
     const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
@@ -380,7 +353,8 @@ employerRouter.post('/jobs', verifyFirebaseToken, verified, async (req, res) => 
       if (user.data()?.role !== 'employer' || !hasTrustedApproval(profile)) {
         throw Object.assign(new Error('Your company is awaiting approval.'), { status: 403 });
       }
-      if (!Number.isInteger(profile.postingCredits) || profile.postingCredits < 1 ||
+      if (!grant || !['standard', 'featured', 'elite'].includes(grant.tier) ||
+          !Number.isInteger(profile.postingCredits) || profile.postingCredits < 1 ||
           (profile.creditsExpireAt?.toMillis?.() ?? 0) <= Date.now() ||
           (grant?.expiresAt?.toMillis?.() ?? 0) <= Date.now()) {
         throw Object.assign(new Error('Buy a valid posting plan before publishing.'), { status: 402 });
@@ -404,8 +378,8 @@ employerRouter.post('/jobs', verifyFirebaseToken, verified, async (req, res) => 
         isVerified: true,
         isFeatured,
         isStatewide,
-        planTier: profile.planTier || 'free',
-        planName: profile.activePlanName || 'Free Starter Plan',
+        planTier: grant.tier,
+        planName: profile.activePlanName || 'Paid employer plan',
         planOrderId: grant.orderId,
         postedAt: FieldValue.serverTimestamp(),
         expiresAt: Timestamp.fromMillis(Date.now() + listingDays * 86400000),
@@ -416,6 +390,34 @@ employerRouter.post('/jobs', verifyFirebaseToken, verified, async (req, res) => 
       });
     });
     return res.status(201).json({ jobId: jobRef.id });
+  } catch (error) { return handleError(res, error); }
+});
+
+// Candidate reports are stored server-side so clients cannot erase or self-resolve them.
+employerRouter.post('/jobs/:jobId/report', verifySensitiveToken, verified, async (req, res) => {
+  try {
+    const database = db();
+    const uid = req.user.uid;
+    if ((await database.collection('users').doc(uid).get()).data()?.role !== 'candidate') {
+      return res.status(403).json({ error: { message: 'Only job seekers can report a listing.' } });
+    }
+    const reason = ['fraud', 'misleading', 'duplicate', 'inappropriate', 'other'].includes(req.body?.reason)
+      ? req.body.reason : null;
+    const details = typeof req.body?.details === 'string' ? req.body.details.trim().slice(0, 500) : '';
+    if (!reason || (reason === 'other' && details.length < 5)) {
+      return res.status(400).json({ error: { message: 'Choose a report reason and add details when selecting Other.' } });
+    }
+    const job = await database.collection('jobs').doc(req.params.jobId).get();
+    if (!job.exists) return res.status(404).json({ error: { message: 'Job not found.' } });
+    const reportId = `${req.params.jobId}_${uid}`;
+    const reportRef = database.collection('job_reports').doc(reportId);
+    await database.runTransaction(async (tx) => {
+      const existing = await tx.get(reportRef);
+      if (existing.exists) throw Object.assign(new Error('You have already reported this job.'), { status: 409 });
+      tx.create(reportRef, { jobId: job.id, jobTitle: job.data().title || '', companyName: job.data().companyName || '',
+        candidateUid: uid, reason, details, status: 'pending', createdAt: FieldValue.serverTimestamp() });
+    });
+    res.status(201).json({ status: 'submitted' });
   } catch (error) { return handleError(res, error); }
 });
 
@@ -477,7 +479,8 @@ employerRouter.patch('/applications/:applicationId/status', verifyFirebaseToken,
 });
 
 function activeEntitlement(data) {
-  return data && (data.expiresAt?.toMillis?.() ?? 0) > Date.now();
+  return data && ['standard', 'featured', 'elite'].includes(data.tier) &&
+    (data.expiresAt?.toMillis?.() ?? 0) > Date.now();
 }
 
 async function ownedApplication(database, employerUid, id) {

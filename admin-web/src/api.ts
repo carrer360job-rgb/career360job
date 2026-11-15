@@ -38,7 +38,7 @@ async function adminRequest<T>(token: string, path: string, method = 'GET', body
 }
 
 export type PlanDraft = {
-  name: string; tier: 'free' | 'standard' | 'featured' | 'elite'; badge: string;
+  name: string; tier: 'standard' | 'featured' | 'elite'; badge: string;
   pricePaise: number; taxMode: 'inclusive' | 'exclusive'; taxRateBps: number;
   jobCredits: number; listingDays: number; creditValidityDays: number;
   profileUnlockLimit: number; reach: 'district' | 'statewide'; sortOrder: number;
@@ -116,10 +116,10 @@ export type JobRecord = {
 
 export const getStats = (token: string) => adminRequest<PlatformStats>(token, '/stats');
 
-export const listEmployers = (token: string, status = 'all', search = '') =>
-  adminRequest<{ employers: EmployerRecord[] }>(
+export const listEmployers = (token: string, status = 'all', search = '', cursor?: string) =>
+  adminRequest<{ employers: EmployerRecord[]; nextCursor: string | null }>(
     token,
-    `/employers?status=${encodeURIComponent(status)}&search=${encodeURIComponent(search)}`
+    `/employers?status=${encodeURIComponent(status)}&search=${encodeURIComponent(search)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`
   );
 
 export const reviewEmployer = (token: string, uid: string, decision: 'approved' | 'rejected', notes?: string) =>
@@ -130,14 +130,52 @@ export const reviewEmployer = (token: string, uid: string, decision: 'approved' 
     { decision, notes }
   );
 
-export const listJobs = (token: string, status = 'all', search = '') =>
-  adminRequest<{ jobs: JobRecord[] }>(
+export const listJobs = (token: string, status = 'all', search = '', cursor?: string) =>
+  adminRequest<{ jobs: JobRecord[]; nextCursor: string | null }>(
     token,
-    `/jobs?status=${encodeURIComponent(status)}&search=${encodeURIComponent(search)}`
+    `/jobs?status=${encodeURIComponent(status)}&search=${encodeURIComponent(search)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`
   );
 
 export const closeJob = (token: string, jobId: string) =>
   adminRequest<{ status: string }>(token, `/jobs/${encodeURIComponent(jobId)}/close`, 'POST');
+
+export type AdminUser = { uid: string; email: string; displayName: string; role: string;
+  disabled: boolean; emailVerified: boolean; createdAt: string | null; lastSignInAt: string | null };
+export const listUsers = (token: string, search = '', pageToken?: string) => adminRequest<{
+  users: AdminUser[]; nextPageToken: string | null;
+}>(token, `/users?search=${encodeURIComponent(search)}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`);
+export const setUserDisabled = (token: string, uid: string, disabled: boolean, reason = '') =>
+  adminRequest<{ uid: string; disabled: boolean }>(token, `/users/${encodeURIComponent(uid)}/status`, 'POST', { disabled, reason });
+
+export type PaymentRecord = { id: string; employerUid: string; planId: string; planName: string;
+  amountPaise: number; basePaise: number; taxPaise: number; taxMode: string; taxRateBps: number;
+  currency: string; status: string; paymentId: string | null; createdAt: string | null;
+  paidAt: string | null; refundedAt: string | null; failedAt?: string | null; failureCode?: string | null;
+  refundStatus?: string | null; refundReason?: string | null; refundRequestedAt?: string | null };
+export const listPayments = (token: string, status = 'all', cursor?: string) =>
+  adminRequest<{ payments: PaymentRecord[]; nextCursor: string | null }>(token,
+    `/payments?status=${encodeURIComponent(status)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+export const refundPayment = (token: string, orderId: string, reason: string) =>
+  adminRequest<{ status: string; refundId: string | null }>(token, `/payments/${encodeURIComponent(orderId)}/refund`, 'POST', { reason });
+export const reconcilePaymentRefund = (token: string, orderId: string) =>
+  adminRequest<{ status: string }>(token, `/payments/${encodeURIComponent(orderId)}/reconcile`, 'POST');
+
+export type ContentItem = { id: string; kind: 'category' | 'announcement';
+  title: string; content: string; active: boolean; sortOrder: number; createdAt?: string | null; updatedAt?: string | null };
+export const listContent = (token: string) => adminRequest<{ items: ContentItem[] }>(token, '/content');
+export const saveContent = (token: string, item: Partial<ContentItem>, id?: string) =>
+  adminRequest<ContentItem>(token, id ? `/content/${encodeURIComponent(id)}` : '/content', id ? 'PUT' : 'POST', item);
+export const deleteContent = (token: string, id: string) =>
+  adminRequest<{ status: string }>(token, `/content/${encodeURIComponent(id)}`, 'DELETE');
+
+export type JobReport = { id: string; jobId: string; jobTitle: string; companyName: string;
+  candidateUid: string; reason: string; details: string; status: string; createdAt: string | null };
+export type ReportSummary = { candidates: number; employers: number; jobs: number; applications: number; paidOrders: number };
+export const getReports = (token: string, cursor?: string) => adminRequest<{
+  summary: ReportSummary; reports: JobReport[]; nextCursor: string | null;
+}>(token, `/reports${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`);
+export const resolveReport = (token: string, id: string, decision: 'dismissed' | 'job_closed', notes = '') =>
+  adminRequest<{ status: string }>(token, `/reports/${encodeURIComponent(id)}/resolve`, 'POST', { decision, notes });
 
 export async function getAdminIdentity(token: string): Promise<AdminIdentity> {
   const identity: unknown = await adminRequest(token, '/me');

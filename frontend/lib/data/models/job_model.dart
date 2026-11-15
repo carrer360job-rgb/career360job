@@ -53,7 +53,7 @@ class JobModel {
     this.expiresAt,
     this.isFeatured = false,
     this.isStatewide = false,
-    this.planTier = 'free',
+    this.planTier = '',
     this.planName = '',
     this.isDemo = false,
     this.requirements = const [],
@@ -98,7 +98,7 @@ class JobModel {
           ? (data['expiresAt'] as Timestamp).toDate() : null,
       isFeatured: data['isFeatured'] == true || data['planTier'] == 'featured' || data['planTier'] == 'elite',
       isStatewide: isStatewideJob,
-      planTier: data['planTier'] is String ? data['planTier'] as String : 'free',
+      planTier: data['planTier'] is String ? data['planTier'] as String : '',
       planName: data['planName'] is String ? data['planName'] as String : '',
       requirements:
           (data['requirements'] as List<dynamic>?)

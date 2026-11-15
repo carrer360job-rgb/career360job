@@ -1,10 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
+﻿import { useEffect, useState, useCallback } from 'react';
 import { listEmployers, reviewEmployer, type EmployerRecord } from './api';
-import { auth } from './firebase';
+import { auth } from './supabase';
 
 export default function EmployersPanel() {
   const [employers, setEmployers] = useState<EmployerRecord[]>([]);
-  const [statusFilter, setStatusFilter] = useState<'approved' | 'rejected' | 'all'>('approved');
+  const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [busyUid, setBusyUid] = useState<string | null>(null);
@@ -12,6 +12,7 @@ export default function EmployersPanel() {
   const [notice, setNotice] = useState('');
   const [suspendingUid, setSuspendingUid] = useState<string | null>(null);
   const [suspendReason, setSuspendReason] = useState('');
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!auth?.currentUser) return;
@@ -20,6 +21,7 @@ export default function EmployersPanel() {
       const token = await auth.currentUser.getIdToken();
       const res = await listEmployers(token, statusFilter, search);
       setEmployers(res.employers);
+      setNextCursor(res.nextCursor);
       setError('');
     } catch (err) {
       setError((err as Error).message);
@@ -66,17 +68,13 @@ export default function EmployersPanel() {
       {/* Filter and Search Bar */}
       <div className="panel-controls">
         <div className="filter-tabs">
-          {(['approved', 'rejected', 'all'] as const).map((filter) => (
+          {(['pending', 'approved', 'rejected', 'all'] as const).map((filter) => (
             <button
               key={filter}
               className={`filter-tab ${statusFilter === filter ? 'active' : ''}`}
               onClick={() => setStatusFilter(filter)}
             >
-              {filter === 'approved'
-                ? 'Active Companies'
-                : filter === 'rejected'
-                ? 'Suspended / Flagged'
-                : 'All Accounts'}
+              {filter === 'pending' ? 'Needs review' : filter === 'approved' ? 'Approved' : filter === 'rejected' ? 'Rejected / suspended' : 'All companies'}
             </button>
           ))}
         </div>
@@ -84,18 +82,18 @@ export default function EmployersPanel() {
         <div className="search-box">
           <input
             type="text"
-            placeholder="Search company, phone, contact or district…"
+            placeholder="Search company, phone, contact or districtâ€¦"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           {search && (
-            <button className="clear-btn" onClick={() => setSearch('')}>✕</button>
+            <button className="clear-btn" onClick={() => setSearch('')}>âœ•</button>
           )}
         </div>
       </div>
 
       {loading ? (
-        <div className="panel-loading">Loading company directory…</div>
+        <div className="panel-loading">Loading company directoryâ€¦</div>
       ) : employers.length === 0 ? (
         <div className="empty-panel">
           <p>No companies found in this section.</p>
@@ -114,10 +112,10 @@ export default function EmployersPanel() {
                   </div>
                   <span className={`status-pill pill-${emp.status}`}>
                     {emp.status === 'approved'
-                      ? '✔ Active'
+                      ? 'âœ” Active'
                       : emp.status === 'rejected'
-                      ? '✖ Suspended'
-                      : '⏳ Pending'}
+                      ? 'âœ– Suspended'
+                      : 'â³ Pending'}
                   </span>
                 </div>
 
@@ -131,7 +129,7 @@ export default function EmployersPanel() {
                     <span className="detail-value">
                       <a href={`tel:${emp.phone}`}>{emp.phone}</a>
                       {emp.whatsappPhone && emp.whatsappPhone !== emp.phone && (
-                        <span> · WA: <a href={`https://wa.me/91${emp.whatsappPhone}`} target="_blank" rel="noreferrer">{emp.whatsappPhone}</a></span>
+                        <span> Â· WA: <a href={`https://wa.me/91${emp.whatsappPhone}`} target="_blank" rel="noreferrer">{emp.whatsappPhone}</a></span>
                       )}
                     </span>
                   </div>
@@ -198,7 +196,7 @@ export default function EmployersPanel() {
                           disabled={isBusy}
                           onClick={() => setSuspendingUid(emp.uid)}
                         >
-                          ✖ Suspend Company
+                          âœ– Suspend Company
                         </button>
                       ) : (
                         <button
@@ -206,7 +204,12 @@ export default function EmployersPanel() {
                           disabled={isBusy}
                           onClick={() => void handleModeration(emp.uid, 'approved')}
                         >
-                          {isBusy ? 'Reactivating…' : '✔ Reactivate Company'}
+                          {isBusy ? 'Updating...' : emp.status === 'pending' ? 'Approve company' : 'Reactivate company'}
+                        </button>
+                      )}
+                      {emp.status === 'pending' && (
+                        <button className="reject-button" disabled={isBusy} onClick={() => setSuspendingUid(emp.uid)}>
+                          Reject application
                         </button>
                       )}
                     </>
@@ -216,6 +219,18 @@ export default function EmployersPanel() {
             );
           })}
         </div>
+      )}
+      {!loading && nextCursor && (
+        <div className="pagination-row"><button className="text-button" onClick={async () => {
+          if (!auth?.currentUser || !nextCursor) return;
+          try {
+            setLoading(true);
+            const result = await listEmployers(await auth.currentUser.getIdToken(), statusFilter, search, nextCursor);
+            setEmployers((current) => [...current, ...result.employers]);
+            setNextCursor(result.nextCursor);
+          } catch (err) { setError((err as Error).message); }
+          finally { setLoading(false); }
+        }}>Load more companies</button></div>
       )}
     </div>
   );

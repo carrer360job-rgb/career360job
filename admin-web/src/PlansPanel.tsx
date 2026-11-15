@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { signOut } from 'firebase/auth';
 import { ApiError, archivePlan, listPlans, publishPlan, savePlan, seedPlans, type PlanDraft, type PlanEntry } from './api';
-import { auth } from './firebase';
+import { auth } from './supabase';
 
 const money = (paise: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(paise / 100);
 
@@ -29,7 +28,7 @@ export default function PlansPanel() {
   };
   const showError = async (caught: unknown) => {
     if (caught instanceof ApiError && (caught.status === 401 || caught.status === 403) && auth) {
-      await signOut(auth).catch(() => setError('Your session has expired. Reload and sign in again.'));
+      await auth.signOut().catch(() => setError('Your session has expired. Reload and sign in again.'));
       return;
     }
     setError((caught as Error).message);
@@ -75,7 +74,7 @@ export default function PlansPanel() {
     {notice && <p className="plan-alert" role="status">{notice}</p>}
     {loading ? <p>Loading plans…</p> : plans.length === 0 ? <div className="plan-empty">
       <h3>Prepare the first catalog</h3>
-      <p>This creates four editable drafts. Check the prices and GST settings before publishing each plan.</p>
+      <p>This creates three editable paid plan drafts. Confirm prices and GST settings before publishing.</p>
       <button className="primary-button" disabled={busy} onClick={() => void act(async () => { await seedPlans(await token()); }, 'Drafts created.')}>Create starter drafts</button>
     </div> : <div className="plans-grid">
       <nav className="plan-list" aria-label="Plans">
@@ -95,7 +94,7 @@ export default function PlansPanel() {
           <label className="plan-field">Plan name<input value={draft.name} maxLength={70} required onChange={(event) => change('name', event.target.value)} /></label>
           <label className="plan-field">Badge<input value={draft.badge} maxLength={32} onChange={(event) => change('badge', event.target.value)} /></label>
           <label className="plan-field">Tier<select value={draft.tier} onChange={(event) => change('tier', event.target.value as PlanDraft['tier'])}>
-            <option value="free">Free</option><option value="standard">Starter</option><option value="featured">Premium</option><option value="elite">Elite</option></select></label>
+            <option value="standard">Starter</option><option value="featured">Premium</option><option value="elite">Elite</option></select></label>
           <label className="plan-field">Reach<select value={draft.reach} onChange={(event) => change('reach', event.target.value as PlanDraft['reach'])}>
             <option value="district">One district</option><option value="statewide">Statewide</option></select></label>
           {number('pricePaise', 'Entered price (paise)')}

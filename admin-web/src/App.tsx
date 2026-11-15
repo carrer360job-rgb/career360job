@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { browserSessionPersistence, onIdTokenChanged, setPersistence, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
 import { ApiError, getAdminIdentity, type AdminIdentity } from './api';
-import { auth } from './firebase';
+import { supabase } from './supabase';
 import StatsOverview from './StatsOverview';
 import EmployersPanel from './EmployersPanel';
 import JobsPanel from './JobsPanel';
 import PlansPanel from './PlansPanel';
+import OperationsPanels from './OperationsPanels';
 
 type View =
   | { kind: 'configuration' }
@@ -15,7 +15,7 @@ type View =
   | { kind: 'denied' }
   | { kind: 'unavailable' };
 
-type ActiveTab = 'overview' | 'employers' | 'jobs' | 'plans';
+type ActiveTab = 'overview' | 'users' | 'employers' | 'jobs' | 'plans' | 'payments' | 'content' | 'reports';
 
 function Brand({ light = false }: { light?: boolean }) {
   return (
@@ -26,19 +26,8 @@ function Brand({ light = false }: { light?: boolean }) {
   );
 }
 
-function loginMessage(code: string): string {
-  if (['auth/invalid-credential', 'auth/invalid-email', 'auth/wrong-password', 'auth/user-not-found'].includes(code)) {
-    return 'Email or password is incorrect.';
-  }
-  if (code === 'auth/too-many-requests') return 'Too many attempts. Please try again later.';
-  if (code === 'auth/network-request-failed') return 'Check your connection and try again.';
-  if (code === 'auth/operation-not-allowed') return 'Email/password sign-in is disabled for this Firebase project.';
-  if (code === 'auth/invalid-api-key' || code === 'auth/app-not-authorized') return 'Firebase web configuration needs review.';
-  return 'Sign in could not be completed. Please try again.';
-}
-
 export default function App() {
-  const [view, setView] = useState<View>(auth ? { kind: 'checking' } : { kind: 'configuration' });
+  const [view, setView] = useState<View>({ kind: 'checking' });
   const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -47,11 +36,11 @@ export default function App() {
   const [formError, setFormError] = useState('');
   const requestSequence = useRef(0);
 
-  const checkAccess = useCallback(async (user: User) => {
+  const checkAccess = useCallback(async (token: string) => {
     const currentRequest = ++requestSequence.current;
     setView({ kind: 'checking' });
     try {
-      const identity = await getAdminIdentity(await user.getIdToken());
+      const identity = await getAdminIdentity(token);
       if (currentRequest === requestSequence.current) {
         setView({ kind: 'authorized', identity });
       }
@@ -59,9 +48,9 @@ export default function App() {
       if (currentRequest !== requestSequence.current) return;
       if (error instanceof ApiError && error.status === 403) {
         setView({ kind: 'denied' });
-      } else if (error instanceof ApiError && error.status === 401 && auth) {
+      } else if (error instanceof ApiError && error.status === 401) {
         setFormError('Your session has expired. Sign in again.');
-        try { await signOut(auth); } catch { setView({ kind: 'unavailable' }); }
+        try { await supabase.auth.signOut(); } catch { setView({ kind: 'unavailable' }); }
       } else {
         setView({ kind: 'unavailable' });
       }
@@ -69,25 +58,32 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const adminAuth = auth;
-    if (!adminAuth) return;
     let active = true;
-    let unsubscribe: (() => void) | undefined;
-    void setPersistence(adminAuth, browserSessionPersistence).then(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       if (!active) return;
-      unsubscribe = onIdTokenChanged(adminAuth, (user) => {
-        if (user) {
-          void checkAccess(user);
-        } else {
-          ++requestSequence.current;
-          setView({ kind: 'signedOut' });
-        }
-      }, () => setView({ kind: 'unavailable' }));
-    }).catch(() => { if (active) setView({ kind: 'unavailable' }); });
+      if (session?.access_token) {
+        void checkAccess(session.access_token);
+      } else {
+        setView({ kind: 'signedOut' });
+      }
+    }).catch(() => {
+      if (active) setView({ kind: 'unavailable' });
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+      if (session?.access_token) {
+        void checkAccess(session.access_token);
+      } else {
+        ++requestSequence.current;
+        setView({ kind: 'signedOut' });
+      }
+    });
+
     return () => {
       active = false;
       ++requestSequence.current;
-      unsubscribe?.();
+      subscription.unsubscribe();
     };
   }, [checkAccess]);
 
@@ -101,28 +97,34 @@ export default function App() {
 
   async function handleSignIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!auth || submitting) return;
+    if (submitting) return;
     setFormError('');
     setSubmitting(true);
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (error) throw error;
       setPassword('');
+      if (data.session?.access_token) {
+        await checkAccess(data.session.access_token);
+      }
     } catch (error) {
-      setFormError(loginMessage((error as { code?: string }).code ?? ''));
+      setFormError((error as { message?: string }).message || 'Email or password is incorrect.');
     } finally {
       setSubmitting(false);
     }
   }
 
   async function handleSignOut() {
-    if (!auth) return;
     ++requestSequence.current;
     setFormError('');
     setView({ kind: 'checking' });
     try {
-      await signOut(auth);
-    } catch {
-      setView({ kind: 'unavailable' });
+      await supabase.auth.signOut();
+    } finally {
+      setView({ kind: 'signedOut' });
     }
   }
 
@@ -136,96 +138,103 @@ export default function App() {
               className={`nav-tab ${activeTab === 'overview' ? 'active' : ''}`}
               onClick={() => setActiveTab('overview')}
             >
-              📊 Overview
+              Overview
             </button>
             <button
               className={`nav-tab ${activeTab === 'employers' ? 'active' : ''}`}
               onClick={() => setActiveTab('employers')}
             >
-              🏢 Companies
+              Employers
             </button>
             <button
               className={`nav-tab ${activeTab === 'jobs' ? 'active' : ''}`}
               onClick={() => setActiveTab('jobs')}
             >
-              💼 Live Jobs
+              Jobs
             </button>
             <button
               className={`nav-tab ${activeTab === 'plans' ? 'active' : ''}`}
               onClick={() => setActiveTab('plans')}
             >
-              💳 Pricing & Plans
+              Plans
+            </button>
+            <button
+              className={`nav-tab ${activeTab === 'users' ? 'active' : ''}`}
+              onClick={() => setActiveTab('users')}
+            >
+              Users
+            </button>
+            <button
+              className={`nav-tab ${activeTab === 'payments' ? 'active' : ''}`}
+              onClick={() => setActiveTab('payments')}
+            >
+              Payments
+            </button>
+            <button
+              className={`nav-tab ${activeTab === 'content' ? 'active' : ''}`}
+              onClick={() => setActiveTab('content')}
+            >
+              Content
+            </button>
+            <button
+              className={`nav-tab ${activeTab === 'reports' ? 'active' : ''}`}
+              onClick={() => setActiveTab('reports')}
+            >
+              Reports
             </button>
           </nav>
-          <div className="account-actions">
-            <span className="account-email" title={view.identity.email}>{view.identity.email}</span>
-            <button className="text-button" onClick={() => void handleSignOut()}>Sign out</button>
+          <div className="dashboard-user">
+            <span className="user-email">{view.identity.email}</span>
+            <button className="signout-button" onClick={() => void handleSignOut()}>Sign out</button>
           </div>
         </header>
 
         <main className="dashboard-main">
-          {activeTab === 'overview' && (
-            <>
-              <div className="tab-header">
-                <div>
-                  <p className="eyebrow">Platform Intelligence</p>
-                  <h1>Operations Overview</h1>
-                </div>
-              </div>
-              <StatsOverview onNavigateTab={(tab) => setActiveTab(tab)} />
-            </>
-          )}
-
-          {activeTab === 'employers' && (
-            <>
-              <div className="tab-header">
-                <div>
-                  <p className="eyebrow">Directory & Moderation</p>
-                  <h1>Registered Companies</h1>
-                </div>
-              </div>
-              <EmployersPanel />
-            </>
-          )}
-
-          {activeTab === 'jobs' && (
-            <>
-              <div className="tab-header">
-                <div>
-                  <p className="eyebrow">Quality & Moderation</p>
-                  <h1>Active Live Jobs</h1>
-                </div>
-              </div>
-              <JobsPanel />
-            </>
-          )}
-
-          {activeTab === 'plans' && (
-            <>
-              <div className="tab-header">
-                <div>
-                  <p className="eyebrow">Monetization & Catalog</p>
-                  <h1>Posting Plans & Pricing</h1>
-                </div>
-              </div>
-              <PlansPanel />
-            </>
+          {activeTab === 'overview' && <StatsOverview onNavigateTab={(tab) => setActiveTab(tab)} />}
+          {activeTab === 'employers' && <EmployersPanel />}
+          {activeTab === 'jobs' && <JobsPanel />}
+          {activeTab === 'plans' && <PlansPanel />}
+          {['users', 'payments', 'content', 'reports'].includes(activeTab) && (
+            <OperationsPanels kind={activeTab as 'users' | 'payments' | 'content' | 'reports'} />
           )}
         </main>
       </div>
     );
   }
 
+  if (view.kind === 'checking') {
+    return (
+      <div className="auth-splash">
+        <Brand />
+        <div className="spinner" />
+        <p>Verifying credentials…</p>
+      </div>
+    );
+  }
+
+  if (view.kind === 'denied') {
+    return (
+      <div className="auth-splash">
+        <Brand />
+        <div className="error-card">
+          <h2>Access restricted</h2>
+          <p>This account does not have administrator privileges.</p>
+          <button className="primary-button" onClick={() => void handleSignOut()}>Sign in with another account</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="login-page">
-      <aside className="login-intro" aria-label="Career360 administration">
+      <aside className="login-hero">
         <Brand light />
-        <div className="intro-copy">
-          <p className="intro-kicker">SUPER ADMIN ACCESS</p>
-          <h1>A clear space to manage Career360.</h1>
+        <div className="hero-text">
+          <p className="eyebrow">SUPER ADMIN ACCESS</p>
+          <h2>A clear space to manage Career360.</h2>
           <p>Verify employers, grant free starter plans, and oversee direct contact hiring across Tamil Nadu.</p>
         </div>
-        <p className="intro-footnote">Career360 Operations Portal</p>
+        <p className="hero-footer">Career360 Operations Portal</p>
       </aside>
       <main className="login-main">
         <div className="mobile-brand"><Brand /></div>

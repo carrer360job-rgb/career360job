@@ -214,7 +214,6 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
         const SizedBox(height: 18),
         if (profile.status == 'rejected') _reviewCard(profile),
         _heroCard(profile, live, applications.length),
-        _subscriptionCard(profile),
         const SizedBox(height: 20),
         const _SectionTitle('Hiring at a glance'),
         const SizedBox(height: 12),
@@ -360,206 +359,76 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
     ),
   );
 
-  Widget _subscriptionCard(EmployerProfile profile) {
+  Widget _planHeaderPill(EmployerProfile profile) {
+    final hasCredits = profile.hasActiveCredits;
     final isElite = profile.isElitePlan;
     final isFeatured = profile.isFeaturedPlan;
-    final hasCredits = profile.hasActiveCredits;
-    final daysLeft = profile.daysRemaining;
 
-    return Container(
-      margin: const EdgeInsets.only(top: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isElite
-              ? const Color(0xFFDDD6FE)
-              : isFeatured
-              ? const Color(0xFFFED7AA)
-              : const Color(0xFFE2E8F0),
-          width: (isElite || isFeatured) ? 1.5 : 1,
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0A000000),
-            blurRadius: 8,
-            offset: Offset(0, 2),
+    final String label;
+    final IconData icon;
+    final Color bg;
+    final Color fg;
+    final Color border;
+
+    if (isElite) {
+      label = 'Elite · ${profile.postingCredits}';
+      icon = Icons.workspace_premium_rounded;
+      bg = const Color(0xFFF5F3FF);
+      fg = const Color(0xFF7C3AED);
+      border = const Color(0xFFDDD6FE);
+    } else if (isFeatured) {
+      label = 'Premium · ${profile.postingCredits}';
+      icon = Icons.star_rounded;
+      bg = const Color(0xFFFFFBEB);
+      fg = const Color(0xFFD97706);
+      border = const Color(0xFFFED7AA);
+    } else if (hasCredits) {
+      final name = profile.activePlanName.isNotEmpty
+          ? profile.activePlanName.split(' ').first
+          : 'Plan';
+      label = '$name · ${profile.postingCredits}';
+      icon = Icons.bolt_rounded;
+      bg = const Color(0xFFEFF6FF);
+      fg = AppTheme.primary;
+      border = const Color(0xFFBFDBFE);
+    } else {
+      label = 'Upgrade ↗';
+      icon = Icons.bolt_rounded;
+      bg = const Color(0xFFF8FAFC);
+      fg = const Color(0xFF1E293B);
+      border = const Color(0xFFCBD5E1);
+    }
+
+    return Center(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _openPlans,
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: border, width: 1),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 14, color: fg),
+                const SizedBox(width: 4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: fg,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: isElite
-                        ? const Color(0xFFF5F3FF)
-                        : isFeatured
-                        ? const Color(0xFFFFFBEB)
-                        : const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    isElite
-                        ? Icons.workspace_premium_rounded
-                        : isFeatured
-                        ? Icons.star_rounded
-                        : Icons.card_membership_rounded,
-                    color: isElite
-                        ? const Color(0xFF7C3AED)
-                        : isFeatured
-                        ? const Color(0xFFD97706)
-                        : AppTheme.primary,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        profile.activePlanName,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: AppTheme.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        isElite
-                            ? 'Broadcast to all 39 Tamil Nadu Districts'
-                            : isFeatured
-                            ? 'Priority Featured Listing in ${profile.district}'
-                            : 'Standard Listing in ${profile.district}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 9,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isElite
-                        ? const Color(0xFF7C3AED)
-                        : isFeatured
-                        ? const Color(0xFFF59E0B)
-                        : AppTheme.primaryLight,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    profile.planBadgeText,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      color: (isElite || isFeatured)
-                          ? Colors.white
-                          : AppTheme.primary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const Divider(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Posting Credits',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppTheme.textSecondary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        hasCredits
-                            ? '${profile.postingCredits} Available'
-                            : '0 Available',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: hasCredits
-                              ? AppTheme.textPrimary
-                              : AppTheme.error,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(width: 1, height: 32, color: const Color(0xFFE2E8F0)),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Plan Validity',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppTheme.textSecondary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        profile.hasActiveCredits && daysLeft > 0
-                            ? '$daysLeft days left'
-                            : (profile.hasActiveCredits
-                                  ? '${profile.listingDays} days / post'
-                                  : 'Inactive / Expired'),
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: (profile.hasActiveCredits && daysLeft <= 3)
-                              ? const Color(0xFFD97706)
-                              : (profile.hasActiveCredits
-                                    ? AppTheme.textPrimary
-                                    : AppTheme.error),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _openPlans,
-                icon: const Icon(Icons.bolt_rounded, size: 18),
-                label: Text(
-                  hasCredits
-                      ? 'Upgrade / Change Plan'
-                      : 'Choose a Posting Plan',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-            ),
-          ],
         ),
       ),
     );

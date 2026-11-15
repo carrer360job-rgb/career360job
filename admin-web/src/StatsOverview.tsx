@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getStats, type PlatformStats } from './api';
-import { auth } from './firebase';
+import { auth } from './supabase';
 
 export default function StatsOverview({ onNavigateTab }: { onNavigateTab: (tab: 'employers' | 'jobs' | 'plans') => void }) {
   const [stats, setStats] = useState<PlatformStats | null>(null);
@@ -102,8 +102,8 @@ export default function StatsOverview({ onNavigateTab }: { onNavigateTab: (tab: 
 
       <div className="action-banner">
         <div>
-          <strong>Frictionless Direct Hiring Mode Active</strong>
-          <p>Companies are automatically approved with 1 Free Job Post on registration. Use the Companies tab to monitor or suspend abusive accounts.</p>
+          <strong>Paid hiring access is active</strong>
+          <p>Companies require review and an active paid plan before publishing jobs. Use the operations tabs to manage accounts and content.</p>
         </div>
         <button className="primary-button" onClick={() => onNavigateTab('jobs')}>
           View Live Jobs

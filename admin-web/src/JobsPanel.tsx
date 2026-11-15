@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { listJobs, closeJob, type JobRecord } from './api';
-import { auth } from './firebase';
+import { auth } from './supabase';
 
 export default function JobsPanel() {
   const [jobs, setJobs] = useState<JobRecord[]>([]);
@@ -10,6 +10,7 @@ export default function JobsPanel() {
   const [busyJobId, setBusyJobId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!auth?.currentUser) return;
@@ -18,6 +19,7 @@ export default function JobsPanel() {
       const token = await auth.currentUser.getIdToken();
       const res = await listJobs(token, statusFilter, search);
       setJobs(res.jobs);
+      setNextCursor(res.nextCursor);
       setError('');
     } catch (err) {
       setError((err as Error).message);
@@ -155,6 +157,18 @@ export default function JobsPanel() {
             </tbody>
           </table>
         </div>
+      )}
+      {!loading && nextCursor && (
+        <div className="pagination-row"><button className="text-button" onClick={async () => {
+          if (!auth?.currentUser || !nextCursor) return;
+          try {
+            setLoading(true);
+            const result = await listJobs(await auth.currentUser.getIdToken(), statusFilter, search, nextCursor);
+            setJobs((current) => [...current, ...result.jobs]);
+            setNextCursor(result.nextCursor);
+          } catch (err) { setError((err as Error).message); }
+          finally { setLoading(false); }
+        }}>Load more jobs</button></div>
       )}
     </div>
   );
