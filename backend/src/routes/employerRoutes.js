@@ -5,6 +5,7 @@ import { auth, firebaseApp } from '../config/firebase.js';
 import { verifyFirebaseToken, verifySensitiveToken, verifyAdminToken } from '../middlewares/authMiddleware.js';
 import { requireAdmin } from '../middlewares/adminMiddleware.js';
 import { listPublishedPlans, publishedPlan } from '../services/planCatalog.js';
+import { sendNotificationToUser } from '../services/fcmService.js';
 
 export const employerRouter = express.Router();
 export const employerWebhookRouter = express.Router();
@@ -473,6 +474,14 @@ employerRouter.patch('/applications/:applicationId/status', verifyFirebaseToken,
         createdAt: FieldValue.serverTimestamp(),
         readAt: null,
       });
+      // Trigger mobile push notification via FCM
+      sendNotificationToUser({
+        userId: data.candidateUid,
+        title: 'Application Update',
+        body: `Your application for ${data.jobTitle || 'a job'} is now ${status.toLowerCase()}.`,
+        type: 'application_status',
+        metadata: { jobId: data.jobId, applicationId: req.params.applicationId },
+      }).catch((fcmErr) => console.warn('[FCM Push Notice]', fcmErr.message));
     });
     return res.json({ status });
   } catch (error) { return handleError(res, error); }

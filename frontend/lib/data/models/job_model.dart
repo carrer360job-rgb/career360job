@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 class JobModel {
   final String id;
   final String title;
@@ -66,8 +64,6 @@ class JobModel {
     final rawPosted = data['postedAt'] ?? data['posted_at'] ?? data['createdAt'] ?? data['created_at'];
     if (rawPosted is DateTime) {
       posted = rawPosted;
-    } else if (rawPosted is Timestamp) {
-      posted = rawPosted.toDate();
     } else if (rawPosted is String) {
       posted = DateTime.tryParse(rawPosted) ?? DateTime.now();
     }
@@ -76,8 +72,6 @@ class JobModel {
     final rawExpires = data['expiresAt'] ?? data['expires_at'] ?? data['deadline'];
     if (rawExpires is DateTime) {
       expires = rawExpires;
-    } else if (rawExpires is Timestamp) {
-      expires = rawExpires.toDate();
     } else if (rawExpires is String) {
       expires = DateTime.tryParse(rawExpires);
     }
@@ -126,27 +120,22 @@ class JobModel {
     );
   }
 
-  factory JobModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>? ?? {};
-    return JobModel.fromMap(data, doc.id);
-  }
-
   Map<String, dynamic> toMap() {
     if (isDemo) {
-      throw StateError('Sample jobs cannot be written to Firestore.');
+      throw StateError('Sample jobs cannot be written to database.');
     }
     return {
       'title': title,
-      'companyName': companyName,
-      'locationCity': locationCity,
-      'salaryText': salaryText,
+      'company_name': companyName,
+      'location_city': locationCity,
+      'salary_text': salaryText,
       'category': category,
-      'workMode': workMode,
-      'vacanciesCount': vacanciesCount,
+      'work_mode': workMode,
+      'vacancies_count': vacanciesCount,
       'description': description,
-      'isVerified': isVerified,
-      'postedAt': FieldValue.serverTimestamp(),
-      'employerUid': employerUid,
+      'is_verified': isVerified,
+      'posted_at': DateTime.now().toIso8601String(),
+      'employer_id': employerUid,
     };
   }
 }

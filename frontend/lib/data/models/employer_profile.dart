@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 class EmployerProfile {
   final String uid;
   final String companyName;
@@ -122,52 +120,6 @@ class EmployerProfile {
       activePlanName: value('active_plan_name').isNotEmpty ? value('active_plan_name') : value('activePlanName'),
       planTier: value('plan_tier').isNotEmpty ? value('plan_tier') : value('planTier'),
       planReach: value('plan_reach').isNotEmpty ? value('plan_reach') : (value('planReach').isNotEmpty ? value('planReach') : 'district'),
-    );
-  }
-
-  factory EmployerProfile.fromFirestore(
-    DocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
-    final data = doc.data() ?? const <String, dynamic>{};
-    String value(String key) => data[key] is String ? data[key] as String : '';
-    return EmployerProfile(
-      uid: doc.id,
-      companyName: value('companyName'),
-      contactName: value('contactName'),
-      designation: value('designation'),
-      industry: value('industry'),
-      companySize: value('companySize'),
-      email: value('email'),
-      phone: value('phone'),
-      whatsappPhone: value('whatsappPhone'),
-      whatsappSameAsPhone: data['whatsappSameAsPhone'] == true,
-      website: value('website'),
-      address: value('address'),
-      city: value('city'),
-      state: value('state'),
-      district: value('district'),
-      postalCode: value('postalCode'),
-      description: value('description'),
-      registrationNumber: value('registrationNumber'),
-      status: value('status'),
-      reviewedBy: value('reviewedBy'),
-      postingCredits: data['postingCredits'] is int
-          ? data['postingCredits'] as int
-          : 0,
-      listingDays: data['listingDays'] is int
-          ? data['listingDays'] as int
-          : (value('planTier') == 'elite' || value('planTier') == 'featured'
-                ? 30
-                : value('planTier') == 'standard'
-                ? 15
-                : 7),
-      creditsExpireAt: data['creditsExpireAt'] is Timestamp
-          ? (data['creditsExpireAt'] as Timestamp).toDate()
-          : null,
-      activePlan: value('activePlan'),
-      activePlanName: value('activePlanName'),
-      planTier: value('planTier'),
-      planReach: value('planReach').isEmpty ? 'district' : value('planReach'),
     );
   }
 }

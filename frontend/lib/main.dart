@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -32,6 +32,13 @@ import 'features/legal/privacy_policy_screen.dart';
 import 'features/notifications/notification_center_screen.dart';
 import 'core/services/supabase_service.dart';
 import 'core/services/app_auth_bridge.dart';
+
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  try {
+    await Firebase.initializeApp();
+  } catch (_) {}
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -62,8 +69,19 @@ class _Career360BootstrapState extends State<Career360Bootstrap> {
     }
     try {
       await Firebase.initializeApp();
-    } catch (_) {
-      // Firebase is reserved for push notifications when configured
+      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      final messaging = FirebaseMessaging.instance;
+      await messaging.requestPermission(alert: true, badge: true, sound: true);
+      final token = await messaging.getToken();
+      if (token != null && token.isNotEmpty) {
+        debugPrint('[FCM Push Token] $token');
+        await SupabaseService.registerDeviceFcmToken(token);
+      }
+      messaging.onTokenRefresh.listen((newToken) {
+        SupabaseService.registerDeviceFcmToken(newToken);
+      });
+    } catch (e) {
+      debugPrint('[Firebase Messaging Setup Notice] $e');
     }
   }
 
@@ -176,7 +194,7 @@ class _Career360AppState extends State<Career360App> {
   Future<void> _retrySessionStreams() async {
     if (mounted) setState(() => _sessionGeneration++);
     try {
-      final user = FirebaseAuth.instance.currentUser;
+      final user = AppAuthBridge.currentUser;
       await user?.reload();
       await user?.getIdToken(true);
     } catch (error) {
@@ -724,7 +742,7 @@ class _AuthLoadFailureContentState extends State<_AuthLoadFailureContent> {
       if (widget.onRetry != null) {
         await widget.onRetry!();
       } else {
-        final user = FirebaseAuth.instance.currentUser;
+        final user = AppAuthBridge.currentUser;
         await user?.reload();
         await user?.getIdToken(true);
       }
@@ -1198,7 +1216,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
       _appliedJobIds.add(job.id);
     });
 
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AppAuthBridge.currentUser;
     Map<String, dynamic>? profile;
     try {
       profile = await _firestoreService
@@ -1910,7 +1928,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => NotificationCenterScreen(
-          uid: FirebaseAuth.instance.currentUser?.uid,
+          uid: AppAuthBridge.currentUser?.uid,
         ),
       ),
     );
@@ -2277,7 +2295,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
             final fullName =
                 (profile?['fullName'] as String?)?.trim().isNotEmpty == true
                 ? (profile!['fullName'] as String).trim()
-                : FirebaseAuth.instance.currentUser?.displayName ?? 'Candidate';
+                : AppAuthBridge.currentUser?.displayName ?? 'Candidate';
             final firstName = fullName.split(RegExp(r'\s+')).first;
             final preferredRoles = profile?['preferredJobTitles'];
             final needsPreferences =
@@ -3499,7 +3517,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
         final profile = snapshot.data;
         final fullName = _profileString(profile, 'fullName').isNotEmpty
             ? _profileString(profile, 'fullName')
-            : FirebaseAuth.instance.currentUser?.displayName ?? 'Candidate';
+            : AppAuthBridge.currentUser?.displayName ?? 'Candidate';
         final phone = _profileString(profile, 'phone');
         final district = _profileString(profile, 'district');
         final state = _profileString(profile, 'state');
@@ -3513,7 +3531,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
           profile?['preferredJobTitles'],
         );
         final email =
-            FirebaseAuth.instance.currentUser?.email ??
+            AppAuthBridge.currentUser?.email ??
             _profileString(profile, 'email');
         final birthMonth = _profileString(profile, 'birthMonth');
         final birthYear = _profileString(profile, 'birthYear');
@@ -5134,11 +5152,11 @@ class _CandidateApplicationsScreenState
                   application['companyName']?.toString() ?? 'Company';
               final location = application['locationCity']?.toString() ?? '';
               final status = application['status']?.toString() ?? 'Applied';
-              final appliedAt = application['appliedAt'];
-              final appliedDate = appliedAt is Timestamp
-                  ? appliedAt.toDate()
-                  : appliedAt is DateTime
+              final appliedAt = application['appliedAt'] ?? application['created_at'];
+              final appliedDate = appliedAt is DateTime
                   ? appliedAt
+                  : appliedAt is String
+                  ? DateTime.tryParse(appliedAt)
                   : null;
 
               return Container(

@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'employer_api_service.dart';
 import 'supabase_service.dart';
 import 'app_auth_bridge.dart';
@@ -7,8 +6,6 @@ import '../../data/models/employer_profile.dart';
 import '../../data/models/job_model.dart';
 
 class EmployerService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
   Stream<EmployerProfile?> watchProfile(String uid) {
     return SupabaseService.client
         .from('employers')
@@ -45,21 +42,25 @@ class EmployerService {
     });
   }
 
-  Future<void> updateContact(String uid, Map<String, dynamic> changes) =>
-      _firestore.collection('employers').doc(uid).update({
-        ...changes,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+  Future<void> updateContact(String uid, Map<String, dynamic> changes) async {
+    try {
+      await SupabaseService.client
+          .from('employers')
+          .update({
+            ...changes,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('user_id', uid);
+    } catch (_) {}
+  }
 
-  Stream<List<JobModel>> watchJobs(String uid) => _firestore
-      .collection('jobs')
-      .where('employerUid', isEqualTo: uid)
-      .snapshots()
-      .map((snapshot) {
-        final jobs = snapshot.docs.map(JobModel.fromFirestore).toList();
-        jobs.sort((a, b) => b.postedAt.compareTo(a.postedAt));
-        return jobs;
-      });
+  Stream<List<JobModel>> watchJobs(String uid) {
+    return SupabaseService.streamEmployerJobs(uid).map((rows) {
+      final jobs = rows.map((r) => JobModel.fromMap(r)).toList();
+      jobs.sort((a, b) => b.postedAt.compareTo(a.postedAt));
+      return jobs;
+    });
+  }
 
   Stream<List<Map<String, dynamic>>> watchApplications(String uid) async* {
     while (AppAuthBridge.currentUser?.uid == uid) {
@@ -72,24 +73,16 @@ class EmployerService {
     }
   }
 
-  Stream<List<Map<String, dynamic>>> watchPayments(String uid) => _firestore
-      .collection('employer_orders')
-      .where('employerUid', isEqualTo: uid)
-      .snapshots()
-      .map((snapshot) {
-        final orders = snapshot.docs
-            .map((doc) => <String, dynamic>{'id': doc.id, ...doc.data()})
-            .toList();
-        orders.sort((a, b) {
-          final aAt = a['createdAt'] is Timestamp
-              ? (a['createdAt'] as Timestamp).millisecondsSinceEpoch
-              : 0;
-          final bAt = b['createdAt'] is Timestamp
-              ? (b['createdAt'] as Timestamp).millisecondsSinceEpoch
-              : 0;
-          return bAt.compareTo(aAt);
-        });
-        return orders;
-      });
+  Stream<List<Map<String, dynamic>>> watchPayments(String uid) {
+    try {
+      return SupabaseService.client
+          .from('employer_orders')
+          .stream(primaryKey: ['id'])
+          .eq('employer_id', uid)
+          .order('created_at', ascending: false);
+    } catch (_) {
+      return Stream.value([]);
+    }
+  }
 
 }
