@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'employer_api_service.dart';
+import 'supabase_service.dart';
+import 'app_auth_bridge.dart';
 
 import '../../data/models/employer_profile.dart';
 import '../../data/models/job_model.dart';
@@ -8,36 +9,40 @@ import '../../data/models/job_model.dart';
 class EmployerService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  Stream<EmployerProfile?> watchProfile(String uid) => _firestore
-      .collection('employers')
-      .doc(uid)
-      .snapshots()
-      .map((doc) => doc.exists ? EmployerProfile.fromFirestore(doc) : null);
+  Stream<EmployerProfile?> watchProfile(String uid) {
+    return SupabaseService.client
+        .from('employers')
+        .stream(primaryKey: ['id'])
+        .eq('user_id', uid)
+        .map((rows) {
+          if (rows.isEmpty) return null;
+          return EmployerProfile.fromMap(rows.first, uid);
+        });
+  }
 
   Future<void> register(Map<String, dynamic> details) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null || !user.emailVerified || user.email == null) {
-      throw StateError('Sign in with a verified email to register a company.');
+    final user = AppAuthBridge.currentUser;
+    if (user == null || user.email == null) {
+      throw StateError('Sign in with a valid account to register a company.');
     }
-    final employerRef = _firestore.collection('employers').doc(user.uid);
-    final userRef = _firestore.collection('users').doc(user.uid);
-    final batch = _firestore.batch();
-    batch.set(employerRef, {
-      'uid': user.uid,
+    await SupabaseService.upsertEmployer(
+      userId: user.uid,
+      companyName: details['companyName'] ?? 'Company',
+      contactName: details['contactName'] ?? '',
+      phone: details['phone'] ?? '',
+      email: user.email!,
+      district: details['district'] ?? 'Chennai',
+      designation: details['designation'],
+      city: details['city'],
+      logoUrl: details['logoUrl'],
+    );
+    await SupabaseService.client.from('profiles').upsert({
+      'id': user.uid,
       'email': user.email!.toLowerCase().trim(),
-      ...details,
-      'status': 'pending',
-      'createdAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
+      'role': 'EMPLOYER',
+      'status': 'ACTIVE',
+      'updated_at': DateTime.now().toIso8601String(),
     });
-    batch.set(userRef, {
-      'uid': user.uid,
-      'email': user.email!.toLowerCase().trim(),
-      'role': 'employer',
-      'displayName': details['contactName'],
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-    await batch.commit();
   }
 
   Future<void> updateContact(String uid, Map<String, dynamic> changes) =>
@@ -57,7 +62,7 @@ class EmployerService {
       });
 
   Stream<List<Map<String, dynamic>>> watchApplications(String uid) async* {
-    while (FirebaseAuth.instance.currentUser?.uid == uid) {
+    while (AppAuthBridge.currentUser?.uid == uid) {
       final data = await EmployerApiService().applications();
       final raw = data['applications'];
       yield raw is List

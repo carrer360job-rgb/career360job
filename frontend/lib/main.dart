@@ -12,9 +12,7 @@ import 'core/theme/app_theme.dart';
 import 'core/config/sample_jobs_config.dart';
 import 'core/constants/app_constants.dart';
 import 'core/responsive/responsive_layout.dart';
-import 'core/services/firebase_auth_service.dart';
 import 'core/services/candidate_photo_service.dart';
-import 'core/services/firestore_service.dart';
 import 'core/services/employer_service.dart';
 import 'core/services/platform_content_service.dart';
 import 'core/widgets/bouncy_button.dart';
@@ -33,6 +31,7 @@ import 'features/employer/employer_workspace_screen.dart';
 import 'features/legal/privacy_policy_screen.dart';
 import 'features/notifications/notification_center_screen.dart';
 import 'core/services/supabase_service.dart';
+import 'core/services/app_auth_bridge.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -157,7 +156,7 @@ class FirebaseConfigurationFailure extends StatelessWidget {
 enum AppUserRole { candidate, employer, admin }
 
 class Career360App extends StatefulWidget {
-  final Stream<User?>? authChanges;
+  final Stream<dynamic>? authChanges;
 
   const Career360App({super.key, this.authChanges});
 
@@ -257,7 +256,7 @@ class _Career360AppState extends State<Career360App> {
       _showEmployerLogin = false;
       _currentRole = null;
     });
-    await FirebaseAuthService().signOut();
+    await SupabaseService.client.auth.signOut();
   }
 
   Future<void> _signOutToRoleSelection() async {
@@ -269,7 +268,7 @@ class _Career360AppState extends State<Career360App> {
       _showEmployerLogin = false;
       _currentRole = null;
     });
-    await FirebaseAuthService().signOut();
+    await SupabaseService.client.auth.signOut();
   }
 
   void _resetToRoleSelection() {
@@ -337,9 +336,9 @@ class _Career360AppState extends State<Career360App> {
       title: 'Career360 — Job Portal',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      home: StreamBuilder<User?>(
+      home: StreamBuilder<dynamic>(
         key: ValueKey('auth_stream_$_sessionGeneration'),
-        stream: widget.authChanges ?? FirebaseAuth.instance.userChanges(),
+        stream: widget.authChanges ?? AppAuthBridge.authStateChanges,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             debugPrint('[Auth state stream] ${snapshot.error}');
@@ -399,7 +398,7 @@ class _Career360AppState extends State<Career360App> {
 }
 
 class AccountSessionGate extends StatelessWidget {
-  final User user;
+  final dynamic user;
   final AppUserRole? requestedRole;
   final ValueChanged<AppUserRole> onRoleSelected;
   final Future<void> Function() onBackToLogin;
@@ -422,13 +421,13 @@ class AccountSessionGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .snapshots(),
+      StreamBuilder<List<Map<String, dynamic>>>(
+        stream: SupabaseService.client
+            .from('profiles')
+            .stream(primaryKey: ['id'])
+            .eq('id', user.uid),
         builder: (context, snapshot) {
-          if (!user.emailVerified) {
+          if (user.emailVerified != true) {
             return EmailVerificationRequiredScreen(user: user);
           }
           if (snapshot.hasError) {
@@ -439,8 +438,14 @@ class AccountSessionGate extends StatelessWidget {
               onSignOut: () async => onSignOutRequested(),
             );
           }
-          if (!snapshot.hasData) return const SessionLoadingScreen();
-          final storedRole = snapshot.data?.data()?['role'] as String?;
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
+            return const SessionLoadingScreen();
+          }
+          final rows = snapshot.data ?? const [];
+          final storedRole = rows.isNotEmpty
+              ? rows.first['role']?.toString().toLowerCase()
+              : null;
           final selectedRole = storedRole == 'employer'
               ? AppUserRole.employer
               : storedRole == 'candidate'
@@ -526,7 +531,7 @@ class AccountSessionGate extends StatelessWidget {
 }
 
 class EmployerSessionGate extends StatefulWidget {
-  final User user;
+  final dynamic user;
   final VoidCallback onSignOut;
   final Future<void> Function() onRetry;
 
@@ -553,7 +558,7 @@ class _EmployerSessionGateState extends State<EmployerSessionGate> {
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.user.emailVerified) {
+    if (widget.user.emailVerified != true) {
       return EmailVerificationRequiredScreen(user: widget.user);
     }
     return StreamBuilder<EmployerProfile?>(
@@ -596,7 +601,7 @@ class _EmployerSessionGateState extends State<EmployerSessionGate> {
 }
 
 class CandidateSessionGate extends StatelessWidget {
-  final User user;
+  final dynamic user;
   final Future<void> Function() onBackToLogin;
   final ValueChanged<AppUserRole> onRoleChanged;
   final VoidCallback onSwitchRoleRequested;
@@ -615,15 +620,15 @@ class CandidateSessionGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!user.emailVerified) {
+    if (user.emailVerified != true) {
       return EmailVerificationRequiredScreen(user: user);
     }
 
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('candidates')
-          .doc(user.uid)
-          .snapshots(),
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: SupabaseService.client
+          .from('candidate_profiles')
+          .stream(primaryKey: ['id'])
+          .eq('user_id', user.uid),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           debugPrint('[Candidate profile stream] ${snapshot.error}');
@@ -638,8 +643,9 @@ class CandidateSessionGate extends StatelessWidget {
           return const SessionLoadingScreen();
         }
 
-        final onboardingComplete =
-            snapshot.data?.data()?['onboardingCompleted'] == true;
+        final rows = snapshot.data ?? const [];
+        final onboardingComplete = rows.isNotEmpty &&
+            (rows.first['full_name'] as String?)?.trim().isNotEmpty == true;
         if (!onboardingComplete) {
           return CandidateOnboardingWizardScreen(
             key: ValueKey('candidate_onboarding_${user.uid}'),
@@ -797,7 +803,7 @@ class _AuthLoadFailureContentState extends State<_AuthLoadFailureContent> {
 }
 
 class EmailVerificationRequiredScreen extends StatefulWidget {
-  final User user;
+  final dynamic user;
 
   const EmailVerificationRequiredScreen({super.key, required this.user});
 
@@ -925,13 +931,13 @@ class MainShellScreen extends StatefulWidget {
 }
 
 class _MainShellScreenState extends State<MainShellScreen> {
-  final FirestoreService _firestoreService = FirestoreService();
+  final SupabaseService _firestoreService = SupabaseService();
   final CandidatePhotoService _candidatePhotoService = CandidatePhotoService();
   final PlatformContentService _platformContentService = PlatformContentService();
   List<Map<String, dynamic>> _managedCategories = const [];
   List<Map<String, dynamic>> _managedAnnouncements = const [];
   String get _currentUid =>
-      FirebaseAuth.instance.currentUser?.uid ?? 'guest_candidate';
+      AppAuthBridge.currentUser?.uid ?? 'guest_candidate';
 
   int _selectedTabIndex = 0;
   String _selectedLocation = 'All Locations';
@@ -5033,7 +5039,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
 
 class _CandidateApplicationsScreen extends StatefulWidget {
   final String candidateUid;
-  final FirestoreService firestoreService;
+  final SupabaseService firestoreService;
 
   const _CandidateApplicationsScreen({
     required this.candidateUid,

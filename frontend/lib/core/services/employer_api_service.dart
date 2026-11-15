@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
+import 'supabase_service.dart';
 
 class EmployerApiService {
   static const _defaultBaseUrl = 'https://career360job-backend.vercel.app';
@@ -15,11 +16,18 @@ class EmployerApiService {
   );
 
   Future<Map<String, String>> _headers() async {
+    final supabaseToken = SupabaseService.client.auth.currentSession?.accessToken;
+    if (supabaseToken != null && supabaseToken.isNotEmpty) {
+      return {'Authorization': 'Bearer $supabaseToken', 'Content-Type': 'application/json'};
+    }
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) throw StateError('Sign in again to continue.');
-    final token = await user.getIdToken();
-    if (token == null) throw StateError('Could not verify your session.');
-    return {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'};
+    if (user != null) {
+      final token = await user.getIdToken();
+      if (token != null) {
+        return {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'};
+      }
+    }
+    throw StateError('Sign in again to continue.');
   }
 
   Future<Map<String, dynamic>> _request(

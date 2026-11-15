@@ -1,7 +1,14 @@
-import 'dart:typed_data';
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../data/models/job_model.dart';
+import '../../data/sample_jobs.dart';
 
 class SupabaseService {
+  static final SupabaseService _instance = SupabaseService._internal();
+  factory SupabaseService() => _instance;
+  SupabaseService._internal();
+
   static const String supabaseUrl = 'https://nnilnwhjpkllmocptmks.supabase.co';
   static const String supabaseAnonKey =
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5uaWxud2hqcGtsbG1vY3B0bWtzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ3MzEzNjIsImV4cCI6MjExMDMwNzM2Mn0.L4WpFSA5Gi3QIjldy_LdbptrtfDLGoYpx7PkLwqYHyI';
@@ -249,5 +256,265 @@ class SupabaseService {
         'last_active_at': DateTime.now().toIso8601String(),
       }).eq('id', userId);
     } catch (_) {}
+  }
+
+  // ---------------------------------------------------------------------------
+  // Realtime Database & Job Operations (Supabase PostgreSQL)
+  // ---------------------------------------------------------------------------
+
+  static final Map<String, Set<String>> _savedJobsCache = {};
+  static final StreamController<Map<String, Set<String>>> _savedJobsController =
+      StreamController<Map<String, Set<String>>>.broadcast();
+
+  Stream<List<JobModel>> streamJobs({
+    String? category,
+    String? locationCity,
+    String? searchQuery,
+  }) {
+    try {
+      return client
+          .from('jobs')
+          .stream(primaryKey: ['id'])
+          .map((rows) {
+            final liveJobs = rows
+                .map((row) => JobModel.fromMap(row))
+                .where((job) {
+                  if (!job.isOpen) return false;
+                  if (locationCity != null &&
+                      locationCity != 'All Locations' &&
+                      !job.isStatewide &&
+                      !job.locationCity
+                          .toLowerCase()
+                          .contains(locationCity.toLowerCase())) {
+                    return false;
+                  }
+                  if (category != null &&
+                      category != 'All' &&
+                      category != 'All Categories' &&
+                      !job.category
+                          .toLowerCase()
+                          .contains(category.toLowerCase())) {
+                    return false;
+                  }
+                  if (searchQuery != null && searchQuery.trim().isNotEmpty) {
+                    final q = searchQuery.toLowerCase();
+                    return job.title.toLowerCase().contains(q) ||
+                        job.companyName.toLowerCase().contains(q) ||
+                        job.locationCity.toLowerCase().contains(q) ||
+                        job.category.toLowerCase().contains(q) ||
+                        job.description.toLowerCase().contains(q);
+                  }
+                  return true;
+                })
+                .toList()
+              ..sort((a, b) {
+                if (a.isFeatured != b.isFeatured) {
+                  return a.isFeatured ? -1 : 1;
+                }
+                return b.postedAt.compareTo(a.postedAt);
+              });
+
+            if (liveJobs.isEmpty && !kReleaseMode) {
+              return SampleJobs.all.where((job) {
+                if (category != null &&
+                    category != 'All' &&
+                    category != 'All Categories' &&
+                    !job.category
+                        .toLowerCase()
+                        .contains(category.toLowerCase())) {
+                  return false;
+                }
+                if (locationCity != null &&
+                    locationCity != 'All Locations' &&
+                    !job.isStatewide &&
+                    !job.locationCity
+                        .toLowerCase()
+                        .contains(locationCity.toLowerCase())) {
+                  return false;
+                }
+                if (searchQuery != null && searchQuery.trim().isNotEmpty) {
+                  final q = searchQuery.toLowerCase();
+                  return job.title.toLowerCase().contains(q) ||
+                      job.companyName.toLowerCase().contains(q) ||
+                      job.locationCity.toLowerCase().contains(q) ||
+                      job.category.toLowerCase().contains(q) ||
+                      job.description.toLowerCase().contains(q);
+                }
+                return true;
+              }).toList();
+            }
+            return liveJobs;
+          });
+    } catch (_) {
+      return Stream.value(SampleJobs.all);
+    }
+  }
+
+  Future<String> createJobPost(JobModel job) async {
+    try {
+      final res = await client.from('jobs').insert({
+        'title': job.title,
+        'category': job.category,
+        'description': job.description,
+        'location_city': job.locationCity,
+        'salary_text': job.salaryText,
+        'work_mode': job.workMode,
+        'vacancies_count': job.vacanciesCount,
+        'is_verified': job.isVerified,
+        'employer_id': job.employerUid,
+        'status': 'PUBLISHED',
+      }).select().single();
+      return res['id']?.toString() ?? '';
+    } catch (e) {
+      debugPrint('[SupabaseService] Error creating job: $e');
+      rethrow;
+    }
+  }
+
+  Future<bool> applyToJob({
+    required String jobId,
+    required JobModel job,
+    required String candidateUid,
+    required Map<String, dynamic> candidateProfile,
+  }) async {
+    if (job.isDemo) return false;
+    try {
+      await client.from('job_applications').insert({
+        'job_id': jobId,
+        'job_title': job.title,
+        'company_name': job.companyName,
+        'employer_id': job.employerUid ?? '',
+        'candidate_id': candidateUid,
+        'applicant_name':
+            candidateProfile['fullName'] ??
+            candidateProfile['displayName'] ??
+            'Applicant',
+        'applicant_phone': candidateProfile['phone'] ?? '',
+        'applicant_district':
+            candidateProfile['district'] ??
+            candidateProfile['locationCity'] ??
+            '',
+        'status': 'SUBMITTED',
+      });
+      return true;
+    } catch (e) {
+      debugPrint('[SupabaseService] Error applying to job: $e');
+      return false;
+    }
+  }
+
+  Future<bool> toggleSaveJob({
+    required String candidateUid,
+    required String jobId,
+    required bool isSaved,
+  }) async {
+    final current = _savedJobsCache[candidateUid] ?? <String>{};
+    if (isSaved) {
+      current.remove(jobId);
+    } else {
+      current.add(jobId);
+    }
+    _savedJobsCache[candidateUid] = current;
+    _savedJobsController.add(Map.from(_savedJobsCache));
+    return !isSaved;
+  }
+
+  Stream<Set<String>> streamSavedJobIds(String candidateUid) {
+    if (candidateUid.isEmpty) return Stream.value(<String>{});
+    return _savedJobsController.stream
+        .map((cache) => cache[candidateUid] ?? <String>{})
+        .startWith(_savedJobsCache[candidateUid] ?? <String>{});
+  }
+
+  Stream<Set<String>> streamAppliedJobIds(String candidateUid) {
+    if (candidateUid.isEmpty) return Stream.value(<String>{});
+    try {
+      return client
+          .from('job_applications')
+          .stream(primaryKey: ['id'])
+          .eq('candidate_id', candidateUid)
+          .map(
+            (rows) => rows
+                .map((r) => r['job_id']?.toString() ?? '')
+                .where((id) => id.isNotEmpty)
+                .toSet(),
+          );
+    } catch (_) {
+      return Stream.value(<String>{});
+    }
+  }
+
+  Stream<List<Map<String, dynamic>>> streamCandidateApplications(
+    String candidateUid,
+  ) {
+    if (candidateUid.isEmpty) return Stream.value([]);
+    try {
+      return client
+          .from('job_applications')
+          .stream(primaryKey: ['id'])
+          .eq('candidate_id', candidateUid)
+          .order('created_at', ascending: false);
+    } catch (_) {
+      return Stream.value([]);
+    }
+  }
+
+  Stream<List<Map<String, dynamic>>> streamRecruiterApplicants({
+    required String employerUid,
+  }) {
+    if (employerUid.isEmpty) return Stream.value([]);
+    try {
+      return client
+          .from('job_applications')
+          .stream(primaryKey: ['id'])
+          .eq('employer_id', employerUid)
+          .order('created_at', ascending: false);
+    } catch (_) {
+      return Stream.value([]);
+    }
+  }
+
+  Stream<Map<String, dynamic>?> streamCandidateProfile(String uid) {
+    if (uid.isEmpty) return Stream.value(null);
+    try {
+      return client
+          .from('candidate_profiles')
+          .stream(primaryKey: ['id'])
+          .eq('user_id', uid)
+          .map((rows) => rows.isNotEmpty ? rows.first : null);
+    } catch (_) {
+      return Stream.value(null);
+    }
+  }
+
+  Stream<String?> streamCandidatePublicPhoto(String uid) {
+    if (uid.isEmpty) return Stream.value(null);
+    return streamCandidateProfile(
+      uid,
+    ).map((p) => p?['profile_photo_url'] as String?);
+  }
+
+  Future<void> updateCandidateProfile({
+    required String uid,
+    required Map<String, dynamic> updates,
+  }) async {
+    try {
+      await client
+          .from('candidate_profiles')
+          .update({
+            ...updates,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('user_id', uid);
+    } catch (e) {
+      debugPrint('[SupabaseService] Error updating candidate profile: $e');
+    }
+  }
+}
+
+extension _StreamStartWith<T> on Stream<T> {
+  Stream<T> startWith(T initial) async* {
+    yield initial;
+    yield* this;
   }
 }

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/responsive/responsive_layout.dart';
 import '../../core/widgets/bouncy_button.dart';
-import '../../core/services/firebase_auth_service.dart';
 import '../../core/services/location_service.dart';
+import '../../core/services/app_auth_bridge.dart';
+import '../../core/services/supabase_service.dart';
 
 /// 4-Step Candidate Onboarding Wizard
 /// 1. Personal Info
@@ -31,7 +31,6 @@ class CandidateOnboardingWizardScreen extends StatefulWidget {
 
 class _CandidateOnboardingWizardScreenState
     extends State<CandidateOnboardingWizardScreen> {
-  final FirebaseAuthService _authService = FirebaseAuthService();
   final LocationService _locationService = LocationService();
   int _currentStep = 1; // 1, 2, 3, 4
   bool _isSaving = false;
@@ -555,7 +554,7 @@ class _CandidateOnboardingWizardScreenState
     };
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
+      final user = AppAuthBridge.currentUser;
       if (user == null) {
         if (mounted) {
           _showValidationToast(
@@ -567,11 +566,27 @@ class _CandidateOnboardingWizardScreenState
       }
       final uid = user.uid;
       final email = user.email ?? '';
-      await _authService.saveCandidateOnboardingProfile(
-        uid: uid,
-        email: email,
-        onboardingData: onboardingData,
-      );
+
+      // Save to Supabase candidate_profiles & profiles table
+      try {
+        await SupabaseService.client.from('profiles').upsert({
+          'id': uid,
+          'email': email.toLowerCase().trim(),
+          'phone': onboardingData['phone'],
+          'role': 'CANDIDATE',
+          'status': 'ACTIVE',
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+        await SupabaseService.upsertCandidateProfile(
+          userId: uid,
+          fullName: (onboardingData['fullName'] as String?) ?? 'Candidate',
+          district: (onboardingData['district'] as String?) ?? 'Chennai',
+          city: onboardingData['city'] as String?,
+          profilePhotoUrl: onboardingData['photoUrl'] as String?,
+        );
+      } catch (sbErr) {
+        debugPrint('[Supabase Onboarding Save Notice]: $sbErr');
+      }
     } catch (e) {
       debugPrint('[Onboarding Save Notice]: $e');
       if (mounted) {

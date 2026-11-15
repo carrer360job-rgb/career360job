@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'supabase_service.dart';
 
 class PlatformContentService {
   static const _defaultBaseUrl = 'https://career360job-backend.vercel.app';
@@ -20,9 +21,12 @@ class PlatformContentService {
   }
 
   Future<void> reportJob(String jobId, String reason, String details) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null || !user.emailVerified) throw StateError('Sign in with a verified account to report a job.');
-    final token = await user.getIdToken(true);
+    String? token = SupabaseService.client.auth.currentSession?.accessToken;
+    if (token == null || token.isEmpty) {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null || !user.emailVerified) throw StateError('Sign in with a verified account to report a job.');
+      token = await user.getIdToken(true);
+    }
     if (token == null) throw StateError('Could not verify your session.');
     final uri = Uri.parse('${_baseUrl.replaceAll(RegExp(r"/+$"), "")}/api/employer/jobs/${Uri.encodeComponent(jobId)}/report');
     final response = await http.post(uri, headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},

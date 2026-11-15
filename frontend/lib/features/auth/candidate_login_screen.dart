@@ -1,9 +1,9 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
 
 import '../../core/theme/app_theme.dart';
-import '../../core/services/firebase_auth_service.dart';
+import '../../core/services/supabase_auth_service.dart';
 import '../../core/widgets/bouncy_button.dart';
 import '../legal/privacy_policy_screen.dart';
 
@@ -24,7 +24,7 @@ class CandidateLoginScreen extends StatefulWidget {
 }
 
 class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
-  final FirebaseAuthService _authService = FirebaseAuthService();
+  final SupabaseAuthService _supabaseAuth = SupabaseAuthService();
   AuthScreenState _screenState = AuthScreenState.signIn;
 
   // Strict Design Tokens from Reference Screenshot
@@ -105,34 +105,18 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await _authService.signInWithEmail(
+      // 1. Authenticate with Supabase Auth (Primary)
+      await _supabaseAuth.signInWithEmail(
         email: email,
         password: password,
-        role: widget.isEmployer ? 'employer' : 'candidate',
       );
       if (mounted) {
         setState(() => _isLoading = false);
       }
-    } on FirebaseAuthException catch (e) {
+    } on AuthException catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        String message = 'Sign in failed. Please check credentials.';
-        if (e.code == 'user-not-found') {
-          message = 'No account found with this email. Please sign up.';
-        } else if (e.code == 'wrong-password' ||
-            e.code == 'invalid-credential') {
-          message = 'Incorrect password. Please try again.';
-        } else if (e.code == 'invalid-email') {
-          message = 'Invalid email address format.';
-        } else if (e.code == 'user-disabled') {
-          message = 'This account has been disabled. Please contact support.';
-        } else if (e.code == 'email-not-verified') {
-          message = 'We sent you a verification email. Verify your address, then sign in again.';
-        } else if (e.code == 'too-many-requests') {
-          message =
-              'Too many failed attempts. Please wait a moment and try again.';
-        }
-        _showError(message);
+        _showError(e.message);
       }
     } catch (e) {
       if (mounted) {
@@ -156,18 +140,20 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       _showError('Please enter a valid email address.');
       return;
     }
-    if (password.length < 8) {
-      _showError('Password must be at least 8 characters.');
+    if (password.length < 6) {
+      _showError('Password must be at least 6 characters.');
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      await _authService.signUpWithEmail(
-        name: name,
+      // 1. Sign up with Supabase Auth
+      await _supabaseAuth.signUpWithEmail(
+        fullName: name,
         email: email,
         password: password,
+        role: widget.isEmployer ? 'EMPLOYER' : 'CANDIDATE',
       );
 
       if (mounted) {
@@ -178,22 +164,13 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
           _signInPasswordController.clear();
         });
         _showSuccess(
-          'Verification link sent. Verify your email, then sign in.',
+          'Account created successfully! You can now sign in.',
         );
       }
-    } on FirebaseAuthException catch (e) {
+    } on AuthException catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        String message = 'Sign up failed. Please try again.';
-        if (e.code == 'email-already-in-use') {
-          message =
-              'An account already exists with this email. Please sign in.';
-        } else if (e.code == 'weak-password') {
-          message = 'Password is too weak. Please use a stronger password.';
-        } else if (e.code == 'invalid-email') {
-          message = 'Invalid email address format.';
-        }
-        _showError(message);
+        _showError(e.message);
       }
     } catch (e) {
       if (mounted) {
@@ -213,24 +190,18 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
 
     setState(() => _isLoading = true);
     try {
-      await _authService.sendPasswordReset(email);
+      await _supabaseAuth.resetPassword(email: email);
       if (mounted) {
         setState(() {
           _isLoading = false;
           _resetLinkSent = true;
         });
-        _showSuccess('Password reset link sent to your email via Firebase.');
+        _showSuccess('Password reset link sent to your email.');
       }
-    } on FirebaseAuthException catch (e) {
+    } on AuthException catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        String message = 'Failed to send password reset email.';
-        if (e.code == 'user-not-found') {
-          message = 'No account found with this email address.';
-        } else if (e.code == 'invalid-email') {
-          message = 'Invalid email address format.';
-        }
-        _showError(message);
+        _showError(e.message);
       }
     } catch (e) {
       if (mounted) {
@@ -244,29 +215,16 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     if (_isLoading || _isGoogleLoading) return;
     setState(() => _isGoogleLoading = true);
     try {
-      await _authService.signInWithGoogle(
-        role: widget.isEmployer ? 'employer' : 'candidate',
-      );
+      // Trigger Supabase Google OAuth Browser Flow
+      await _supabaseAuth.signInWithGoogle();
       if (mounted) {
         setState(() => _isGoogleLoading = false);
       }
-    } on FirebaseAuthException catch (error) {
-      debugPrint('[Google Sign-In] ${error.code}: ${error.message}');
+    } on AuthException catch (error) {
+      debugPrint('[Google Sign-In] Supabase AuthException: ${error.message}');
       if (!mounted) return;
       setState(() => _isGoogleLoading = false);
-      final message = switch (error.code) {
-        'network-request-failed' =>
-          'Check your internet connection and try Google sign-in again.',
-        'too-many-requests' =>
-          'Too many sign-in attempts. Please wait and try again.',
-        'user-disabled' =>
-          'This account has been disabled. Please contact support.',
-        'account-exists-with-different-credential' => 'An account with this email already exists. Try signing in with your original method.',
-        'operation-not-allowed' =>
-          'Google sign-in is unavailable right now. Please try again later.',
-        _ => 'Could not sign in with Google. Please try again.',
-      };
-      _showError(message);
+      _showError(error.message);
     } catch (error) {
       debugPrint('[Google Sign-In] Unexpected error: $error');
       if (!mounted) return;

@@ -60,57 +60,75 @@ class JobModel {
     this.responsibilities = const [],
   });
 
-  factory JobModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>? ?? {};
+  factory JobModel.fromMap(Map<String, dynamic> data, [String? id]) {
+    final docId = id ?? (data['id']?.toString() ?? '');
     DateTime posted = DateTime.now();
-    if (data['postedAt'] is Timestamp) {
-      posted = (data['postedAt'] as Timestamp).toDate();
-    } else if (data['postedAt'] is String) {
-      posted = DateTime.tryParse(data['postedAt']) ?? DateTime.now();
+    final rawPosted = data['postedAt'] ?? data['posted_at'] ?? data['createdAt'] ?? data['created_at'];
+    if (rawPosted is DateTime) {
+      posted = rawPosted;
+    } else if (rawPosted is Timestamp) {
+      posted = rawPosted.toDate();
+    } else if (rawPosted is String) {
+      posted = DateTime.tryParse(rawPosted) ?? DateTime.now();
     }
 
-    final locationStr = data['locationCity'] ?? 'Tamil Nadu / Remote';
+    DateTime? expires;
+    final rawExpires = data['expiresAt'] ?? data['expires_at'] ?? data['deadline'];
+    if (rawExpires is DateTime) {
+      expires = rawExpires;
+    } else if (rawExpires is Timestamp) {
+      expires = rawExpires.toDate();
+    } else if (rawExpires is String) {
+      expires = DateTime.tryParse(rawExpires);
+    }
+
+    final locationStr = data['locationCity'] ?? data['location_city'] ?? data['district'] ?? 'Tamil Nadu / Remote';
     final isStatewideJob = data['isStatewide'] == true ||
+        data['is_statewide'] == true ||
+        data['reach'] == 'statewide' ||
         locationStr.toString().toLowerCase().contains('all tamil nadu');
 
     return JobModel(
-      id: doc.id,
+      id: docId,
       title: data['title'] ?? 'Untitled Opportunity',
-      companyName: data['companyName'] ?? 'Career360 Partner',
+      companyName: data['companyName'] ?? data['company_name'] ?? 'Career360 Partner',
       locationCity: locationStr,
-      salaryText: data['salaryText'] ?? '₹3 - 5 LPA',
+      salaryText: data['salaryText'] ?? data['salary_text'] ?? (data['minSalary'] != null ? '₹${data['minSalary']} - ${data['maxSalary'] ?? ''}' : '₹3 - 5 LPA'),
       category: data['category'] ?? 'IT & Software',
-      workMode: data['workMode'] ?? 'On-Site',
+      workMode: data['workMode'] ?? data['work_mode'] ?? 'On-Site',
       vacanciesCount: (data['vacanciesCount'] is int)
           ? data['vacanciesCount']
-          : int.tryParse(data['vacanciesCount']?.toString() ?? '1') ?? 1,
+          : (data['vacancies_count'] is int)
+              ? data['vacancies_count']
+              : int.tryParse(data['vacanciesCount']?.toString() ?? data['vacancies_count']?.toString() ?? '1') ?? 1,
       description: data['description'] ?? 'Verified Career360 job opening.',
-      isVerified: data['isVerified'] ?? true,
+      isVerified: data['isVerified'] ?? data['is_verified'] ?? true,
       postedAt: posted,
-      employerUid: data['employerUid'],
+      employerUid: data['employerUid'] ?? data['employer_id'] ?? data['companyId'] ?? data['company_id'],
       phone: data['phone'] is String ? data['phone'] as String : null,
       email: data['email'] is String ? data['email'] as String : null,
       whatsappNumber: (data['whatsappNumber'] is String ? data['whatsappNumber'] as String : null) ??
+          (data['whatsapp_number'] is String ? data['whatsapp_number'] as String : null) ??
           (data['phone'] is String ? data['phone'] as String : null),
-      contactName: data['contactName'] is String ? data['contactName'] as String : null,
-      status: data['status'] is String ? data['status'] as String : 'active',
-      expiresAt: data['expiresAt'] is Timestamp
-          ? (data['expiresAt'] as Timestamp).toDate() : null,
-      isFeatured: data['isFeatured'] == true || data['planTier'] == 'featured' || data['planTier'] == 'elite',
+      contactName: (data['contactName'] is String ? data['contactName'] as String : null) ??
+          (data['contact_name'] is String ? data['contact_name'] as String : null),
+      status: (data['status'] is String ? data['status'] as String : 'active').toLowerCase(),
+      expiresAt: expires,
+      isFeatured: data['isFeatured'] == true || data['is_featured'] == true || data['planTier'] == 'featured' || data['planTier'] == 'elite',
       isStatewide: isStatewideJob,
-      planTier: data['planTier'] is String ? data['planTier'] as String : '',
-      planName: data['planName'] is String ? data['planName'] as String : '',
-      requirements:
-          (data['requirements'] as List<dynamic>?)
-              ?.whereType<String>()
-              .toList() ??
+      planTier: data['planTier'] is String ? data['planTier'] as String : (data['plan_tier'] is String ? data['plan_tier'] as String : ''),
+      planName: data['planName'] is String ? data['planName'] as String : (data['plan_name'] is String ? data['plan_name'] as String : ''),
+      requirements: (data['requirements'] as List<dynamic>?)?.whereType<String>().toList() ??
+          (data['skills'] as List<dynamic>?)?.whereType<String>().toList() ??
           const [],
-      responsibilities:
-          (data['responsibilities'] as List<dynamic>?)
-              ?.whereType<String>()
-              .toList() ??
+      responsibilities: (data['responsibilities'] as List<dynamic>?)?.whereType<String>().toList() ??
           const [],
     );
+  }
+
+  factory JobModel.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>? ?? {};
+    return JobModel.fromMap(data, doc.id);
   }
 
   Map<String, dynamic> toMap() {
