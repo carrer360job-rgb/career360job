@@ -1,114 +1,81 @@
-import { useEffect, useState } from 'react';
-import { getStats, type PlatformStats } from './api';
-import { auth } from './supabase';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { getStats, listEmployers, type EmployerRecord, type PlatformStats } from './api';
+import { getAccessToken } from './supabase';
 
-export default function StatsOverview({ onNavigateTab }: { onNavigateTab: (tab: 'employers' | 'jobs' | 'plans') => void }) {
+type Destination = 'employers' | 'jobs' | 'users' | 'plans' | 'reports' | 'payments';
+type QueueItem = { id: string; title: string; detail: string; kind: string; destination: Destination };
+
+function shortDate(value: string | null | undefined) {
+  if (!value) return 'Date unavailable';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Date unavailable' : new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }).format(date);
+}
+
+export default function StatsOverview({ onNavigateTab }: { onNavigateTab: (tab: Destination) => void }) {
   const [stats, setStats] = useState<PlatformStats | null>(null);
+  const [employers, setEmployers] = useState<EmployerRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [queueError, setQueueError] = useState(false);
+  const initialLoadStarted = useRef(false);
 
-  const load = async () => {
-    if (!auth?.currentUser) return;
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    setQueueError(false);
     try {
-      const token = await auth.currentUser.getIdToken();
-      const data = await getStats(token);
-      setStats(data);
-      setError('');
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void load();
+      const token = await getAccessToken();
+      if (!token) throw new Error('Your session has expired. Sign in again.');
+      const [statsResult, employerResult] = await Promise.allSettled([
+        getStats(token), listEmployers(token, 'pending'),
+      ]);
+      if (statsResult.status === 'fulfilled') setStats(statsResult.value);
+      else setError(statsResult.reason instanceof Error ? statsResult.reason.message : 'Could not load platform metrics.');
+      if (employerResult.status === 'fulfilled') setEmployers(employerResult.value.employers);
+      setQueueError(employerResult.status === 'rejected');
+    } catch (caught) { setError((caught as Error).message); }
+    finally { setLoading(false); }
   }, []);
 
-  if (loading) {
-    return <div className="panel-loading">Loading platform metrics…</div>;
-  }
+  useEffect(() => {
+    if (initialLoadStarted.current) return;
+    initialLoadStarted.current = true;
+    void load();
+  }, [load]);
 
-  if (error) {
-    return (
-      <div className="banner error">
-        <span>{error}</span>
-        <button className="text-button" onClick={() => void load()}>Retry</button>
-      </div>
-    );
-  }
+  const queue: QueueItem[] = [
+    ...employers.map((employer) => ({ id: `employer-${employer.uid}`, title: employer.companyName || 'Unnamed company', detail: `Employer review · ${shortDate(employer.createdAt)}`, kind: 'Company', destination: 'employers' as const })),
+  ].slice(0, 6);
 
-  if (!stats) return null;
+  const metrics: { label: string; value: number | undefined; note: string; destination: Destination }[] = [
+    { label: 'Awaiting review', value: stats?.pendingEmployers, note: 'Employer accounts', destination: 'employers' },
+    { label: 'Active employers', value: stats?.approvedEmployers, note: stats ? `${stats.totalEmployers} registered` : 'Registered employers', destination: 'employers' },
+    { label: 'Live jobs', value: stats?.activeJobs, note: stats ? `${stats.totalJobs} total listings` : 'Total listings', destination: 'jobs' },
+    { label: 'Job seekers', value: stats?.totalCandidates, note: 'Registered candidates', destination: 'users' },
+  ];
 
-  return (
-    <div className="stats-container">
-      <div className="stats-grid">
-        {/* Active Companies Card */}
-        <div
-          className="stat-card"
-          onClick={() => onNavigateTab('employers')}
-          style={{ cursor: 'pointer' }}
-        >
-          <div className="stat-header">
-            <span className="stat-label">Active Companies</span>
-            <span className="stat-badge success">Verified</span>
-          </div>
-          <div className="stat-value">{stats.approvedEmployers}</div>
-          <div className="stat-footer">
-            <span>{stats.totalEmployers} total registered</span>
-            <span className="stat-arrow">→</span>
-          </div>
-        </div>
-
-        {/* Live Jobs Card */}
-        <div
-          className="stat-card"
-          onClick={() => onNavigateTab('jobs')}
-          style={{ cursor: 'pointer' }}
-        >
-          <div className="stat-header">
-            <span className="stat-label">Active Live Jobs</span>
-            <span className="stat-badge success">Live in TN</span>
-          </div>
-          <div className="stat-value">{stats.activeJobs}</div>
-          <div className="stat-footer">
-            <span>{stats.totalJobs} total jobs published</span>
-            <span className="stat-arrow">→</span>
-          </div>
-        </div>
-
-        {/* Total Candidates Card */}
-        <div className="stat-card">
-          <div className="stat-header">
-            <span className="stat-label">Registered Job Seekers</span>
-          </div>
-          <div className="stat-value">{stats.totalCandidates}</div>
-          <div className="stat-footer">
-            <span>Direct contact enabled</span>
-          </div>
-        </div>
-
-        {/* Applications Recorded */}
-        <div className="stat-card">
-          <div className="stat-header">
-            <span className="stat-label">Direct Inquiries Recorded</span>
-          </div>
-          <div className="stat-value">{stats.totalApplications}</div>
-          <div className="stat-footer">
-            <span>Across all listings</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="action-banner">
-        <div>
-          <strong>Paid hiring access is active</strong>
-          <p>Companies require review and an active paid plan before publishing jobs. Use the operations tabs to manage accounts and content.</p>
-        </div>
-        <button className="primary-button" onClick={() => onNavigateTab('jobs')}>
-          View Live Jobs
-        </button>
-      </div>
+  return <div className="overview-content" aria-busy={loading}>
+    <div className="overview-section-heading"><div><h2>Platform at a glance</h2><p>Current activity and work that needs a decision.</p></div><button type="button" className="text-button" disabled={loading} onClick={() => void load()}>{loading ? 'Refreshing…' : 'Refresh data'}</button></div>
+    {error && <div className="banner error" role="alert">{error} <button className="inline-retry" type="button" onClick={() => void load()}>Try again</button></div>}
+    <div className="metric-grid">
+      {metrics.map((metric) => <button className="metric-card" key={metric.label} type="button" onClick={() => onNavigateTab(metric.destination)}>
+        <span className="metric-label">{metric.label}</span><strong className="metric-value">{metric.value ?? '—'}</strong><span className="metric-bottom">{metric.note}<span aria-hidden="true">↗</span></span>
+      </button>)}
     </div>
-  );
+    <div className="overview-columns">
+      <section className="work-panel" aria-labelledby="queue-title">
+        <div className="work-panel-heading"><div><p className="section-eyebrow">PRIORITY</p><h2 id="queue-title">Needs attention</h2></div><span className="queue-count">{queue.length}</span></div>
+        {queueError && <p className="queue-warning">Some review items could not be loaded. Refresh to try again.</p>}
+        {loading && !queue.length ? <p className="queue-empty">Loading review items…</p> : queueError && !queue.length ? <p className="queue-empty">Employer reviews are unavailable right now.</p> : queue.length === 0 ? <div className="queue-empty"><strong>All clear for now</strong><p>New employer reviews will appear here.</p></div> : <div className="queue-list">
+          {queue.map((item) => <button className="queue-row" key={item.id} type="button" onClick={() => onNavigateTab(item.destination)}><span className="queue-mark"/><span className="queue-text"><strong>{item.title}</strong><small>{item.detail}</small></span><span className="queue-kind">{item.kind}</span><span className="queue-arrow" aria-hidden="true">→</span></button>)}
+        </div>}
+      </section>
+      <section className="work-panel snapshot-panel" aria-labelledby="snapshot-title"><div className="work-panel-heading"><div><p className="section-eyebrow">ACTIVITY</p><h2 id="snapshot-title">Platform snapshot</h2></div></div>
+        <div className="snapshot-line"><span>Applications recorded</span><strong>{stats?.totalApplications ?? '—'}</strong></div>
+        <div className="snapshot-line"><span>Closed listings</span><strong>{stats?.closedJobs ?? '—'}</strong></div>
+        <div className="snapshot-line"><span>Rejected or suspended employers</span><strong>{stats?.rejectedEmployers ?? '—'}</strong></div>
+        <div className="snapshot-actions"><button type="button" onClick={() => onNavigateTab('employers')}>Review employer accounts <span aria-hidden="true">→</span></button></div>
+      </section>
+    </div>
+  </div>;
 }

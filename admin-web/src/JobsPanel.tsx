@@ -78,12 +78,13 @@ export default function JobsPanel() {
         <div className="search-box">
           <input
             type="text"
+            aria-label="Search jobs"
             placeholder="Search job title, company, or district…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           {search && (
-            <button className="clear-btn" onClick={() => setSearch('')}>✕</button>
+            <button className="clear-btn" type="button" aria-label="Clear search" onClick={() => setSearch('')}>×</button>
           )}
         </div>
       </div>

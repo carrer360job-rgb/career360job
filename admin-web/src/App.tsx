@@ -6,6 +6,7 @@ import EmployersPanel from './EmployersPanel';
 import JobsPanel from './JobsPanel';
 import PlansPanel from './PlansPanel';
 import OperationsPanels from './OperationsPanels';
+import AdminDashboard from './AdminDashboard';
 
 type View =
   | { kind: 'configuration' }
@@ -35,22 +36,30 @@ export default function App() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const requestSequence = useRef(0);
+  const signingIn = useRef(false);
+  const authorizedToken = useRef<string | null>(null);
 
   const checkAccess = useCallback(async (token: string) => {
+    if (authorizedToken.current === token) return;
     const currentRequest = ++requestSequence.current;
-    setView({ kind: 'checking' });
     try {
       const identity = await getAdminIdentity(token);
       if (currentRequest === requestSequence.current) {
+        authorizedToken.current = token;
         setView({ kind: 'authorized', identity });
       }
     } catch (error) {
       if (currentRequest !== requestSequence.current) return;
       if (error instanceof ApiError && error.status === 403) {
+        authorizedToken.current = null;
         setView({ kind: 'denied' });
       } else if (error instanceof ApiError && error.status === 401) {
+        authorizedToken.current = null;
         setFormError('Your session has expired. Sign in again.');
-        try { await supabase.auth.signOut(); } catch { setView({ kind: 'unavailable' }); }
+        try {
+          const { error: signOutError } = await supabase.auth.signOut();
+          if (signOutError) throw signOutError;
+        } catch { setView({ kind: 'unavailable' }); }
       } else {
         setView({ kind: 'unavailable' });
       }
@@ -59,23 +68,13 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!active) return;
-      if (session?.access_token) {
-        void checkAccess(session.access_token);
-      } else {
-        setView({ kind: 'signedOut' });
-      }
-    }).catch(() => {
-      if (active) setView({ kind: 'unavailable' });
-    });
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!active) return;
+      if (!active || signingIn.current) return;
       if (session?.access_token) {
         void checkAccess(session.access_token);
       } else {
         ++requestSequence.current;
+        authorizedToken.current = null;
         setView({ kind: 'signedOut' });
       }
     });
@@ -83,6 +82,7 @@ export default function App() {
     return () => {
       active = false;
       ++requestSequence.current;
+      authorizedToken.current = null;
       subscription.unsubscribe();
     };
   }, [checkAccess]);
@@ -99,6 +99,7 @@ export default function App() {
     event.preventDefault();
     if (submitting) return;
     setFormError('');
+    signingIn.current = true;
     setSubmitting(true);
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -109,87 +110,49 @@ export default function App() {
       setPassword('');
       if (data.session?.access_token) {
         await checkAccess(data.session.access_token);
+      } else {
+        throw new Error('Sign in did not create a session. Try again.');
       }
     } catch (error) {
       setFormError((error as { message?: string }).message || 'Email or password is incorrect.');
     } finally {
+      signingIn.current = false;
       setSubmitting(false);
     }
   }
 
   async function handleSignOut() {
     ++requestSequence.current;
+    authorizedToken.current = null;
     setFormError('');
     setView({ kind: 'checking' });
     try {
-      await supabase.auth.signOut();
-    } finally {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
       setView({ kind: 'signedOut' });
+    } catch {
+      setView({ kind: 'unavailable' });
+    }
+  }
+
+  async function retryAccess() {
+    setView({ kind: 'checking' });
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) throw error;
+      if (data.session?.access_token) {
+        await checkAccess(data.session.access_token);
+      } else {
+        setView({ kind: 'signedOut' });
+      }
+    } catch {
+      setView({ kind: 'unavailable' });
     }
   }
 
   if (view.kind === 'authorized') {
     return (
-      <div className="dashboard-page">
-        <header className="dashboard-header">
-          <Brand />
-          <nav className="dashboard-nav" aria-label="Main Navigation">
-            <button
-              className={`nav-tab ${activeTab === 'overview' ? 'active' : ''}`}
-              onClick={() => setActiveTab('overview')}
-            >
-              Overview
-            </button>
-            <button
-              className={`nav-tab ${activeTab === 'employers' ? 'active' : ''}`}
-              onClick={() => setActiveTab('employers')}
-            >
-              Employers
-            </button>
-            <button
-              className={`nav-tab ${activeTab === 'jobs' ? 'active' : ''}`}
-              onClick={() => setActiveTab('jobs')}
-            >
-              Jobs
-            </button>
-            <button
-              className={`nav-tab ${activeTab === 'plans' ? 'active' : ''}`}
-              onClick={() => setActiveTab('plans')}
-            >
-              Plans
-            </button>
-            <button
-              className={`nav-tab ${activeTab === 'users' ? 'active' : ''}`}
-              onClick={() => setActiveTab('users')}
-            >
-              Users
-            </button>
-            <button
-              className={`nav-tab ${activeTab === 'payments' ? 'active' : ''}`}
-              onClick={() => setActiveTab('payments')}
-            >
-              Payments
-            </button>
-            <button
-              className={`nav-tab ${activeTab === 'content' ? 'active' : ''}`}
-              onClick={() => setActiveTab('content')}
-            >
-              Content
-            </button>
-            <button
-              className={`nav-tab ${activeTab === 'reports' ? 'active' : ''}`}
-              onClick={() => setActiveTab('reports')}
-            >
-              Reports
-            </button>
-          </nav>
-          <div className="dashboard-user">
-            <span className="user-email">{view.identity.email}</span>
-            <button className="signout-button" onClick={() => void handleSignOut()}>Sign out</button>
-          </div>
-        </header>
-
-        <main className="dashboard-main">
+      <AdminDashboard identity={view.identity} activeTab={activeTab} onTabChange={setActiveTab} onSignOut={() => void handleSignOut()}>
           {activeTab === 'overview' && <StatsOverview onNavigateTab={(tab) => setActiveTab(tab)} />}
           {activeTab === 'employers' && <EmployersPanel />}
           {activeTab === 'jobs' && <JobsPanel />}
@@ -197,8 +160,7 @@ export default function App() {
           {['users', 'payments', 'content', 'reports'].includes(activeTab) && (
             <OperationsPanels kind={activeTab as 'users' | 'payments' | 'content' | 'reports'} />
           )}
-        </main>
-      </div>
+      </AdminDashboard>
     );
   }
 
@@ -221,6 +183,23 @@ export default function App() {
           <p>This account does not have administrator privileges.</p>
           <button className="primary-button" onClick={() => void handleSignOut()}>Sign in with another account</button>
         </div>
+      </div>
+    );
+  }
+
+  if (view.kind === 'unavailable') {
+    return (
+      <div className="login-page-wrapper">
+        <header className="login-top-header"><Brand /></header>
+        <main className="login-main-content">
+          <section className="login-content" aria-labelledby="unavailable-title">
+            <div className="login-heading-block">
+              <h1 id="unavailable-title">Unable to open Operations</h1>
+              <p>We could not verify your admin access right now. Check your connection and try again.</p>
+            </div>
+            <button className="sign-in-btn" type="button" onClick={() => void retryAccess()}>Try again</button>
+          </section>
+        </main>
       </div>
     );
   }
@@ -283,7 +262,7 @@ export default function App() {
             {formError && <p className="form-error-banner" role="alert">{formError}</p>}
 
             <button className="sign-in-btn" type="submit" disabled={submitting}>
-              {submitting ? 'Signing in?' : 'Sign in'}
+              {submitting ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
 

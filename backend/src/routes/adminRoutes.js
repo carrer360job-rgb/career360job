@@ -5,6 +5,7 @@ import { verifyAdminToken } from '../middlewares/authMiddleware.js';
 import { requireAdmin } from '../middlewares/adminMiddleware.js';
 import { catalogDb, publicPlan, seedPlanDrafts, validatePlanDraft } from '../services/planCatalog.js';
 import { revokeFullyRefundedOrder } from './employerRoutes.js';
+import { supabaseAdmin } from '../config/supabase.js';
 
 const router = express.Router();
 
@@ -49,32 +50,44 @@ async function razorpayAdminRequest(path, options = {}) {
   return data;
 }
 
+async function countRows(table, filter) {
+  let query = supabaseAdmin.from(table).select('id', { count: 'exact', head: true });
+  if (filter) query = filter(query);
+  const { count, error } = await query;
+  if (error) {
+    console.error('[Admin stats count]', table, error);
+    throw Object.assign(new Error('Platform metrics are temporarily unavailable.'), { status: 503 });
+  }
+  return count ?? 0;
+}
+
 // 1. Platform Statistics Dashboard
 router.get('/stats', async (req, res) => {
   try {
-    const db = getFirestore(firebaseApp);
-    const count = (collection, field, value) => {
-      const base = db.collection(collection);
-      return (field ? base.where(field, '==', value) : base).count().get();
-    };
     const [totalCandidates, totalEmployers, pendingEmployers, approvedEmployers, rejectedEmployers,
       totalJobs, activeJobs, closedJobs, totalApplications] = await Promise.all([
-      count('candidates'), count('employers'), count('employers', 'status', 'pending'),
-      count('employers', 'status', 'approved'), count('employers', 'status', 'rejected'),
-      count('jobs'), count('jobs', 'status', 'active'), count('jobs', 'status', 'closed'), count('applications'),
+      countRows('profiles', (query) => query.eq('role', 'CANDIDATE')),
+      countRows('employers'),
+      countRows('employers', (query) => query.eq('is_verified', false)),
+      countRows('employers', (query) => query.eq('is_verified', true)),
+      countRows('profiles', (query) => query.eq('role', 'EMPLOYER').in('status', ['SUSPENDED', 'BLOCKED'])),
+      countRows('jobs'),
+      countRows('jobs', (query) => query.eq('status', 'PUBLISHED')),
+      countRows('jobs', (query) => query.eq('status', 'CLOSED')),
+      countRows('job_applications'),
     ]);
 
     res.set('Cache-Control', 'no-store');
     res.json({
-      totalCandidates: totalCandidates.data().count,
-      totalEmployers: totalEmployers.data().count,
-      pendingEmployers: pendingEmployers.data().count,
-      approvedEmployers: approvedEmployers.data().count,
-      rejectedEmployers: rejectedEmployers.data().count,
-      totalJobs: totalJobs.data().count,
-      activeJobs: activeJobs.data().count,
-      closedJobs: closedJobs.data().count,
-      totalApplications: totalApplications.data().count,
+      totalCandidates,
+      totalEmployers,
+      pendingEmployers: Math.max(0, pendingEmployers - rejectedEmployers),
+      approvedEmployers: Math.max(0, approvedEmployers - rejectedEmployers),
+      rejectedEmployers,
+      totalJobs,
+      activeJobs,
+      closedJobs,
+      totalApplications,
     });
   } catch (error) {
     fail(res, error);
@@ -84,69 +97,42 @@ router.get('/stats', async (req, res) => {
 // 2. Employers List with Filtering
 router.get('/employers', async (req, res) => {
   try {
-    const db = getFirestore(firebaseApp);
     const statusFilter = ['pending', 'approved', 'rejected'].includes(req.query.status) ? req.query.status : 'all';
     const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
-    const cursorId = typeof req.query.cursor === 'string' ? req.query.cursor : '';
-
-    let query = db.collection('employers');
-    if (['pending', 'approved', 'rejected'].includes(statusFilter)) {
-      query = query.where('status', '==', statusFilter);
+    const offset = req.query.cursor === undefined ? 0 : Number(req.query.cursor);
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      return res.status(400).json({ error: { message: 'Invalid employer page cursor.' } });
     }
-    query = query.orderBy('createdAt', 'desc');
-    if (cursorId) {
-      const cursor = await db.collection('employers').doc(cursorId).get();
-      if (!cursor.exists) return res.status(400).json({ error: { message: 'Invalid employer page cursor.' } });
-      query = query.startAfter(cursor);
-    }
-    const snap = await query.limit(51).get();
-    const pageDocs = snap.docs.slice(0, 50);
-    let employers = pageDocs.map((doc) => {
-      const data = doc.data();
-      return {
-        uid: doc.id,
-        companyName: data.companyName || '',
-        contactName: data.contactName || '',
-        designation: data.designation || '',
-        email: data.email || '',
-        phone: data.phone || '',
-        whatsappPhone: data.whatsappPhone || data.phone || '',
-        industry: data.industry || '',
-        companySize: data.companySize || '',
-        state: data.state || '',
-        district: data.district || '',
-        address: data.address || '',
-        postalCode: data.postalCode || '',
-        registrationNumber: data.registrationNumber || '',
-        status: data.status || 'pending',
-        postingCredits: data.postingCredits || 0,
-        activePlan: data.activePlan || '',
-        rejectionReason: data.rejectionReason || null,
-        reviewedBy: data.reviewedBy || null,
-        createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
-        reviewedAt: data.reviewedAt?.toDate?.()?.toISOString() || null,
-      };
+    // Supabase is the source of truth for employer profiles. Fetch in pages so
+    // the admin directory does not depend on Firebase credentials in Vercel.
+    const { data: rows, error } = await supabaseAdmin.from('employers')
+      .select('user_id,company_name,contact_name,designation,email,phone,whatsapp_phone,industry,company_size,state,district,address,postal_code,posting_credits,active_plan,is_verified,created_at,reviewed_by,reviewed_at,rejection_reason')
+      .order('created_at', { ascending: false }).range(offset, offset + 49);
+    if (error) throw Object.assign(new Error('Employer directory is unavailable.'), { status: 503 });
+    const userIds = (rows || []).map((row) => row.user_id).filter(Boolean);
+    const { data: profiles, error: profilesError } = userIds.length
+      ? await supabaseAdmin.from('profiles').select('id,status').in('id', userIds)
+      : { data: [], error: null };
+    if (profilesError) throw Object.assign(new Error('Employer account status is unavailable.'), { status: 503 });
+    const profileStatus = new Map((profiles || []).map((profile) => [profile.id, profile.status]));
+    let employers = (rows || []).map((row) => {
+      const accountStatus = profileStatus.get(row.user_id);
+      const status = accountStatus === 'SUSPENDED' || accountStatus === 'BLOCKED'
+        ? 'rejected' : row.is_verified ? 'approved' : 'pending';
+      return { uid: row.user_id, companyName: row.company_name || '', contactName: row.contact_name || '',
+        designation: row.designation || '', email: row.email || '', phone: row.phone || '',
+        whatsappPhone: row.whatsapp_phone || row.phone || '', industry: row.industry || '',
+        companySize: row.company_size || '', state: row.state || '', district: row.district || '',
+        address: row.address || '', postalCode: row.postal_code || '', registrationNumber: '',
+        status, postingCredits: row.posting_credits || 0, activePlan: row.active_plan || '',
+        rejectionReason: row.rejection_reason || null, reviewedBy: row.reviewed_by || null,
+        reviewedAt: row.reviewed_at || null, createdAt: row.created_at || null };
     });
-
-    if (search) {
-      employers = employers.filter((e) =>
-        e.companyName.toLowerCase().includes(search) ||
-        e.contactName.toLowerCase().includes(search) ||
-        e.email.toLowerCase().includes(search) ||
-        e.phone.includes(search) ||
-        e.district.toLowerCase().includes(search)
-      );
-    }
-
-    // Sort pending first, then by createdAt desc
-    employers.sort((a, b) => {
-      if (a.status === 'pending' && b.status !== 'pending') return -1;
-      if (a.status !== 'pending' && b.status === 'pending') return 1;
-      return (b.createdAt || '').localeCompare(a.createdAt || '');
-    });
-
+    if (statusFilter !== 'all') employers = employers.filter((employer) => employer.status === statusFilter);
+    if (search) employers = employers.filter((employer) => [employer.companyName, employer.contactName,
+      employer.email, employer.phone, employer.district].some((field) => field.toLowerCase().includes(search)));
     res.set('Cache-Control', 'no-store');
-    res.json({ employers, nextCursor: snap.docs.length > 50 ? pageDocs.at(-1)?.id || null : null });
+    res.json({ employers, nextCursor: (rows || []).length === 50 ? String(offset + 50) : null });
   } catch (error) {
     fail(res, error);
   }
@@ -160,77 +146,34 @@ router.post('/employers/:uid/review', async (req, res) => {
     if (!['approved', 'rejected'].includes(decision)) {
       return res.status(400).json({ error: { message: 'Decision must be "approved" or "rejected".' } });
     }
-
-    const db = getFirestore(firebaseApp);
-    const employerRef = db.collection('employers').doc(uid);
-    const userRef = db.collection('users').doc(uid);
-    const entitlementRef = db.collection('employer_entitlements').doc(uid);
-
-    const result = await db.runTransaction(async (tx) => {
-      const [employerDoc, entitlementDoc] = await Promise.all([tx.get(employerRef), tx.get(entitlementRef)]);
-      if (!employerDoc.exists) {
-        throw Object.assign(new Error('Employer account not found.'), { status: 404 });
-      }
-      const updates = {
-        status: decision,
-        reviewedBy: req.user.uid,
-        reviewedAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      };
-
-      if (decision === 'approved') {
-        updates.rejectionReason = FieldValue.delete();
-      } else {
-        updates.rejectionReason = notes ? String(notes).trim().slice(0, 500) : 'Company verification could not be completed.';
-        updates.postingCredits = 0;
-        updates.creditsExpireAt = Timestamp.now();
-        if (entitlementDoc.exists) tx.update(entitlementRef, {
-          expiresAt: Timestamp.now(), revokedBy: req.user.uid, revokedAt: FieldValue.serverTimestamp(),
-        });
-      }
-
-      tx.update(employerRef, updates);
-
-      // In-app notification
-      const notifRef = userRef.collection('notifications').doc();
-      tx.create(notifRef, {
-        title: decision === 'approved' ? 'Company Verified ✔️' : 'Company Verification Update',
-        body: decision === 'approved'
-          ? 'Your company profile has been approved. Choose a paid plan to publish jobs.'
-          : `Verification note: ${updates.rejectionReason}`,
-        type: 'employer_review',
-        decision,
-        createdAt: FieldValue.serverTimestamp(),
-        readAt: null,
-      });
-
-      // Audit log
-      tx.create(db.collection('admin_audit').doc(), {
-        action: `employer_${decision}`,
-        actorUid: req.user.uid,
-        employerUid: uid,
-        notes: notes || null,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-
-      return { uid, status: decision };
-    });
-
-    if (decision === 'rejected') {
-      const activeJobs = await db.collection('jobs').where('employerUid', '==', uid).get();
-      for (let offset = 0; offset < activeJobs.docs.length; offset += 450) {
-        const page = activeJobs.docs.slice(offset, offset + 450).filter((job) => job.data().status === 'active');
-        if (!page.length) continue;
-        const batch = db.batch();
-        page.forEach((job) => batch.update(job.ref, { status: 'closed', closedBy: 'admin_employer_review', closedAt: FieldValue.serverTimestamp() }));
-        await batch.commit();
-      }
+    const reason = typeof notes === 'string' ? notes.trim().slice(0, 500) : '';
+    if (decision === 'rejected' && reason.length < 3) {
+      return res.status(400).json({ error: { message: 'Enter a reason for rejecting or suspending this company.' } });
     }
-
-    res.json(result);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uid)) {
+      return res.status(400).json({ error: { message: 'Invalid employer ID.' } });
+    }
+    const { data, error } = await supabaseAdmin.rpc('admin_review_employer', {
+      p_actor_uid: req.user.uid, p_employer_uid: uid, p_decision: decision, p_notes: reason || null,
+    });
+    if (error) {
+      if (error.message.includes('not found')) return res.status(404).json({ error: { message: 'Employer account not found.' } });
+      console.error('[Admin employer review]', error);
+      throw Object.assign(new Error('Employer review is unavailable.'), { status: 503 });
+    }
+    res.json(data);
   } catch (error) {
     fail(res, error);
   }
+});
+
+// Remaining admin modules still use the legacy Firestore store. Report their
+// unavailable state explicitly when Firebase is not configured on the backend.
+router.use((req, res, next) => {
+  if (!firebaseApp) {
+    return res.status(503).json({ error: { message: 'This admin section is temporarily unavailable.' } });
+  }
+  next();
 });
 
 // 4. Jobs Moderation List

@@ -45,11 +45,10 @@ export default function EmployersPanel() {
     try {
       const token = await auth.currentUser.getIdToken();
       await reviewEmployer(token, uid, decision, notes);
-      setNotice(
-        decision === 'approved'
-          ? 'Company reactivated successfully.'
-          : 'Company has been suspended and restricted from posting.'
-      );
+      const previousStatus = employers.find((employer) => employer.uid === uid)?.status;
+      setNotice(decision === 'approved'
+        ? previousStatus === 'pending' ? 'Company approved.' : 'Company reactivated.'
+        : previousStatus === 'pending' ? 'Application rejected.' : 'Company suspended.');
       setSuspendingUid(null);
       setSuspendReason('');
       await load();
@@ -81,13 +80,14 @@ export default function EmployersPanel() {
 
         <div className="search-box">
           <input
+            aria-label="Search companies"
             type="text"
             placeholder="Search company, phone, contact or districtâ€¦"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           {search && (
-            <button className="clear-btn" onClick={() => setSearch('')}>âœ•</button>
+            <button className="clear-btn" type="button" aria-label="Clear search" onClick={() => setSearch('')}>×</button>
           )}
         </div>
       </div>
@@ -167,6 +167,8 @@ export default function EmployersPanel() {
                     <div className="rejection-form">
                       <input
                         type="text"
+                        aria-label="Reason for rejection or suspension"
+                        required
                         placeholder="Reason for suspension (e.g. Scammer, illegal fee asked, fake job)"
                         value={suspendReason}
                         onChange={(e) => setSuspendReason(e.target.value)}
@@ -175,7 +177,7 @@ export default function EmployersPanel() {
                       <div className="rejection-form-buttons">
                         <button
                           className="danger-button"
-                          disabled={isBusy}
+                          disabled={isBusy || suspendReason.trim().length < 3}
                           onClick={() => void handleModeration(emp.uid, 'rejected', suspendReason)}
                         >
                           Confirm Suspend
