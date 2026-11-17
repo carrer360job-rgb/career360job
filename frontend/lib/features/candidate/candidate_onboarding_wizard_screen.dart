@@ -185,6 +185,10 @@ class _CandidateOnboardingWizardScreenState
   void _loadInitialProfile() {
     final profile = widget.initialProfile;
     if (profile == null) return;
+    if (profile['onboarding_completed_at'] == null) {
+      final savedStep = profile['onboarding_step'] as int? ?? 0;
+      _currentStep = (savedStep + 1).clamp(1, 4);
+    }
 
     String stringValue(String key) => profile[key]?.toString() ?? '';
     int? intValue(String key) => int.tryParse(stringValue(key));
@@ -419,7 +423,7 @@ class _CandidateOnboardingWizardScreenState
   }
 
   // --- Step Navigation Validation ---
-  void _onNextStep() {
+  Future<void> _onNextStep() async {
     if (_currentStep == 1) {
       if (_nameController.text.trim().isEmpty) {
         _showValidationToast('Please enter your full name');
@@ -449,7 +453,7 @@ class _CandidateOnboardingWizardScreenState
         _showValidationToast('Please choose your Birth Month and Year');
         return;
       }
-      setState(() => _currentStep = 2);
+      await _saveAndAdvance(1);
     } else if (_currentStep == 2) {
       if (_selectedEducation.isEmpty) {
         _showValidationToast('Please choose your Education Level');
@@ -463,13 +467,13 @@ class _CandidateOnboardingWizardScreenState
         _showValidationToast('Please choose your Year of Passing');
         return;
       }
-      setState(() => _currentStep = 3);
+      await _saveAndAdvance(2);
     } else if (_currentStep == 3) {
       if (_selectedJobTitles.isEmpty) {
         _showValidationToast('Please choose at least 1 job title');
         return;
       }
-      setState(() => _currentStep = 4);
+      await _saveAndAdvance(3);
     } else if (_currentStep == 4) {
       if (_hasWorkExperience == null) {
         _showValidationToast('Please choose whether you have work experience');
@@ -485,7 +489,7 @@ class _CandidateOnboardingWizardScreenState
           return;
         }
       }
-      _saveAndCompleteOnboarding();
+      await _saveAndAdvance(4);
     }
   }
 
@@ -510,8 +514,9 @@ class _CandidateOnboardingWizardScreenState
     );
   }
 
-  // --- Final Save to Firestore ---
-  Future<void> _saveAndCompleteOnboarding() async {
+  // Save the validated step before allowing navigation to the next one.
+  Future<void> _saveAndAdvance(int step) async {
+    if (_isSaving) return;
     setState(() => _isSaving = true);
 
     final onboardingData = {
@@ -567,25 +572,12 @@ class _CandidateOnboardingWizardScreenState
       final uid = user.uid;
       final email = user.email ?? '';
 
-      // Save to Supabase candidate_profiles & profiles table
-      try {
-        await SupabaseService.client.from('profiles').upsert({
-          'id': uid,
-          'email': email.toLowerCase().trim(),
-          'phone': onboardingData['phone'],
-          'role': 'CANDIDATE',
-          'updated_at': DateTime.now().toIso8601String(),
-        });
-        await SupabaseService.upsertCandidateProfile(
-          userId: uid,
-          fullName: (onboardingData['fullName'] as String?) ?? 'Candidate',
-          district: (onboardingData['district'] as String?) ?? 'Chennai',
-          city: onboardingData['city'] as String?,
-          profilePhotoUrl: onboardingData['photoUrl'] as String?,
-        );
-      } catch (sbErr) {
-        debugPrint('[Supabase Onboarding Save Notice]: $sbErr');
-      }
+      await SupabaseService.saveCandidateOnboardingStep(
+        userId: uid,
+        email: email,
+        step: step,
+        values: onboardingData,
+      );
     } catch (e) {
       debugPrint('[Onboarding Save Notice]: $e');
       if (mounted) {
@@ -598,10 +590,12 @@ class _CandidateOnboardingWizardScreenState
       return;
     }
 
-    if (mounted) {
-      setState(() => _isSaving = false);
-      _showSuccessDialog();
-    }
+    if (!mounted) return;
+    setState(() {
+      _isSaving = false;
+      if (step < 4) _currentStep = step + 1;
+    });
+    if (step == 4) _showSuccessDialog();
   }
 
   void _showSuccessDialog() {

@@ -1,6 +1,8 @@
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../data/models/job_model.dart';
 import '../../data/sample_jobs.dart';
 
@@ -30,44 +32,147 @@ class SupabaseService {
   // Candidate Profile & Resume Operations
   // ---------------------------------------------------------------------------
 
-  static Future<Map<String, dynamic>?> getCandidateProfile(String userId) async {
-    try {
-      final data = await client
-          .from('candidate_profiles')
-          .select()
-          .eq('user_id', userId)
-          .maybeSingle();
-      return data;
-    } catch (_) {
-      return null;
-    }
+  static Future<Map<String, dynamic>?> getCandidateProfile(
+    String userId,
+  ) async {
+    final row = await client
+        .from('candidate_profiles')
+        .select()
+        .eq('user_id', userId)
+        .maybeSingle();
+    if (row == null) return null;
+    final account = await client
+        .from('profiles')
+        .select('email,phone')
+        .eq('id', userId)
+        .maybeSingle();
+    return candidateView(row, account);
   }
 
-  static Future<void> upsertCandidateProfile({
+  static Map<String, dynamic> candidateView(
+    Map<String, dynamic> row,
+    Map<String, dynamic>? account,
+  ) {
+    final personal = Map<String, dynamic>.from(
+      row['personal_details'] as Map? ?? {},
+    );
+    final education = Map<String, dynamic>.from(row['education'] as Map? ?? {});
+    final experience = Map<String, dynamic>.from(
+      row['experience'] as Map? ?? {},
+    );
+    final birthYear = personal['birthYear'] as int?;
+    final birthMonth = personal['birthMonth']?.toString() ?? '';
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    final now = DateTime.now();
+    final monthIndex = months.indexOf(birthMonth);
+    final age = birthYear == null || monthIndex < 0
+        ? null
+        : now.year - birthYear - (now.month < monthIndex + 1 ? 1 : 0);
+    return {
+      ...row,
+      ...personal,
+      ...education,
+      ...experience,
+      'fullName': row['full_name'],
+      'profilePhotoUrl': row['profile_photo_url'],
+      'phone': account?['phone'],
+      'email': account?['email'],
+      'preferredJobTitles': row['preferred_job_titles'] ?? <String>[],
+      'age': age,
+    };
+  }
+
+  static Future<void> saveCandidateOnboardingStep({
     required String userId,
-    required String fullName,
-    required String district,
-    String? city,
-    String? profilePhotoUrl,
-    Map<String, dynamic>? education,
-    Map<String, dynamic>? experience,
-    List<String>? skills,
-    String? resumeUrl,
+    required String email,
+    required int step,
+    required Map<String, dynamic> values,
   }) async {
-    final payload = <String, dynamic>{
-      'user_id': userId,
-      'full_name': fullName,
-      'district': district,
-      'city': city,
+    if (step < 1 || step > 4 || client.auth.currentUser?.id != userId) {
+      throw StateError('A candidate session is required to save this step.');
+    }
+    final changes = <String, dynamic>{
       'updated_at': DateTime.now().toIso8601String(),
     };
-    if (profilePhotoUrl != null) payload['profile_photo_url'] = profilePhotoUrl;
-    if (education != null) payload['education'] = education;
-    if (experience != null) payload['experience'] = experience;
-    if (skills != null) payload['skills'] = skills;
-    if (resumeUrl != null) payload['resume_url'] = resumeUrl;
-
-    await client.from('candidate_profiles').upsert(payload, onConflict: 'user_id');
+    if (step == 1) {
+      await client.from('profiles').upsert({
+        'id': userId,
+        'email': email.toLowerCase().trim(),
+        'phone': values['phone'],
+        'role': 'CANDIDATE',
+        'updated_at': changes['updated_at'],
+      });
+      changes.addAll({
+        'full_name': values['fullName'],
+        'district': values['district'],
+        'personal_details': {
+          'gender': values['gender'],
+          'maritalStatus': values['maritalStatus'],
+          'state': values['state'],
+          'birthMonth': values['birthMonth'],
+          'birthYear': values['birthYear'],
+        },
+      });
+    } else if (step == 2) {
+      changes['education'] = {
+        'educationLevel': values['educationLevel'],
+        'qualification': values['qualification'],
+        'collegeOrSchool': values['collegeOrSchool'],
+        'graduationYear': values['graduationYear'],
+      };
+    } else if (step == 3) {
+      changes['preferred_job_titles'] = values['preferredJobTitles'];
+    } else {
+      changes['experience'] = {
+        'hasExperience': values['hasExperience'],
+        'experienceYears': values['experienceYears'],
+        'experienceMonths': values['experienceMonths'],
+        'lastCompany': values['lastCompany'],
+        'lastJobTitle': values['lastJobTitle'],
+        'salary': values['salary'],
+        'noticePeriod': values['noticePeriod'],
+      };
+      changes['onboarding_completed_at'] = DateTime.now().toIso8601String();
+    }
+    final existing = await client
+        .from('candidate_profiles')
+        .select('id,onboarding_step')
+        .eq('user_id', userId)
+        .maybeSingle();
+    if (existing == null && step != 1) {
+      throw StateError('Save your personal details before continuing.');
+    }
+    changes['onboarding_step'] =
+        (existing?['onboarding_step'] as int? ?? 0) > step
+        ? existing!['onboarding_step']
+        : step;
+    if (existing == null) {
+      await client.from('candidate_profiles').insert({
+        'user_id': userId,
+        ...changes,
+      });
+    } else {
+      final updated = await client
+          .from('candidate_profiles')
+          .update(changes)
+          .eq('user_id', userId)
+          .select('id')
+          .maybeSingle();
+      if (updated == null) throw StateError('Could not save your profile.');
+    }
   }
 
   static Future<String> uploadProfilePhoto({
@@ -79,33 +184,14 @@ class SupabaseService {
       throw Exception('Profile photo must be 3 MB or less.');
     }
     final path = '$userId/avatar.$fileExtension';
-    await client.storage.from('profile-photos').uploadBinary(
+    await client.storage
+        .from('profile-photos')
+        .uploadBinary(
           path,
           bytes,
           fileOptions: const FileOptions(upsert: true),
         );
     return client.storage.from('profile-photos').getPublicUrl(path);
-  }
-
-  static Future<String> uploadResume({
-    required String userId,
-    required Uint8List bytes,
-    required String fileName,
-  }) async {
-    if (bytes.lengthInBytes > 5 * 1024 * 1024) {
-      throw Exception('Resume file must be 5 MB or less.');
-    }
-    final sanitized = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
-    final path = '$userId/$sanitized';
-    await client.storage.from('resumes').uploadBinary(
-          path,
-          bytes,
-          fileOptions: const FileOptions(upsert: true),
-        );
-    return await client.storage.from('resumes').createSignedUrl(
-          path,
-          60 * 60 * 24 * 30, // 30 days validity
-        );
   }
 
   // ---------------------------------------------------------------------------
@@ -156,7 +242,9 @@ class SupabaseService {
   // Jobs & Applications (Realtime & Queries)
   // ---------------------------------------------------------------------------
 
-  static Stream<List<Map<String, dynamic>>> streamPublishedJobs({String? district}) {
+  static Stream<List<Map<String, dynamic>>> streamPublishedJobs({
+    String? district,
+  }) {
     final query = client.from('jobs').stream(primaryKey: ['id']);
     return query.map((rows) {
       return rows.where((job) {
@@ -170,7 +258,9 @@ class SupabaseService {
     });
   }
 
-  static Stream<List<Map<String, dynamic>>> streamEmployerJobs(String employerId) {
+  static Stream<List<Map<String, dynamic>>> streamEmployerJobs(
+    String employerId,
+  ) {
     return client
         .from('jobs')
         .stream(primaryKey: ['id'])
@@ -178,7 +268,9 @@ class SupabaseService {
         .order('created_at', ascending: false);
   }
 
-  static Stream<List<Map<String, dynamic>>> streamEmployerApplications(String employerId) {
+  static Stream<List<Map<String, dynamic>>> streamEmployerApplications(
+    String employerId,
+  ) {
     return client
         .from('job_applications')
         .stream(primaryKey: ['id'])
@@ -223,10 +315,15 @@ class SupabaseService {
       'status': status,
       'updated_at': DateTime.now().toIso8601String(),
     };
-    if (interviewDate != null) payload['interview_date'] = interviewDate.toIso8601String();
+    if (interviewDate != null) {
+      payload['interview_date'] = interviewDate.toIso8601String();
+    }
     if (notes != null) payload['notes'] = notes;
 
-    await client.from('job_applications').update(payload).eq('id', applicationId);
+    await client
+        .from('job_applications')
+        .update(payload)
+        .eq('id', applicationId);
   }
 
   // ---------------------------------------------------------------------------
@@ -246,15 +343,21 @@ class SupabaseService {
   // Push Notification FCM Device Token Registration
   // ---------------------------------------------------------------------------
 
-  static Future<void> registerDeviceFcmToken(String fcmToken, {String deviceType = 'android'}) async {
+  static Future<void> registerDeviceFcmToken(
+    String fcmToken, {
+    String deviceType = 'android',
+  }) async {
     final userId = client.auth.currentUser?.id;
     if (userId == null || fcmToken.trim().isEmpty) return;
     try {
-      await client.from('profiles').update({
-        'fcm_token': fcmToken.trim(),
-        'device_type': deviceType,
-        'last_active_at': DateTime.now().toIso8601String(),
-      }).eq('id', userId);
+      await client
+          .from('profiles')
+          .update({
+            'fcm_token': fcmToken.trim(),
+            'device_type': deviceType,
+            'last_active_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', userId);
     } catch (_) {}
   }
 
@@ -277,17 +380,15 @@ class SupabaseService {
         if (locationCity != null &&
             locationCity != 'All Locations' &&
             !job.isStatewide &&
-            !job.locationCity
-                .toLowerCase()
-                .contains(locationCity.toLowerCase())) {
+            !job.locationCity.toLowerCase().contains(
+              locationCity.toLowerCase(),
+            )) {
           return false;
         }
         if (category != null &&
             category != 'All' &&
             category != 'All Categories' &&
-            !job.category
-                .toLowerCase()
-                .contains(category.toLowerCase())) {
+            !job.category.toLowerCase().contains(category.toLowerCase())) {
           return false;
         }
         if (searchQuery != null && searchQuery.trim().isNotEmpty) {
@@ -340,18 +441,22 @@ class SupabaseService {
 
   Future<String> createJobPost(JobModel job) async {
     try {
-      final res = await client.from('jobs').insert({
-        'title': job.title,
-        'category': job.category,
-        'description': job.description,
-        'location_city': job.locationCity,
-        'salary_text': job.salaryText,
-        'work_mode': job.workMode,
-        'vacancies_count': job.vacanciesCount,
-        'is_verified': job.isVerified,
-        'employer_id': job.employerUid,
-        'status': 'PUBLISHED',
-      }).select().single();
+      final res = await client
+          .from('jobs')
+          .insert({
+            'title': job.title,
+            'category': job.category,
+            'description': job.description,
+            'location_city': job.locationCity,
+            'salary_text': job.salaryText,
+            'work_mode': job.workMode,
+            'vacancies_count': job.vacanciesCount,
+            'is_verified': job.isVerified,
+            'employer_id': job.employerUid,
+            'status': 'PUBLISHED',
+          })
+          .select()
+          .single();
       return res['id']?.toString() ?? '';
     } catch (e) {
       debugPrint('[SupabaseService] Error creating job: $e');
@@ -467,52 +572,28 @@ class SupabaseService {
       yield null;
       return;
     }
-    try {
-      final initial = await client
-          .from('candidate_profiles')
-          .select()
-          .eq('user_id', uid)
-          .maybeSingle();
-      if (initial != null) {
-        yield initial;
-      }
-    } catch (_) {}
-
-    try {
-      yield* client
-          .from('candidate_profiles')
-          .stream(primaryKey: ['id'])
-          .eq('user_id', uid)
-          .map((rows) => rows.isNotEmpty ? rows.first : null)
-          .handleError((err) {
-            debugPrint('[SupabaseService] streamCandidateProfile error: $err');
-          });
-    } catch (_) {}
+    yield await getCandidateProfile(uid);
+    yield* client
+        .from('candidate_profiles')
+        .stream(primaryKey: ['id'])
+        .eq('user_id', uid)
+        .asyncMap((rows) async {
+          if (rows.isEmpty) return null;
+          final account = await client
+              .from('profiles')
+              .select('email,phone')
+              .eq('id', uid)
+              .maybeSingle();
+          return candidateView(rows.first, account);
+        });
   }
 
   Stream<String?> streamCandidatePublicPhoto(String uid) {
     if (uid.isEmpty) return Stream.value(null);
-    return streamCandidateProfile(
-      uid,
-    ).map((p) => p?['profile_photo_url'] as String?);
+    return streamCandidateProfile(uid)
+        .map((p) => p?['profile_photo_url'] as String?);
   }
 
-  Future<void> updateCandidateProfile({
-    required String uid,
-    required Map<String, dynamic> updates,
-  }) async {
-    try {
-      await client
-          .from('candidate_profiles')
-          .update({
-            ...updates,
-            'updated_at': DateTime.now().toIso8601String(),
-          })
-          .eq('user_id', uid);
-    } catch (e) {
-      debugPrint('[SupabaseService] Error updating candidate profile: $e');
-    }
-  }
 }
 
 extension _StreamStartWith<T> on Stream<T> {

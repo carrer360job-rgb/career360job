@@ -662,44 +662,14 @@ class CandidateSessionGate extends StatelessWidget {
     required this.onRetry,
   });
 
-  Stream<List<Map<String, dynamic>>> _streamCandidateProfile(
-    String uid,
-  ) async* {
-    try {
-      final row = await SupabaseService.client
-          .from('candidate_profiles')
-          .select()
-          .eq('user_id', uid)
-          .maybeSingle();
-      if (row != null) {
-        yield [row];
-      } else {
-        yield [];
-      }
-    } catch (e) {
-      debugPrint('[Candidate profile fetch notice] $e');
-      yield [];
-    }
-
-    try {
-      yield* SupabaseService.client
-          .from('candidate_profiles')
-          .stream(primaryKey: ['id'])
-          .eq('user_id', uid)
-          .handleError((err) {
-            debugPrint('[Candidate profile Realtime Notice] $err');
-          });
-    } catch (_) {}
-  }
-
   @override
   Widget build(BuildContext context) {
     if (user.emailVerified != true) {
       return EmailVerificationRequiredScreen(user: user);
     }
 
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: _streamCandidateProfile(user.uid),
+    return StreamBuilder<Map<String, dynamic>?>(
+      stream: SupabaseService().streamCandidateProfile(user.uid),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           debugPrint('[Candidate profile stream] ${snapshot.error}');
@@ -714,15 +684,14 @@ class CandidateSessionGate extends StatelessWidget {
           return const SessionLoadingScreen();
         }
 
-        final rows = snapshot.data ?? const [];
-        final onboardingComplete =
-            rows.isNotEmpty &&
-            (rows.first['full_name'] as String?)?.trim().isNotEmpty == true;
+        final profile = snapshot.data;
+        final onboardingComplete = profile?['onboarding_completed_at'] != null;
         if (!onboardingComplete) {
           return CandidateOnboardingWizardScreen(
             key: ValueKey('candidate_onboarding_${user.uid}'),
-            onFinish: () {},
+            onFinish: () => unawaited(onRetry()),
             onBackToLogin: () => unawaited(onBackToLogin()),
+            initialProfile: profile,
           );
         }
 
