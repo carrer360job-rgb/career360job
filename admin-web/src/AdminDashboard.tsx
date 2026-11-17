@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { AdminIdentity } from './api';
 import './dashboard.css';
 
-export type AdminTab = 'overview' | 'employers' | 'jobs' | 'users' | 'plans' | 'payments' | 'content' | 'reports';
+export type AdminTab = 'overview' | 'employers' | 'jobs' | 'users' | 'plans' | 'payments' | 'reports';
 
 type Props = {
   identity: AdminIdentity;
@@ -24,7 +24,6 @@ const groups: { label: string; items: { key: AdminTab; label: string; icon: stri
     { key: 'payments', label: 'Payments', icon: 'receipt' },
   ] },
   { label: 'Platform', items: [
-    { key: 'content', label: 'Content', icon: 'file' },
     { key: 'reports', label: 'Reports', icon: 'flag' },
   ] },
 ];
@@ -36,7 +35,6 @@ const copy: Record<AdminTab, { title: string; description: string }> = {
   users: { title: 'People', description: 'Search and manage platform accounts.' },
   plans: { title: 'Hiring plans', description: 'Set the offers employers see in the app.' },
   payments: { title: 'Payments', description: 'Track orders, payment status, and refunds.' },
-  content: { title: 'Content', description: 'Maintain categories and announcements.' },
   reports: { title: 'Reports', description: 'Resolve reported listings and review platform totals.' },
 };
 
@@ -48,7 +46,6 @@ function Icon({ name, size = 19 }: { name: string; size?: number }) {
     people: <><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2H3Zm12-14a3 3 0 0 1 0 6m2 3a5 5 0 0 1 4 5h-4"/></>,
     layers: <><rect x="4" y="4" width="16" height="5" rx="1"/><rect x="4" y="11" width="16" height="5" rx="1"/><path d="M4 19h16"/></>,
     receipt: <><path d="M5 3h14v18l-3-2-4 2-4-2-3 2V3Z"/><path d="M9 8h6m-6 4h6"/></>,
-    file: <><path d="M6 3h8l4 4v14H6V3Z"/><path d="M14 3v5h4M9 12h6m-6 4h6"/></>,
     flag: <><path d="M5 21V4m0 1c6-4 8 3 15-1v11c-7 4-9-3-15 1"/></>,
     menu: <path d="M4 6h16M4 12h16M4 18h16"/>,
     close: <path d="M5 5l14 14M19 5 5 19"/>,
@@ -108,4 +105,190 @@ export default function AdminDashboard({ identity, activeTab, onTabChange, onSig
       </main>
     </div>
   </div>;
+}
+
+export function AdminDashboardSkeleton({ activeTab = 'overview' }: { activeTab?: AdminTab }) {
+  return (
+    <div className="admin-shell" aria-busy="true">
+      <aside className="admin-sidebar" aria-label="Admin navigation loading">
+        <div className="sidebar-brand">
+          <img src="/career360-icon.png" alt="" width="38" height="38" />
+          <div><strong>Career<span>360</span></strong><small>ADMIN CONSOLE</small></div>
+        </div>
+        <nav className="sidebar-nav" aria-label="Main navigation">
+          {groups.map((group) => (
+            <div className="nav-group" key={group.label}>
+              <p className="nav-group-label">{group.label}</p>
+              {group.items.map((item) => (
+                <div
+                  key={item.key}
+                  className={`sidebar-link${activeTab === item.key ? ' is-active' : ''}`}
+                  style={{ pointerEvents: 'none' }}
+                >
+                  <Icon name={item.icon}/><span>{item.label}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </nav>
+        <div className="sidebar-footer"><span className="sidebar-footer-mark" /> Career360 operations</div>
+      </aside>
+
+      <div className="admin-workspace">
+        <header className="workspace-topbar">
+          <div className="topbar-start">
+            <span className="topbar-context">Career360 <span>/</span> {copy[activeTab]?.title || 'Overview'}</span>
+          </div>
+          <div className="topbar-account" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span className="skeleton-bone" style={{ width: '29px', height: '29px', borderRadius: '50%' }} />
+            <span className="skeleton-bone" style={{ width: '130px', height: '14px', borderRadius: '4px' }} />
+          </div>
+        </header>
+
+        <main className="workspace-main" id="main-content">
+          <div className="page-heading">
+            <div>
+              <p className="page-kicker">ADMIN WORKSPACE</p>
+              <h1>{copy[activeTab]?.title || 'Overview'}</h1>
+              <p>{copy[activeTab]?.description || 'A clear view of what needs attention across Career360.'}</p>
+            </div>
+          </div>
+
+          {activeTab === 'overview' && (
+            <div className="overview-content" aria-busy="true">
+              <div className="overview-section-heading">
+                <div>
+                  <h2>Platform at a glance</h2>
+                  <p>Current activity and work that needs a decision.</p>
+                </div>
+              </div>
+              <div className="metric-grid">
+                {['Awaiting review', 'Active employers', 'Live jobs', 'Job seekers'].map((label) => (
+                  <div className="metric-card" key={label} style={{ pointerEvents: 'none' }}>
+                    <span className="metric-label">{label}</span>
+                    <span className="skeleton-bone skeleton-metric-val" />
+                    <span className="metric-bottom">
+                      <span className="skeleton-bone" style={{ width: '90px', height: '10px' }} />
+                      <span aria-hidden="true">↗</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="overview-columns">
+                <section className="work-panel">
+                  <div className="work-panel-heading">
+                    <div><p className="section-eyebrow">PRIORITY</p><h2>Needs attention</h2></div>
+                    <span className="skeleton-bone" style={{ width: '25px', height: '25px', borderRadius: '5px' }} />
+                  </div>
+                  <div className="queue-list">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="queue-row" style={{ pointerEvents: 'none' }}>
+                        <span className="skeleton-bone" style={{ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0 }} />
+                        <div className="queue-text" style={{ flex: 1, padding: '0 4px' }}>
+                          <span className="skeleton-bone" style={{ width: `${58 - i * 6}%`, height: '14px', marginBottom: '6px' }} />
+                          <span className="skeleton-bone" style={{ width: '40%', height: '11px' }} />
+                        </div>
+                        <span className="skeleton-bone" style={{ width: '56px', height: '18px', borderRadius: '4px' }} />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+                <section className="work-panel snapshot-panel">
+                  <div className="work-panel-heading">
+                    <div><p className="section-eyebrow">ACTIVITY</p><h2>Platform snapshot</h2></div>
+                  </div>
+                  <div className="snapshot-line"><span>Applications recorded</span><span className="skeleton-bone" style={{ width: '38px', height: '18px' }} /></div>
+                  <div className="snapshot-line"><span>Closed listings</span><span className="skeleton-bone" style={{ width: '38px', height: '18px' }} /></div>
+                  <div className="snapshot-line"><span>Rejected or suspended employers</span><span className="skeleton-bone" style={{ width: '38px', height: '18px' }} /></div>
+                </section>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'employers' && (
+            <div className="company-cards-grid" aria-busy="true">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="company-card skeleton-card">
+                  <div className="company-card-header">
+                    <div style={{ flex: 1 }}>
+                      <span className="skeleton-bone" style={{ width: `${58 - (i % 2) * 12}%`, height: '20px', marginBottom: '10px' }} />
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <span className="skeleton-bone" style={{ width: '80px', height: '20px', borderRadius: '4px' }} />
+                        <span className="skeleton-bone" style={{ width: '100px', height: '20px', borderRadius: '4px' }} />
+                      </div>
+                    </div>
+                    <span className="skeleton-bone" style={{ width: '74px', height: '22px', borderRadius: '4px' }} />
+                  </div>
+                  <div className="company-details-grid">
+                    <div className="detail-item">
+                      <span className="skeleton-bone" style={{ width: '90px', height: '10px', marginBottom: '8px' }} />
+                      <span className="skeleton-bone" style={{ width: '130px', height: '15px' }} />
+                    </div>
+                    <div className="detail-item">
+                      <span className="skeleton-bone" style={{ width: '95px', height: '10px', marginBottom: '8px' }} />
+                      <span className="skeleton-bone" style={{ width: '115px', height: '15px' }} />
+                    </div>
+                    <div className="detail-item full-width">
+                      <span className="skeleton-bone" style={{ width: '60px', height: '10px', marginBottom: '8px' }} />
+                      <span className="skeleton-bone" style={{ width: '85%', height: '15px' }} />
+                    </div>
+                  </div>
+                  <div className="company-card-actions" style={{ display: 'flex', gap: '8px', paddingTop: '12px', borderTop: '1px solid #f0f3f6' }}>
+                    <span className="skeleton-bone" style={{ width: '120px', height: '36px', borderRadius: '6px' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {activeTab === 'plans' && (
+            <div className="plans-cards-grid" aria-busy="true">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="plan-pricing-card skeleton-card">
+                  <div className="plan-card-top">
+                    <span className="skeleton-bone" style={{ width: '80px', height: '18px', borderRadius: '4px', marginBottom: '8px' }} />
+                    <span className="skeleton-bone" style={{ width: '60%', height: '22px', marginBottom: '6px' }} />
+                    <span className="skeleton-bone" style={{ width: '40%', height: '14px' }} />
+                  </div>
+                  <div className="plan-card-form">
+                    <span className="skeleton-bone" style={{ width: '100%', height: '58px', borderRadius: '6px' }} />
+                    <span className="skeleton-bone" style={{ width: '100%', height: '58px', borderRadius: '6px' }} />
+                    <span className="skeleton-bone" style={{ width: '100%', height: '80px', borderRadius: '6px' }} />
+                  </div>
+                  <div className="plan-card-actions">
+                    <span className="skeleton-bone" style={{ width: '100%', height: '42px', borderRadius: '6px' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {activeTab !== 'overview' && activeTab !== 'employers' && activeTab !== 'plans' && (
+            <div className="jobs-table-container" aria-busy="true">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Item</th><th>Category / Detail</th><th>Status</th><th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <tr key={i} className="skeleton-table-row">
+                      <td>
+                        <span className="skeleton-bone" style={{ width: `${60 - (i % 3) * 10}%`, height: '15px', marginBottom: '6px' }} />
+                        <span className="skeleton-bone" style={{ width: '40%', height: '12px' }} />
+                      </td>
+                      <td><span className="skeleton-bone" style={{ width: '50%', height: '14px' }} /></td>
+                      <td><span className="skeleton-bone" style={{ width: '48px', height: '22px', borderRadius: '4px' }} /></td>
+                      <td><span className="skeleton-bone" style={{ width: '80px', height: '30px', borderRadius: '6px' }} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
 }

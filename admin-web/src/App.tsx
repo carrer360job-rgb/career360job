@@ -6,7 +6,7 @@ import EmployersPanel from './EmployersPanel';
 import JobsPanel from './JobsPanel';
 import PlansPanel from './PlansPanel';
 import OperationsPanels from './OperationsPanels';
-import AdminDashboard from './AdminDashboard';
+import AdminDashboard, { AdminDashboardSkeleton } from './AdminDashboard';
 
 type View =
   | { kind: 'configuration' }
@@ -16,11 +16,11 @@ type View =
   | { kind: 'denied' }
   | { kind: 'unavailable' };
 
-type ActiveTab = 'overview' | 'users' | 'employers' | 'jobs' | 'plans' | 'payments' | 'content' | 'reports';
+type ActiveTab = 'overview' | 'users' | 'employers' | 'jobs' | 'plans' | 'payments' | 'reports';
 
-function Brand({ light = false }: { light?: boolean }) {
+function Brand() {
   return (
-    <div className={`brand${light ? ' brand-light' : ''}`}>
+    <div className="brand">
       <img src="/career360-icon.png" alt="Career360" className="brand-logo-img" />
       <span>Career<span className="brand-number">360</span><span className="brand-admin">Operations</span></span>
     </div>
@@ -29,7 +29,21 @@ function Brand({ light = false }: { light?: boolean }) {
 
 export default function App() {
   const [view, setView] = useState<View>({ kind: 'checking' });
-  const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    try {
+      const saved = sessionStorage.getItem('career360_admin_active_tab') as ActiveTab | null;
+      if (saved && ['overview', 'employers', 'jobs', 'users', 'plans', 'payments', 'reports'].includes(saved)) {
+        return saved;
+      }
+    } catch { /* ignore */ }
+    return 'overview';
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('career360_admin_active_tab', activeTab);
+    } catch { /* ignore */ }
+  }, [activeTab]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -157,21 +171,24 @@ export default function App() {
           {activeTab === 'employers' && <EmployersPanel />}
           {activeTab === 'jobs' && <JobsPanel />}
           {activeTab === 'plans' && <PlansPanel />}
-          {['users', 'payments', 'content', 'reports'].includes(activeTab) && (
-            <OperationsPanels kind={activeTab as 'users' | 'payments' | 'content' | 'reports'} />
+          {['users', 'payments', 'reports'].includes(activeTab) && (
+            <OperationsPanels key={activeTab} kind={activeTab as 'users' | 'payments' | 'reports'} />
           )}
       </AdminDashboard>
     );
   }
 
   if (view.kind === 'checking') {
-    return (
-      <div className="auth-splash">
-        <Brand />
-        <div className="spinner" />
-        <p>Verifying credentials…</p>
-      </div>
-    );
+    if (window.location.pathname === '/login') {
+      return (
+        <div className="auth-splash">
+          <Brand />
+          <div className="spinner" />
+          <p>Verifying session...</p>
+        </div>
+      );
+    }
+    return <AdminDashboardSkeleton activeTab={activeTab} />;
   }
 
   if (view.kind === 'denied') {
@@ -262,7 +279,7 @@ export default function App() {
             {formError && <p className="form-error-banner" role="alert">{formError}</p>}
 
             <button className="sign-in-btn" type="submit" disabled={submitting}>
-              {submitting ? 'Signing in…' : 'Sign in'}
+              {submitting ? 'Signing in...' : 'Sign in'}
             </button>
           </form>
 

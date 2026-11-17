@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 import '../../core/services/employer_api_service.dart';
@@ -174,11 +174,13 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                plan['gstDisplay'] ?? '',
-                style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-              ),
+              if (plan['gstDisplay'] != null && (plan['gstDisplay'] as String).trim().isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  plan['gstDisplay'],
+                  style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                ),
+              ],
               const Divider(height: 24),
               ...features.map((f) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
@@ -211,68 +213,6 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
     );
   }
 
-  void _showCompareModal(List<Map<String, dynamic>> plans) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.85,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (_, scrollCtrl) => SafeArea(
-          child: ListView(
-            controller: scrollCtrl,
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Available plans',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Plan prices, GST treatment and access limits are set by Career360 and shown from the live catalog.',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
-              ),
-              const SizedBox(height: 18),
-              ...plans.map((plan) => ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text('${plan['name'] ?? 'Hiring plan'} Â· ${plan['priceDisplay'] ?? ''}',
-                  style: const TextStyle(fontWeight: FontWeight.w800)),
-                subtitle: Text('${plan['jobCredits'] ?? 0} job posts Â· ${plan['listingDays'] ?? 0} days each Â· '
-                    '${plan['locationsCovered'] ?? 'One district'} Â· ${plan['profileUnlockLimit'] ?? 0} applicant profile unlocks\n'
-                    '${plan['gstDisplay'] ?? ''}'),
-                isThreeLine: true,
-              )),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Got it'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -282,33 +222,6 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
           'Choose your plan',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
         ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: FutureBuilder<Map<String, dynamic>>(
-              future: _planRequest,
-              builder: (context, snapshot) {
-                final plansRaw = snapshot.data?['plans'];
-                final List<Map<String, dynamic>> plans = plansRaw is List
-                    ? plansRaw.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList()
-                    : [];
-                return TextButton(
-                  onPressed: plans.isEmpty ? null : () => _showCompareModal(plans),
-                  style: TextButton.styleFrom(
-                    backgroundColor: const Color(0xFFDC2626), // Nithra Red button
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  ),
-                  child: const Text(
-                    'Compare plan',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
       ),
       body: FutureBuilder<Map<String, dynamic>>(
         future: _planRequest,
@@ -458,15 +371,17 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
                                   color: Color(0xFF0F172A),
                                 ),
                               ),
-                              const SizedBox(height: 3),
-                              Text(
-                                '${plan['gstDisplay']}',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  color: Color(0xFF64748B),
-                                  fontWeight: FontWeight.w500,
+                              if (plan['gstDisplay'] != null && (plan['gstDisplay'] as String).trim().isNotEmpty) ...[
+                                const SizedBox(height: 3),
+                                Text(
+                                  '${plan['gstDisplay']}',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: Color(0xFF64748B),
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
-                              ),
+                              ],
                               const SizedBox(height: 18),
 
                               // Tree Specification breakdown (matching Nithra design)
@@ -515,7 +430,7 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
                                       ),
                                       child: Text(
                                         _busy
-                                            ? 'Processingâ€¦'
+                                            ? 'Processing...'
                                             : isCurrent
                                                 ? 'Current plan'
                                             : paidTermActive

@@ -17,3 +17,21 @@ test('plan drafts reject invalid pricing and benefits', () => {
   assert.throws(() => validatePlanDraft({ ...initialPlanDrafts[0], reach: 'statewide' }), /Statewide/);
   assert.throws(() => validatePlanDraft({ ...initialPlanDrafts[0], taxRateBps: 6000 }), /GST rate/);
 });
+
+test('No GST (0% taxRateBps) produces empty gstDisplay and zero taxPaise', () => {
+  const noGstDraft = validatePlanDraft({ ...initialPlanDrafts[0], taxRateBps: 0, pricePaise: 250000 });
+  const breakdown = priceBreakdown(noGstDraft);
+  assert.equal(breakdown.taxPaise, 0);
+  assert.equal(breakdown.basePaise, 250000);
+  assert.equal(breakdown.totalPaise, 250000);
+
+  const published = publicPlan('standard_15', 4, noGstDraft);
+  assert.equal(published.gstDisplay, '');
+  assert.equal(published.amountPaise, 250000);
+});
+
+test('Custom manual GST rates format correctly in gstDisplay', () => {
+  const customGstDraft = validatePlanDraft({ ...initialPlanDrafts[0], taxRateBps: 1850, pricePaise: 200000, taxMode: 'exclusive' });
+  const published = publicPlan('standard_15', 5, customGstDraft);
+  assert.match(published.gstDisplay, /18\.5%/);
+});

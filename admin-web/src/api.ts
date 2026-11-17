@@ -160,14 +160,6 @@ export const refundPayment = (token: string, orderId: string, reason: string) =>
 export const reconcilePaymentRefund = (token: string, orderId: string) =>
   adminRequest<{ status: string }>(token, `/payments/${encodeURIComponent(orderId)}/reconcile`, 'POST');
 
-export type ContentItem = { id: string; kind: 'category' | 'announcement';
-  title: string; content: string; active: boolean; sortOrder: number; createdAt?: string | null; updatedAt?: string | null };
-export const listContent = (token: string) => adminRequest<{ items: ContentItem[] }>(token, '/content');
-export const saveContent = (token: string, item: Partial<ContentItem>, id?: string) =>
-  adminRequest<ContentItem>(token, id ? `/content/${encodeURIComponent(id)}` : '/content', id ? 'PUT' : 'POST', item);
-export const deleteContent = (token: string, id: string) =>
-  adminRequest<{ status: string }>(token, `/content/${encodeURIComponent(id)}`, 'DELETE');
-
 export type JobReport = { id: string; jobId: string; jobTitle: string; companyName: string;
   candidateUid: string; reason: string; details: string; status: string; createdAt: string | null };
 export type ReportSummary = { candidates: number; employers: number; jobs: number; applications: number; paidOrders: number };

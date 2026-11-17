@@ -19,10 +19,6 @@ select:focus-visible, textarea:focus-visible { outline: 3px solid #93c5fd; outli
 .brand img { display: block; object-fit: contain; }
 .brand-number { color: #155eef; }
 .brand-admin { display: inline-block; margin-left: 12px; padding-left: 12px; border-left: 1px solid #cbd5e1; color: #64748b; font-size: 13px; font-weight: 650; letter-spacing: .01em; vertical-align: 2px; }
-.brand-light { color: #fff; }
-.brand-light .brand-logo-circle { background: #2563eb; color: #fff; }
-.brand-light .brand-number { color: #8bc3ff; }
-.brand-light .brand-admin { border-color: #6084b3; color: #cbdcf4; }
 
 /* Staff sign in */
 .login-page-wrapper {

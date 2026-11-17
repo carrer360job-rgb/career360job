@@ -100,9 +100,11 @@ export function publicPlan(id, version, plan) {
   return {
     id, version, ...plan, ...price, amountPaise: price.totalPaise, currency: 'INR',
     priceDisplay: rupees(price.totalPaise),
-    gstDisplay: plan.taxMode === 'inclusive'
-      ? `Includes ${rupees(price.taxPaise)} GST (${plan.taxRateBps / 100}%)`
-      : `${rupees(price.basePaise)} + ${rupees(price.taxPaise)} GST (${plan.taxRateBps / 100}%)`,
+    gstDisplay: plan.taxRateBps === 0
+      ? ''
+      : plan.taxMode === 'inclusive'
+        ? `Includes ${rupees(price.taxPaise)} GST (${plan.taxRateBps / 100}%)`
+        : `${rupees(price.basePaise)} + ${rupees(price.taxPaise)} GST (${plan.taxRateBps / 100}%)`,
     locationsCovered: plan.reach === 'statewide' ? 'Tamil Nadu' : 'One district',
   };
 }

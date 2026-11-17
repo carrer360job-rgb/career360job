@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { listEmployers, reviewEmployer, type EmployerRecord } from './api';
 import { auth } from './supabase';
 
@@ -7,6 +7,9 @@ export default function EmployersPanel() {
   const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const requestId = useRef(0);
   const [busyUid, setBusyUid] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -14,19 +17,20 @@ export default function EmployersPanel() {
   const [suspendReason, setSuspendReason] = useState('');
   const [nextCursor, setNextCursor] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (!auth?.currentUser) return;
+  const load = useCallback(async (background = false) => {
+    const currentRequest = ++requestId.current;
     try {
-      setLoading(true);
+      if (background) setRefreshing(true); else { setRefreshing(false); setLoading(true); }
       const token = await auth.currentUser.getIdToken();
       const res = await listEmployers(token, statusFilter, search);
+      if (currentRequest !== requestId.current) return;
       setEmployers(res.employers);
       setNextCursor(res.nextCursor);
       setError('');
     } catch (err) {
-      setError((err as Error).message);
+      if (currentRequest === requestId.current) setError((err as Error).message);
     } finally {
-      setLoading(false);
+      if (currentRequest === requestId.current) { setLoading(false); setRefreshing(false); }
     }
   }, [statusFilter, search]);
 
@@ -34,7 +38,7 @@ export default function EmployersPanel() {
     const timer = setTimeout(() => {
       void load();
     }, 200);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); ++requestId.current; };
   }, [load]);
 
   const handleModeration = async (uid: string, decision: 'approved' | 'rejected', notes?: string) => {
@@ -51,7 +55,7 @@ export default function EmployersPanel() {
         : previousStatus === 'pending' ? 'Application rejected.' : 'Company suspended.');
       setSuspendingUid(null);
       setSuspendReason('');
-      await load();
+      await load(true);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -66,6 +70,7 @@ export default function EmployersPanel() {
 
       {/* Filter and Search Bar */}
       <div className="panel-controls">
+        <button type="button" className="text-button panel-refresh" disabled={loading || loadingMore || refreshing} onClick={() => void load(true)}>{refreshing ? 'Refreshing…' : 'Refresh'}</button>
         <div className="filter-tabs">
           {(['pending', 'approved', 'rejected', 'all'] as const).map((filter) => (
             <button
@@ -82,7 +87,7 @@ export default function EmployersPanel() {
           <input
             aria-label="Search companies"
             type="text"
-            placeholder="Search company, phone, contact or districtâ€¦"
+            placeholder="Search company, phone, contact or district..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -93,10 +98,53 @@ export default function EmployersPanel() {
       </div>
 
       {loading ? (
-        <div className="panel-loading">Loading company directoryâ€¦</div>
+        <div className="company-cards-grid" aria-busy="true" aria-label="Loading company directory">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="company-card skeleton-card">
+              <div className="company-card-header">
+                <div style={{ flex: 1 }}>
+                  <span className="skeleton-bone" style={{ width: `${58 - (i % 2) * 12}%`, height: '20px', marginBottom: '10px' }} />
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <span className="skeleton-bone" style={{ width: '80px', height: '20px', borderRadius: '4px' }} />
+                    <span className="skeleton-bone" style={{ width: '100px', height: '20px', borderRadius: '4px' }} />
+                  </div>
+                </div>
+                <span className="skeleton-bone" style={{ width: '74px', height: '22px', borderRadius: '4px' }} />
+              </div>
+
+              <div className="company-details-grid">
+                <div className="detail-item">
+                  <span className="skeleton-bone" style={{ width: '90px', height: '10px', marginBottom: '8px' }} />
+                  <span className="skeleton-bone" style={{ width: '130px', height: '15px' }} />
+                </div>
+                <div className="detail-item">
+                  <span className="skeleton-bone" style={{ width: '95px', height: '10px', marginBottom: '8px' }} />
+                  <span className="skeleton-bone" style={{ width: '115px', height: '15px' }} />
+                </div>
+                <div className="detail-item">
+                  <span className="skeleton-bone" style={{ width: '80px', height: '10px', marginBottom: '8px' }} />
+                  <span className="skeleton-bone" style={{ width: '150px', height: '15px' }} />
+                </div>
+                <div className="detail-item">
+                  <span className="skeleton-bone" style={{ width: '110px', height: '10px', marginBottom: '8px' }} />
+                  <span className="skeleton-bone" style={{ width: '100px', height: '15px' }} />
+                </div>
+                <div className="detail-item full-width">
+                  <span className="skeleton-bone" style={{ width: '60px', height: '10px', marginBottom: '8px' }} />
+                  <span className="skeleton-bone" style={{ width: '85%', height: '15px' }} />
+                </div>
+              </div>
+
+              <div className="company-card-actions" style={{ display: 'flex', gap: '8px', paddingTop: '12px', borderTop: '1px solid #f0f3f6' }}>
+                <span className="skeleton-bone" style={{ width: '120px', height: '36px', borderRadius: '6px' }} />
+                <span className="skeleton-bone" style={{ width: '100px', height: '36px', borderRadius: '6px' }} />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : employers.length === 0 ? (
         <div className="empty-panel">
-          <p>No companies found in this section.</p>
+          <p>{error ? "Companies could not be loaded. Use Refresh to try again." : "No companies found in this section."}</p>
         </div>
       ) : (
         <div className="company-cards-grid">
@@ -112,10 +160,10 @@ export default function EmployersPanel() {
                   </div>
                   <span className={`status-pill pill-${emp.status}`}>
                     {emp.status === 'approved'
-                      ? 'âœ” Active'
+                      ? '✓ Active'
                       : emp.status === 'rejected'
-                      ? 'âœ– Suspended'
-                      : 'â³ Pending'}
+                      ? '✕ Suspended'
+                      : '⏳ Pending'}
                   </span>
                 </div>
 
@@ -129,7 +177,7 @@ export default function EmployersPanel() {
                     <span className="detail-value">
                       <a href={`tel:${emp.phone}`}>{emp.phone}</a>
                       {emp.whatsappPhone && emp.whatsappPhone !== emp.phone && (
-                        <span> Â· WA: <a href={`https://wa.me/91${emp.whatsappPhone}`} target="_blank" rel="noreferrer">{emp.whatsappPhone}</a></span>
+                        <span> · WA: <a href={`https://wa.me/91${emp.whatsappPhone}`} target="_blank" rel="noreferrer">{emp.whatsappPhone}</a></span>
                       )}
                     </span>
                   </div>
@@ -198,7 +246,7 @@ export default function EmployersPanel() {
                           disabled={isBusy}
                           onClick={() => setSuspendingUid(emp.uid)}
                         >
-                          âœ– Suspend Company
+                          ✕ Suspend Company
                         </button>
                       ) : (
                         <button
@@ -223,16 +271,18 @@ export default function EmployersPanel() {
         </div>
       )}
       {!loading && nextCursor && (
-        <div className="pagination-row"><button className="text-button" onClick={async () => {
+        <div className="pagination-row"><button className="text-button" disabled={loadingMore} onClick={async () => {
           if (!auth?.currentUser || !nextCursor) return;
+          const currentRequest = requestId.current;
           try {
-            setLoading(true);
+            setLoadingMore(true);
             const result = await listEmployers(await auth.currentUser.getIdToken(), statusFilter, search, nextCursor);
+            if (currentRequest !== requestId.current) return;
             setEmployers((current) => [...current, ...result.employers]);
             setNextCursor(result.nextCursor);
-          } catch (err) { setError((err as Error).message); }
-          finally { setLoading(false); }
-        }}>Load more companies</button></div>
+          } catch (err) { if (currentRequest === requestId.current) setError((err as Error).message); }
+          finally { setLoadingMore(false); }
+        }}>{loadingMore ? 'Loading more…' : 'Load more companies'}</button></div>
       )}
     </div>
   );
