@@ -28,7 +28,7 @@ The Android Firebase configuration is `frontend/android/app/google-services.json
 
 ## Backend
 
-The backend handles employer hiring actions, Razorpay payment verification, candidate profile photos, and protected admin operations. Configure `backend/.env` from `backend/.env.example`, then run:
+The backend handles employer hiring actions, Razorpay payment verification, and protected admin operations. Configure `backend/.env` from `backend/.env.example`, then run:
 
 ```powershell
 cd backend
@@ -38,7 +38,7 @@ npm run dev
 
 The custom backend OTP flow has been removed from the API. Email/password sign-up and email-code verification use Supabase Auth. Candidate Google sign-in uses Supabase OAuth's browser flow on Android. Configure the project email settings as described in [`docs/EMAIL_OTP_SETUP.md`](docs/EMAIL_OTP_SETUP.md).
 
-Candidate profile photos use Cloudinary; see [`docs/PROFILE_PHOTO_SETUP.md`](docs/PROFILE_PHOTO_SETUP.md). Run Flutter with `--dart-define=API_BASE_URL=https://YOUR_BACKEND` when using a different backend URL.
+Candidate profile photos use Supabase Storage; see [`docs/PROFILE_PHOTO_SETUP.md`](docs/PROFILE_PHOTO_SETUP.md). Run Flutter with `--dart-define=API_BASE_URL=https://YOUR_BACKEND` when using a different backend URL.
 
 The employer registration, company approval, posting plan, Razorpay webhook, and USB preview steps are in [`docs/EMPLOYER_SETUP.md`](docs/EMPLOYER_SETUP.md).
 

@@ -2353,28 +2353,37 @@ class _CandidateOnboardingWizardScreenState
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           // Previous Step button
-          TextButton(
-            onPressed: _onPreviousStep,
-            style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFF64748B),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.arrow_back_ios_new_rounded, size: 14),
-                const SizedBox(width: 6),
-                Text(
-                  _currentStep == 1
-                      ? 'Back to Login'
-                      : _currentStep == 2
-                      ? 'Personal Info'
-                      : _currentStep == 3
-                      ? 'Education'
-                      : 'Job Titles',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+          Expanded(
+            child: TextButton(
+              onPressed: _onPreviousStep,
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF64748B),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
                 ),
-              ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.arrow_back_ios_new_rounded, size: 14),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      _currentStep == 1
+                          ? 'Back to Login'
+                          : _currentStep == 2
+                          ? 'Personal Info'
+                          : _currentStep == 3
+                          ? 'Education'
+                          : 'Job Titles',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
 

@@ -644,13 +644,15 @@ class _EmployerSessionGateState extends State<EmployerSessionGate> {
   }
 }
 
-class CandidateSessionGate extends StatelessWidget {
+class CandidateSessionGate extends StatefulWidget {
   final dynamic user;
   final Future<void> Function() onBackToLogin;
   final ValueChanged<AppUserRole> onRoleChanged;
   final VoidCallback onSwitchRoleRequested;
   final VoidCallback onSignOutRequested;
   final Future<void> Function() onRetry;
+  final Stream<Map<String, dynamic>?> Function(String uid)?
+  profileStreamFactory;
 
   const CandidateSessionGate({
     super.key,
@@ -660,23 +662,50 @@ class CandidateSessionGate extends StatelessWidget {
     required this.onSwitchRoleRequested,
     required this.onSignOutRequested,
     required this.onRetry,
+    this.profileStreamFactory,
   });
 
   @override
+  State<CandidateSessionGate> createState() => _CandidateSessionGateState();
+}
+
+class _CandidateSessionGateState extends State<CandidateSessionGate> {
+  late Stream<Map<String, dynamic>?> _profileStream;
+
+  Stream<Map<String, dynamic>?> _createProfileStream() =>
+      widget.profileStreamFactory?.call(widget.user.uid) ??
+      SupabaseService().streamCandidateProfile(widget.user.uid);
+
+  @override
+  void initState() {
+    super.initState();
+    _profileStream = _createProfileStream();
+  }
+
+  @override
+  void didUpdateWidget(CandidateSessionGate oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.user.uid != widget.user.uid ||
+        oldWidget.profileStreamFactory != widget.profileStreamFactory) {
+      _profileStream = _createProfileStream();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (user.emailVerified != true) {
-      return EmailVerificationRequiredScreen(user: user);
+    if (widget.user.emailVerified != true) {
+      return EmailVerificationRequiredScreen(user: widget.user);
     }
 
     return StreamBuilder<Map<String, dynamic>?>(
-      stream: SupabaseService().streamCandidateProfile(user.uid),
+      stream: _profileStream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           debugPrint('[Candidate profile stream] ${snapshot.error}');
           return AuthStateLoadFailure(
             error: snapshot.error,
-            onRetry: onRetry,
-            onSignOut: () async => onSignOutRequested(),
+            onRetry: widget.onRetry,
+            onSignOut: () async => widget.onSignOutRequested(),
           );
         }
         if (snapshot.connectionState == ConnectionState.waiting &&
@@ -688,19 +717,19 @@ class CandidateSessionGate extends StatelessWidget {
         final onboardingComplete = profile?['onboarding_completed_at'] != null;
         if (!onboardingComplete) {
           return CandidateOnboardingWizardScreen(
-            key: ValueKey('candidate_onboarding_${user.uid}'),
-            onFinish: () => unawaited(onRetry()),
-            onBackToLogin: () => unawaited(onBackToLogin()),
+            key: ValueKey('candidate_onboarding_${widget.user.uid}'),
+            onFinish: () => unawaited(widget.onRetry()),
+            onBackToLogin: () => unawaited(widget.onBackToLogin()),
             initialProfile: profile,
           );
         }
 
         return MainShellScreen(
-          key: ValueKey('main_shell_${user.uid}'),
+          key: ValueKey('main_shell_${widget.user.uid}'),
           currentRole: AppUserRole.candidate,
-          onRoleChanged: onRoleChanged,
-          onSwitchRoleRequested: onSwitchRoleRequested,
-          onSignOutRequested: onSignOutRequested,
+          onRoleChanged: widget.onRoleChanged,
+          onSwitchRoleRequested: widget.onSwitchRoleRequested,
+          onSignOutRequested: widget.onSignOutRequested,
         );
       },
     );
@@ -4133,7 +4162,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
   Future<void> _showPhotoActions(Map<String, dynamic> profile) async {
     final hasCustomPhoto = _profileString(
       profile,
-      'profilePhotoPublicId',
+      'profilePhotoUrl',
     ).isNotEmpty;
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -4242,11 +4271,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
     if (confirmed != true || !mounted) return;
     setState(() => _isUploadingPhoto = true);
     try {
-      await _candidatePhotoService.upload(
-        uid: _currentUid,
-        bytes: bytes,
-        fileName: file.name,
-      );
+      await _candidatePhotoService.upload(uid: _currentUid, bytes: bytes);
       _showProfileMessage('Profile photo updated.');
     } catch (error) {
       _showProfileMessage(

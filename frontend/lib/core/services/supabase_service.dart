@@ -184,14 +184,20 @@ class SupabaseService {
       throw Exception('Profile photo must be 3 MB or less.');
     }
     final path = '$userId/avatar.$fileExtension';
+    final contentType = switch (fileExtension) {
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      _ => 'image/jpeg',
+    };
     await client.storage
         .from('profile-photos')
         .uploadBinary(
           path,
           bytes,
-          fileOptions: const FileOptions(upsert: true),
+          fileOptions: FileOptions(upsert: true, contentType: contentType),
         );
-    return client.storage.from('profile-photos').getPublicUrl(path);
+    final url = client.storage.from('profile-photos').getPublicUrl(path);
+    return '$url?v=${DateTime.now().microsecondsSinceEpoch}';
   }
 
   // ---------------------------------------------------------------------------
@@ -593,7 +599,6 @@ class SupabaseService {
     return streamCandidateProfile(uid)
         .map((p) => p?['profile_photo_url'] as String?);
   }
-
 }
 
 extension _StreamStartWith<T> on Stream<T> {

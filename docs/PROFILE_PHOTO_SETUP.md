@@ -1,9 +1,7 @@
 # Candidate profile photo
 
-Candidates can add, replace, and remove a profile photo from the camera icon on their profile avatar. Supported files are JPG, PNG, and WebP up to 3 MB. The Android app sends the image directly to Cloudinary using a signature from the authenticated backend; the backend records `profilePhotoPublicId`, `profilePhotoUrl`, and `profilePhotoUpdatedAt` in `candidates/{uid}`.
+Candidates can add, replace, and remove a JPG, PNG, or WebP profile photo up to 3 MB from the camera icon on their profile. The Flutter app uploads to the public Supabase Storage `profile-photos` bucket under the signed-in user's ID, then stores the public URL in `public.candidate_profiles.profile_photo_url`.
 
-Profile photos use Cloudinary's public image delivery so they can be displayed as a candidate avatar. Anyone with a photo URL can view that image, and any verified app account with a known candidate UID can fetch that photo URL. Do not upload a sensitive document as a profile photo.
+Apply [`backend/sql/candidate_profile_photo_storage.sql`](../backend/sql/candidate_profile_photo_storage.sql) to grant each authenticated candidate upload, replace, and delete access only within their own folder. The bucket must remain public for avatar URLs to display. Anyone with a photo URL can view it; do not upload sensitive documents as a profile photo.
 
-Configure the backend `FIREBASE_SERVICE_ACCOUNT` (or separate Firebase Admin variables) and `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` in its environment. Redeploy the backend, then publish the updated [Firestore rules](../firestore.rules); client apps cannot alter photo metadata directly.
-
-An uploaded photo is shown on the candidate profile immediately after Firestore updates. The backend also publishes only the photo URL to `candidate_public_profiles/{uid}`. Verified employers viewing an applicant can see the current photo; changing or removing it updates that view. No phone number or other private candidate fields are copied into this public photo document.
+The app reports success only after Storage accepts the image and the profile URL is saved. Replacing an image adds a version to the displayed URL to refresh caches. Removing an image deletes the stored object and clears the profile URL. Existing attempts made before this fix must be uploaded again: those attempts returned a URL despite the upload failing.
