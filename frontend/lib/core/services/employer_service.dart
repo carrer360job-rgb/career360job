@@ -9,30 +9,21 @@ import '../../data/models/job_model.dart';
 
 class EmployerService {
   Stream<EmployerProfile?> watchProfile(String uid) async* {
-    try {
-      final row = await SupabaseService.client
-          .from('employers')
-          .select()
-          .eq('user_id', uid)
-          .maybeSingle();
-      if (row != null) {
-        yield EmployerProfile.fromMap(row, uid);
-      }
-    } catch (_) {}
+    final row = await SupabaseService.client
+        .from('employers')
+        .select()
+        .eq('user_id', uid)
+        .maybeSingle();
+    yield row == null ? null : EmployerProfile.fromMap(row, uid);
 
-    try {
-      yield* SupabaseService.client
-          .from('employers')
-          .stream(primaryKey: ['id'])
-          .eq('user_id', uid)
-          .map((rows) {
-            if (rows.isEmpty) return null;
-            return EmployerProfile.fromMap(rows.first, uid);
-          })
-          .handleError((err) {
-            debugPrint('[Employer Realtime Notice] $err');
-          });
-    } catch (_) {}
+    yield* SupabaseService.client
+        .from('employers')
+        .stream(primaryKey: ['id'])
+        .eq('user_id', uid)
+        .map((rows) {
+          if (rows.isEmpty) return null;
+          return EmployerProfile.fromMap(rows.first, uid);
+        });
   }
 
   Future<void> register(Map<String, dynamic> details) async {
@@ -53,19 +44,52 @@ class EmployerService {
       phone: details['phone'] ?? '',
       email: user.email!,
       district: details['district'] ?? 'Chennai',
-      designation: details['designation'],
+      designation: details['designation'] ?? '',
+      industry: details['industry'] ?? '',
+      companySize: details['companySize'] ?? '',
+      description: details['description'] ?? '',
+      whatsappPhone: details['whatsappPhone'] ?? '',
+      whatsappSameAsPhone: details['whatsappSameAsPhone'] == true,
+      website: details['website'] ?? '',
+      address: details['address'] ?? '',
+      state: details['state'] ?? '',
+      postalCode: details['postalCode'] ?? '',
       city: details['city'],
       logoUrl: details['logoUrl'],
     );
   }
 
-  Future<void> updateContact(String uid, Map<String, dynamic> changes) async {
-    try {
-      await SupabaseService.client
-          .from('employers')
-          .update({...changes, 'updated_at': DateTime.now().toIso8601String()})
-          .eq('user_id', uid);
-    } catch (_) {}
+  Future<void> updateProfile(String uid, Map<String, dynamic> changes) async {
+    const columns = {
+      'companyName': 'company_name',
+      'contactName': 'contact_name',
+      'designation': 'designation',
+      'industry': 'industry',
+      'companySize': 'company_size',
+      'description': 'description',
+      'phone': 'phone',
+      'whatsappPhone': 'whatsapp_phone',
+      'whatsappSameAsPhone': 'whatsapp_same_as_phone',
+      'website': 'website',
+      'address': 'address',
+      'state': 'state',
+      'district': 'district',
+      'postalCode': 'postal_code',
+    };
+    final payload = <String, dynamic>{
+      for (final entry in changes.entries)
+        if (columns.containsKey(entry.key)) columns[entry.key]!: entry.value,
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+    final updated = await SupabaseService.client
+        .from('employers')
+        .update(payload)
+        .eq('user_id', uid)
+        .select('id')
+        .maybeSingle();
+    if (updated == null) {
+      throw StateError('Company details could not be updated. Try again.');
+    }
   }
 
   Stream<List<JobModel>> watchJobs(String uid) {

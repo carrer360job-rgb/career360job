@@ -20,7 +20,7 @@ type ActiveTab = 'overview' | 'users' | 'employers' | 'jobs' | 'plans' | 'paymen
 function Brand({ light = false }: { light?: boolean }) {
   return (
     <div className={`brand${light ? ' brand-light' : ''}`}>
-      <span className="brand-logo-circle">360</span>
+      <img src="/career360-icon.png" alt="Career360" className="brand-logo-img" />
       <span>Career<span className="brand-number">360</span><span className="brand-admin">Operations</span></span>
     </div>
   );
@@ -226,62 +226,72 @@ export default function App() {
   }
 
   return (
-    <div className="login-page">
-      <aside className="login-hero">
-        <Brand light />
-        <div className="hero-text">
-          <p className="eyebrow">SUPER ADMIN ACCESS</p>
-          <h2>A clear space to manage Career360.</h2>
-          <p>Verify employers, grant free starter plans, and oversee direct contact hiring across Tamil Nadu.</p>
-        </div>
-        <p className="hero-footer">Career360 Operations Portal</p>
-      </aside>
-      <main className="login-main">
-        <div className="mobile-brand"><Brand /></div>
+    <div className="login-page-wrapper">
+      <header className="login-top-header">
+        <Brand />
+      </header>
+
+      <main className="login-main-content">
         <section className="login-content" aria-labelledby="login-title">
-          <p className="eyebrow">WELCOME BACK</p>
-          <h1 id="login-title">Sign in to admin</h1>
-          <p className="login-subtitle">Enter your Career360 super admin email and password.</p>
+          <div className="login-heading-block">
+            <h1 id="login-title">Sign in to Operations</h1>
+            <p>Use your Career360 staff account to continue.</p>
+          </div>
 
-          <form className="login-form" onSubmit={(e) => void handleSignIn(e)}>
-            <label className="field-label" htmlFor="admin-email">Email</label>
-            <input
-              id="admin-email"
-              type="email"
-              autoComplete="username"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-
-            <div className="password-header">
-              <label className="field-label" htmlFor="admin-password">Password</label>
-              <button
-                type="button"
-                className="text-button"
-                onClick={() => setShowPassword(!showPassword)}
-              >
-                {showPassword ? 'Hide' : 'Show'}
-              </button>
+          <form className="admin-sign-form" onSubmit={(event) => void handleSignIn(event)} aria-busy={submitting}>
+            <div className="form-field-group">
+              <label className="field-title" htmlFor="admin-email">Email address</label>
+              <input
+                id="admin-email"
+                className="modern-input"
+                type="email"
+                autoComplete="username"
+                required
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
             </div>
-            <input
-              id="admin-password"
-              type={showPassword ? 'text' : 'password'}
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
 
-            {formError && <p className="error-message" role="alert">{formError}</p>}
+            <div className="form-field-group">
+              <label className="field-title" htmlFor="admin-password">Password</label>
+              <div className="input-with-eye">
+                <input
+                  id="admin-password"
+                  className="modern-input"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                />
+                <button
+                  type="button"
+                  className="eye-toggle-btn"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
+                >
+                  {showPassword ? (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+                  ) : (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                  )}
+                </button>
+              </div>
+            </div>
 
-            <button className="primary-button" type="submit" disabled={submitting}>
-              {submitting ? 'Signing in…' : 'Sign in'}
+            {formError && <p className="form-error-banner" role="alert">{formError}</p>}
+
+            <button className="sign-in-btn" type="submit" disabled={submitting}>
+              {submitting ? 'Signing in?' : 'Sign in'}
             </button>
           </form>
-          <p className="login-footer-note">Access is strictly limited to authorized Career360 staff.</p>
+
+          <p className="login-help">Need access or help with your password? Contact your Career360 administrator.</p>
         </section>
       </main>
+
     </div>
+
   );
 }

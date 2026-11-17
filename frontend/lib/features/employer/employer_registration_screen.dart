@@ -3,8 +3,10 @@ import 'package:flutter/services.dart';
 
 import '../../core/responsive/responsive_layout.dart';
 import '../../core/services/employer_service.dart';
+import '../../core/services/app_auth_bridge.dart';
 import '../../core/services/location_service.dart';
 import '../../core/widgets/bouncy_button.dart';
+import '../../data/models/employer_profile.dart';
 
 /// Company Registration — 3-Screen UI/UX Flow
 /// Replicates the exact visual patterns from the Candidate Personal Info screen:
@@ -20,6 +22,9 @@ class EmployerRegistrationScreen extends StatefulWidget {
   final VoidCallback onSubmissionStarted;
   final VoidCallback onSubmissionFailed;
   final VoidCallback onFinished;
+  final EmployerProfile? initialProfile;
+
+  bool get isEditing => initialProfile != null;
 
   const EmployerRegistrationScreen({
     super.key,
@@ -27,6 +32,7 @@ class EmployerRegistrationScreen extends StatefulWidget {
     required this.onSubmissionStarted,
     required this.onSubmissionFailed,
     required this.onFinished,
+    this.initialProfile,
   });
 
   @override
@@ -122,6 +128,28 @@ class _EmployerRegistrationScreenState
   @override
   void initState() {
     super.initState();
+    final profile = widget.initialProfile;
+    if (profile == null) {
+      _emailController.text = AppAuthBridge.currentUser?.email ?? '';
+    } else {
+      _fullNameController.text = profile.contactName;
+      _designationController.text = profile.designation;
+      _emailController.text = profile.email;
+      _phoneController.text = profile.phone;
+      _sameAsCallingNumber = profile.whatsappSameAsPhone;
+      _whatsappPhoneController.text = _sameAsCallingNumber
+          ? profile.phone
+          : profile.whatsappPhone;
+      _companyNameController.text = profile.companyName;
+      _industryController.text = profile.industry;
+      _companySizeController.text = profile.companySize;
+      _descriptionController.text = profile.description;
+      _websiteController.text = profile.website;
+      _addressController.text = profile.address;
+      _stateController.text = profile.state;
+      _districtController.text = profile.district;
+      _pincodeController.text = profile.postalCode;
+    }
 
     _phoneController.addListener(() {
       if (_sameAsCallingNumber) {
@@ -246,7 +274,7 @@ class _EmployerRegistrationScreenState
           ? phone
           : _whatsappPhoneController.text.trim();
 
-      await _service.register({
+      final details = <String, dynamic>{
         'contactName': _fullNameController.text.trim(),
         'designation': _designationController.text.trim(),
         'companyName': _companyNameController.text.trim(),
@@ -258,18 +286,25 @@ class _EmployerRegistrationScreenState
         'whatsappSameAsPhone': _sameAsCallingNumber,
         'website': _websiteController.text.trim(),
         'address': _addressController.text.trim(),
-        'city': '',
         'state': _stateController.text.trim(),
         'district': _districtController.text.trim(),
         'postalCode': _pincodeController.text.trim(),
-        'registrationNumber': '',
-      });
+      };
+      if (widget.initialProfile case final profile?) {
+        await _service.updateProfile(profile.uid, details);
+      } else {
+        await _service.register(details);
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             backgroundColor: _successGreen,
             behavior: SnackBarBehavior.floating,
-            content: Text('Company details submitted for review.'),
+            content: Text(
+              widget.isEditing
+                  ? 'Company profile updated.'
+                  : 'Company details submitted for review.',
+            ),
           ),
         );
         widget.onFinished();
@@ -281,7 +316,7 @@ class _EmployerRegistrationScreenState
           SnackBar(
             backgroundColor: _errorRed,
             content: Text(
-              'Could not complete registration: ${error.toString().replaceFirst('Bad state: ', '')}',
+              '${widget.isEditing ? 'Could not save company profile' : 'Could not complete registration'}: ${error.toString().replaceFirst('Bad state: ', '')}',
             ),
           ),
         );
@@ -599,7 +634,9 @@ class _EmployerRegistrationScreenState
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
-          tooltip: _step == 0 ? 'Sign out' : 'Back',
+          tooltip: _step == 0
+              ? (widget.isEditing ? 'Back to company profile' : 'Sign out')
+              : 'Back',
           onPressed: _submitting ? null : _previous,
           icon: const Icon(Icons.arrow_back, color: _textDark),
         ),
@@ -611,18 +648,6 @@ class _EmployerRegistrationScreenState
             color: _textDark,
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: _submitting ? null : widget.onSignOut,
-            child: const Text(
-              'Sign out',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: _textSecondary,
-              ),
-            ),
-          ),
-        ],
       ),
       body: SafeArea(
         child: Center(
@@ -782,12 +807,13 @@ class _EmployerRegistrationScreenState
         const SizedBox(height: 16),
 
         // Email Address*
-        _buildFieldLabel('Email Address*'),
+        _buildFieldLabel('Account Email*'),
         _buildTextInput(
           controller: _emailController,
-          hintText: 'Enter work email address',
+          hintText: 'Your sign-in email address',
           prefixIcon: Icons.mail_outline,
           keyboardType: TextInputType.emailAddress,
+          readOnly: true,
           validator: (v) {
             final val = (v ?? '').trim();
             return val.contains('@') && val.contains('.')
@@ -817,7 +843,9 @@ class _EmployerRegistrationScreenState
         // WhatsApp Contact* (Radio options matching Candidate Screenshot)
         _buildFieldLabel('WhatsApp Contact*'),
         const SizedBox(height: 4),
-        Row(
+        Wrap(
+          spacing: 16,
+          runSpacing: 8,
           children: [
             _buildCustomRadioButton(
               label: 'Same as mobile',
@@ -829,7 +857,6 @@ class _EmployerRegistrationScreenState
                 });
               },
             ),
-            const SizedBox(width: 20),
             _buildCustomRadioButton(
               label: 'Different WhatsApp',
               isSelected: !_sameAsCallingNumber,
@@ -1375,7 +1402,7 @@ class _EmployerRegistrationScreenState
     );
   }
 
-  // --- Bottom Action Bar: "< Back to Role" on left, "Continue →" on right ---
+  // --- Bottom action bar ---
   Widget _buildBottomActionBar() {
     final isStepReady = _isStepValid();
 
@@ -1385,74 +1412,87 @@ class _EmployerRegistrationScreenState
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           // Left side: Back Text Button
-          TextButton.icon(
-            onPressed: _submitting ? null : _previous,
-            icon: const Icon(
-              Icons.chevron_left,
-              color: _textSecondary,
-              size: 20,
-            ),
-            label: Text(
-              _step == 0 ? 'Back to Role' : 'Back',
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
+          Flexible(
+            flex: 1,
+            child: TextButton.icon(
+              onPressed: _submitting ? null : _previous,
+              icon: const Icon(
+                Icons.chevron_left,
                 color: _textSecondary,
+                size: 20,
+              ),
+              label: Text(
+                _step == 0 && !widget.isEditing ? 'Sign out' : 'Back',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: _textSecondary,
+                ),
               ),
             ),
           ),
 
           // Right side: Blue Continue Pill Button
-          BouncyButton(
-            onPressed: (!isStepReady || _submitting) ? null : _next,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 13),
-              decoration: BoxDecoration(
-                color: isStepReady
-                    ? _primaryBlue
-                    : _primaryBlue.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: isStepReady
-                    ? [
-                        BoxShadow(
-                          color: _primaryBlue.withValues(alpha: 0.25),
-                          blurRadius: 8,
-                          offset: const Offset(0, 3),
-                        ),
-                      ]
-                    : null,
-              ),
-              child: _submitting
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _step == 2 ? 'Register Company ✓' : 'Continue',
-                          style: const TextStyle(
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
+          Flexible(
+            flex: 2,
+            child: BouncyButton(
+              onPressed: (!isStepReady || _submitting) ? null : _next,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 13,
+                ),
+                decoration: BoxDecoration(
+                  color: isStepReady
+                      ? _primaryBlue
+                      : _primaryBlue.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: isStepReady
+                      ? [
+                          BoxShadow(
+                            color: _primaryBlue.withValues(alpha: 0.25),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
                           ),
+                        ]
+                      : null,
+                ),
+                child: _submitting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
                         ),
-                        if (_step < 2) ...[
-                          const SizedBox(width: 6),
-                          const Icon(
-                            Icons.arrow_forward,
-                            size: 16,
-                            color: Colors.white,
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _step == 2
+                                ? (widget.isEditing
+                                      ? 'Save changes'
+                                      : 'Register Company ✓')
+                                : 'Continue',
+                            style: const TextStyle(
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
                           ),
+                          if (_step < 2) ...[
+                            const SizedBox(width: 6),
+                            const Icon(
+                              Icons.arrow_forward,
+                              size: 16,
+                              color: Colors.white,
+                            ),
+                          ],
                         ],
-                      ],
-                    ),
+                      ),
+              ),
             ),
           ),
         ],

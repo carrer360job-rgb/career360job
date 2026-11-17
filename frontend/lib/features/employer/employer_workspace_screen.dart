@@ -1,23 +1,32 @@
+import 'dart:async';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../core/services/employer_api_service.dart';
+import '../../core/services/candidate_photo_service.dart';
 import '../../core/services/employer_service.dart';
+import '../../core/services/employer_logo_service.dart';
+import '../../core/services/push_notification_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/models/employer_profile.dart';
 import '../../data/models/job_model.dart';
 import '../notifications/notification_center_screen.dart';
 import 'employer_job_form_screen.dart';
+import 'employer_registration_screen.dart';
 import 'employer_plan_screen.dart';
 
 class EmployerWorkspaceScreen extends StatefulWidget {
   final EmployerProfile profile;
   final VoidCallback onSignOut;
+  final VoidCallback? onProfileUpdated;
 
   const EmployerWorkspaceScreen({
     super.key,
     required this.profile,
     required this.onSignOut,
+    this.onProfileUpdated,
   });
 
   @override
@@ -27,15 +36,22 @@ class EmployerWorkspaceScreen extends StatefulWidget {
 
 class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
   final _service = EmployerService();
+  final _logoService = EmployerLogoService();
   final _api = EmployerApiService();
   late Stream<List<JobModel>> _jobsStream;
   late Stream<List<Map<String, dynamic>>> _applicationsStream;
   Future<Map<String, dynamic>>? _entitlementFuture;
   int _tab = 0;
+  bool _isUploadingLogo = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(PushNotificationService.instance.registerAfterPortalEntry());
+      }
+    });
     _jobsStream = _service.watchJobs(widget.profile.uid);
     _applicationsStream = widget.profile.isApproved
         ? _service.watchApplications(widget.profile.uid)
@@ -325,7 +341,11 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
         const Icon(Icons.campaign_outlined, color: AppTheme.accent, size: 30),
         const SizedBox(height: 12),
         Text(
-          live == 0 ? 'Find your next great hire' : 'Keep your hiring moving',
+          !profile.isApproved
+              ? 'Company details received'
+              : live == 0
+              ? 'Find your next great hire'
+              : 'Keep your hiring moving',
           style: const TextStyle(
             color: Colors.white,
             fontSize: 23,
@@ -334,13 +354,15 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
         ),
         const SizedBox(height: 6),
         Text(
-          live == 0
+          !profile.isApproved
+              ? 'Your details are saved. Review them in the Company tab while your account awaits approval.'
+              : live == 0
               ? 'Publish a job and reach Career360 candidates across Tamil Nadu.'
               : '$live live jobs · $applicants applications',
           style: const TextStyle(color: Color(0xFFCBD5E1), height: 1.35),
         ),
         const SizedBox(height: 17),
-        FilledButton.icon(
+        if (profile.isApproved) FilledButton.icon(
           onPressed: () => _openJobForm(),
           style: FilledButton.styleFrom(
             backgroundColor: Colors.white,
@@ -349,7 +371,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
           icon: const Icon(Icons.add_rounded),
           label: const Text('Post a job'),
         ),
-        if (!profile.hasActiveCredits)
+        if (profile.isApproved && !profile.hasActiveCredits)
           TextButton(
             onPressed: _openPlans,
             style: TextButton.styleFrom(foregroundColor: Colors.white),
@@ -641,73 +663,532 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
     return text.isEmpty ? 'A' : text[0].toUpperCase();
   }
 
+  Future<void> _openCompanyProfileEditor(EmployerProfile profile) async {
+    final updated = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (routeContext) => EmployerRegistrationScreen(
+          initialProfile: profile,
+          onSignOut: () => Navigator.pop(routeContext),
+          onSubmissionStarted: () {},
+          onSubmissionFailed: () {},
+          onFinished: () => Navigator.pop(routeContext, true),
+        ),
+      ),
+    );
+    if (mounted && updated == true) widget.onProfileUpdated?.call();
+  }
+
+  Future<void> _showLogoActions(EmployerProfile profile) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.add_a_photo_outlined, color: AppTheme.primary),
+              title: Text(profile.logoUrl.isEmpty ? 'Add company logo' : 'Change company logo'),
+              subtitle: const Text('JPG, PNG, or WebP · up to 3 MB'),
+              onTap: () => Navigator.pop(sheetContext, 'upload'),
+            ),
+            if (profile.logoUrl.isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: AppTheme.error),
+                title: const Text('Remove company logo'),
+                onTap: () => Navigator.pop(sheetContext, 'remove'),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'upload') {
+      await _pickAndUploadLogo(profile.uid);
+    } else if (action == 'remove') {
+      await _removeLogo(profile.uid);
+    }
+  }
+
+  Future<void> _pickAndUploadLogo(String uid) async {
+    final PlatformFile? file;
+    try {
+      file = await FilePicker.pickFile(
+        type: FileType.custom,
+        allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
+      );
+    } catch (_) {
+      _showCompanyMessage('Could not open the image picker. Try again.');
+      return;
+    }
+    if (file == null || !mounted) return;
+
+    final Uint8List bytes;
+    try {
+      final size = await file.length();
+      if (size == null || size == 0 || size > 3 * 1024 * 1024) {
+        _showCompanyMessage('Choose an image under 3 MB.');
+        return;
+      }
+      bytes = await file.readAsBytes();
+      CandidatePhotoService.imageExtension(bytes);
+    } catch (_) {
+      _showCompanyMessage('Choose a valid JPG, PNG, or WebP image.');
+      return;
+    }
+    if (!mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Use this company logo?'),
+        content: ClipOval(
+          child: Image.memory(
+            bytes,
+            width: 130,
+            height: 130,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) =>
+                const Icon(Icons.broken_image_outlined, size: 80),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Upload logo'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isUploadingLogo = true);
+    try {
+      await _logoService.upload(uid: uid, bytes: bytes);
+      if (mounted) {
+        widget.onProfileUpdated?.call();
+        _showCompanyMessage('Company logo updated.');
+      }
+    } catch (error) {
+      _showCompanyMessage(error is StateError
+          ? error.message
+          : 'Could not upload your logo. Check your connection and try again.');
+    } finally {
+      if (mounted) setState(() => _isUploadingLogo = false);
+    }
+  }
+
+  Future<void> _removeLogo(String uid) async {
+    setState(() => _isUploadingLogo = true);
+    try {
+      await _logoService.delete(uid);
+      if (mounted) {
+        widget.onProfileUpdated?.call();
+        _showCompanyMessage('Company logo removed.');
+      }
+    } catch (error) {
+      _showCompanyMessage(error is StateError
+          ? error.message
+          : 'Could not remove your logo. Try again.');
+    } finally {
+      if (mounted) setState(() => _isUploadingLogo = false);
+    }
+  }
+
+  void _showCompanyMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Widget _companyHeader(EmployerProfile profile) {
+    final name = profile.companyName.trim().isEmpty
+        ? 'Company'
+        : profile.companyName.trim();
+
+    final industryText = profile.industry.trim().isNotEmpty
+        ? profile.industry.trim()
+        : (profile.district.trim().isNotEmpty
+            ? '${profile.district}, ${profile.state}'
+            : 'Information Technology & Services');
+
+    Widget fallbackLogo() => Container(
+      color: const Color(0xFFEFF6FF),
+      alignment: Alignment.center,
+      child: const Icon(
+        Icons.apartment_rounded,
+        color: AppTheme.primary,
+        size: 34,
+      ),
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Top Row: Logo | Vertical Divider | Company Details | Squircle Edit Button
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Company Logo
+              GestureDetector(
+                onTap: _isUploadingLogo ? null : () => _showLogoActions(profile),
+                child: Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xFFDBEAFE),
+                      width: 1.5,
+                    ),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: profile.logoUrl.isNotEmpty
+                      ? Image.network(
+                          profile.logoUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => fallbackLogo(),
+                        )
+                      : fallbackLogo(),
+                ),
+              ),
+              const SizedBox(width: 14),
+              // Subtle vertical divider line
+              Container(
+                width: 1,
+                height: 52,
+                color: const Color(0xFFE2E8F0),
+              ),
+              const SizedBox(width: 14),
+              // Name, Industry, and Status Badge
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF0F172A),
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      industryText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildCompanyStatusBadge(profile),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Squircle edit/camera icon button
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: _isUploadingLogo ? null : () => _showLogoActions(profile),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: _isUploadingLogo
+                        ? const Center(
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppTheme.primary,
+                              ),
+                            ),
+                          )
+                        : const Icon(
+                            Icons.edit_outlined,
+                            color: AppTheme.primary,
+                            size: 20,
+                          ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
+          const SizedBox(height: 16),
+          // Bottom Dual Action Buttons
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => setState(() => _tab = 1),
+                  icon: const Icon(Icons.work_outline_rounded, size: 18),
+                  label: const Text('Your Jobs'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.primary,
+                    side: const BorderSide(color: AppTheme.primary, width: 1.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    textStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _openCompanyProfileEditor(profile),
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  label: const Text('Edit Profile'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    textStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompanyStatusBadge(EmployerProfile profile) {
+    final bool isRejected = profile.status == 'rejected';
+    final bool isApproved = profile.isApproved;
+
+    final Color bgColor = isRejected
+        ? const Color(0xFFFFE4E6)
+        : isApproved
+            ? const Color(0xFFDCFCE7)
+            : const Color(0xFFFEF3C7);
+
+    final Color textColor = isRejected
+        ? const Color(0xFFBE123C)
+        : isApproved
+            ? const Color(0xFF15803D)
+            : const Color(0xFFB45309);
+
+    final IconData icon = isRejected
+        ? Icons.error_outline_rounded
+        : isApproved
+            ? Icons.verified_rounded
+            : Icons.access_time_rounded;
+
+    final String label = isRejected
+        ? 'Needs attention'
+        : isApproved
+            ? 'Verified Company'
+            : 'Awaiting review';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: textColor),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              color: textColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _companyValue(String value) =>
+      value.trim().isEmpty ? 'Not provided' : value.trim();
+
+  Widget _companyFactsSection({
+    required String title,
+    required IconData icon,
+    required List<(String, String)> fields,
+  }) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Row(
+        children: [
+          Icon(icon, size: 19, color: AppTheme.primary),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppTheme.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var index = 0; index < fields.length; index++) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      fields[index].$1,
+                      style: const TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      fields[index].$2,
+                      style: const TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (index < fields.length - 1)
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  indent: 16,
+                  endIndent: 16,
+                  color: AppTheme.border.withValues(alpha: 0.55),
+                ),
+            ],
+          ],
+        ),
+      ),
+    ],
+  );
+
   Widget _company() {
     final profile = widget.profile;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 20, 18, 32),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
       children: [
-        const _SectionTitle('Company profile'),
-        const SizedBox(height: 14),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(17),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  profile.companyName,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                _StatusPill(
-                  text: profile.status == 'rejected'
-                      ? 'Needs attention'
-                      : 'Verified Company',
-                  positive: profile.status != 'rejected',
-                ),
-                const Divider(height: 26),
-                _detail(
-                  'Contact',
-                  '${profile.contactName} · ${profile.designation}',
-                ),
-                _detail('Email', profile.email),
-                _detail(
-                  'Phone',
-                  profile.phone.isEmpty ? 'Not provided' : profile.phone,
-                ),
-                _detail(
-                  'WhatsApp',
-                  profile.whatsappPhone.isEmpty
-                      ? 'Not provided'
-                      : profile.whatsappPhone,
-                ),
-                _detail('Industry', profile.industry),
-                _detail('Company size', profile.companySize),
-                _detail(
-                  'Address',
-                  '${profile.address}, ${profile.district}, ${profile.state} ${profile.postalCode}',
-                ),
-                if (profile.website.isNotEmpty)
-                  _detail('Website', profile.website),
-                if (profile.registrationNumber.isNotEmpty)
-                  _detail('Registration ID', profile.registrationNumber),
-                OutlinedButton.icon(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          EmployerContactEditScreen(profile: profile),
-                    ),
-                  ),
-                  icon: const Icon(Icons.edit_outlined),
-                  label: const Text('Edit contact details'),
-                ),
-              ],
-            ),
+        _companyHeader(profile),
+        const SizedBox(height: 22),
+        const Text(
+          'Profile details',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: AppTheme.textPrimary,
           ),
+        ),
+        const SizedBox(height: 12),
+        _companyFactsSection(
+          title: 'Company information',
+          icon: Icons.business_outlined,
+          fields: [
+            ('Industry', _companyValue(profile.industry)),
+            ('Company size', _companyValue(profile.companySize)),
+            ('Description', _companyValue(profile.description)),
+            ('Website', _companyValue(profile.website)),
+            if (profile.registrationNumber.isNotEmpty)
+              ('Registration ID', profile.registrationNumber),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _companyFactsSection(
+          title: 'Recruiter information',
+          icon: Icons.person_outline_rounded,
+          fields: [
+            ('Contact name', _companyValue(profile.contactName)),
+            ('Designation', _companyValue(profile.designation)),
+            ('Email', _companyValue(profile.email)),
+            ('Phone number', _companyValue(profile.phone)),
+            (
+              'WhatsApp contact',
+              profile.whatsappSameAsPhone
+                  ? 'Same as mobile number'
+                  : 'Different WhatsApp number',
+            ),
+            ('WhatsApp number', _companyValue(profile.whatsappPhone)),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _companyFactsSection(
+          title: 'Location',
+          icon: Icons.location_on_outlined,
+          fields: [
+            ('Address', _companyValue(profile.address)),
+            if (profile.city.isNotEmpty) ('City', profile.city),
+            ('District', _companyValue(profile.district)),
+            ('State', _companyValue(profile.state)),
+            ('PIN code', _companyValue(profile.postalCode)),
+          ],
         ),
         const SizedBox(height: 20),
         const _SectionTitle('Subscription & Billing'),
@@ -745,11 +1226,17 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
                 ),
                 title: Row(
                   children: [
-                    Text(
-                      profile.activePlanName,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
+                    Expanded(
+                      child: Text(
+                        profile.activePlanName.isEmpty
+                            ? 'No active plan'
+                            : profile.activePlanName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -813,27 +1300,16 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
         const SizedBox(height: 26),
         TextButton.icon(
           onPressed: widget.onSignOut,
-          icon: const Icon(Icons.logout_rounded),
+          icon: const Icon(Icons.logout_rounded, size: 18),
           label: const Text('Sign out'),
+          style: TextButton.styleFrom(
+            foregroundColor: AppTheme.error,
+            minimumSize: const Size.fromHeight(46),
+          ),
         ),
       ],
     );
   }
-
-  Widget _detail(String label, String value) => Padding(
-    padding: const EdgeInsets.only(bottom: 12),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
-        ),
-        const SizedBox(height: 3),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
-      ],
-    ),
-  );
 }
 
 class EmployerApplicantScreen extends StatefulWidget {
@@ -1009,194 +1485,6 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
         ],
       ),
     );
-  }
-}
-
-class EmployerContactEditScreen extends StatefulWidget {
-  final EmployerProfile profile;
-  const EmployerContactEditScreen({super.key, required this.profile});
-  @override
-  State<EmployerContactEditScreen> createState() =>
-      _EmployerContactEditScreenState();
-}
-
-class _EmployerContactEditScreenState extends State<EmployerContactEditScreen> {
-  final _formKey = GlobalKey<FormState>();
-  late final Map<String, TextEditingController> _fields = {
-    'contactName': TextEditingController(text: widget.profile.contactName),
-    'designation': TextEditingController(text: widget.profile.designation),
-    'phone': TextEditingController(text: widget.profile.phone),
-    'whatsappPhone': TextEditingController(text: widget.profile.whatsappPhone),
-    'website': TextEditingController(text: widget.profile.website),
-    'address': TextEditingController(text: widget.profile.address),
-    'state': TextEditingController(text: widget.profile.state),
-    'district': TextEditingController(text: widget.profile.district),
-    'postalCode': TextEditingController(text: widget.profile.postalCode),
-  };
-  bool _busy = false;
-  late bool _sameWhatsappAsPhone;
-  String _separateWhatsappPhone = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _sameWhatsappAsPhone = widget.profile.whatsappSameAsPhone;
-    if (_sameWhatsappAsPhone) {
-      _fields['whatsappPhone']!.text = _fields['phone']!.text;
-    } else {
-      _separateWhatsappPhone = _fields['whatsappPhone']!.text;
-    }
-    _fields['phone']!.addListener(_syncWhatsappPhone);
-    _fields['whatsappPhone']!.addListener(() {
-      if (!_sameWhatsappAsPhone) {
-        _separateWhatsappPhone = _fields['whatsappPhone']!.text;
-      }
-    });
-  }
-
-  void _syncWhatsappPhone() {
-    final phone = _fields['phone']!.text;
-    if (_sameWhatsappAsPhone && _fields['whatsappPhone']!.text != phone) {
-      _fields['whatsappPhone']!.text = phone;
-    }
-  }
-
-  void _setSameWhatsappAsPhone(bool same) {
-    if (_sameWhatsappAsPhone == same) return;
-    setState(() {
-      if (same) {
-        _separateWhatsappPhone = _fields['whatsappPhone']!.text;
-        _sameWhatsappAsPhone = true;
-        _syncWhatsappPhone();
-      } else {
-        _sameWhatsappAsPhone = false;
-        _fields['whatsappPhone']!.text = _separateWhatsappPhone;
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    for (final controller in _fields.values) {
-      controller.dispose();
-    }
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Edit contact details')),
-    body: Form(
-      key: _formKey,
-      child: ListView(
-        padding: const EdgeInsets.all(18),
-        children: [
-          for (final entry in _fields.entries) ...[
-            Padding(
-              padding: const EdgeInsets.only(bottom: 14),
-              child: TextFormField(
-                controller: entry.value,
-                readOnly: entry.key == 'whatsappPhone' && _sameWhatsappAsPhone,
-                keyboardType: ['phone', 'whatsappPhone'].contains(entry.key)
-                    ? TextInputType.phone
-                    : entry.key == 'postalCode'
-                    ? TextInputType.number
-                    : null,
-                inputFormatters: ['phone', 'whatsappPhone'].contains(entry.key)
-                    ? [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(10),
-                      ]
-                    : entry.key == 'postalCode'
-                    ? [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(6),
-                      ]
-                    : null,
-                decoration: InputDecoration(
-                  labelText: _label(entry.key),
-                  prefixText: ['phone', 'whatsappPhone'].contains(entry.key)
-                      ? '+91 '
-                      : null,
-                  filled: entry.key == 'whatsappPhone' && _sameWhatsappAsPhone,
-                  fillColor: AppTheme.background,
-                  border: const OutlineInputBorder(),
-                ),
-                validator: (value) => _validate(entry.key, value),
-              ),
-            ),
-            if (entry.key == 'phone')
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                value: _sameWhatsappAsPhone,
-                onChanged: (value) => _setSameWhatsappAsPhone(value ?? false),
-                controlAffinity: ListTileControlAffinity.leading,
-                title: const Text(
-                  'Same number for WhatsApp',
-                  style: TextStyle(fontSize: 13.5),
-                ),
-              ),
-          ],
-          FilledButton(
-            onPressed: _busy ? null : _save,
-            child: Text(_busy ? 'Saving…' : 'Save changes'),
-          ),
-        ],
-      ),
-    ),
-  );
-  String _label(String key) => const {
-    'contactName': 'Contact name',
-    'designation': 'Role',
-    'phone': 'Phone',
-    'whatsappPhone': 'WhatsApp number',
-    'website': 'Website',
-    'address': 'Address',
-    'state': 'State',
-    'district': 'District',
-    'postalCode': 'PIN code',
-  }[key]!;
-  String? _validate(String key, String? value) {
-    final text = (value ?? '').trim();
-    if (['phone', 'whatsappPhone'].contains(key) &&
-        !RegExp(r'^\d{10}$').hasMatch(text)) {
-      return 'Enter a 10-digit number';
-    }
-    if (key == 'postalCode' && !RegExp(r'^\d{6}$').hasMatch(text)) {
-      return 'Enter a 6-digit PIN';
-    }
-    if (key == 'website' &&
-        text.isNotEmpty &&
-        !(Uri.tryParse(text)?.hasScheme == true &&
-            Uri.tryParse(text)?.host.isNotEmpty == true)) {
-      return 'Enter a full URL';
-    }
-    if (!['phone', 'whatsappPhone', 'website'].contains(key) &&
-        text.length < 2) {
-      return 'This field is required';
-    }
-    return null;
-  }
-
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _busy = true);
-    try {
-      await EmployerService().updateContact(widget.profile.uid, {
-        ..._fields.map((key, value) => MapEntry(key, value.text.trim())),
-        'whatsappSameAsPhone': _sameWhatsappAsPhone,
-      });
-      if (mounted) Navigator.pop(context);
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$error')));
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _busy = false);
-      }
-    }
   }
 }
 

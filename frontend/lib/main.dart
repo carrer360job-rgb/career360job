@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -14,11 +13,11 @@ import 'core/responsive/responsive_layout.dart';
 import 'core/services/candidate_photo_service.dart';
 import 'core/services/employer_service.dart';
 import 'core/services/platform_content_service.dart';
+import 'core/services/push_notification_service.dart';
 import 'core/widgets/bouncy_button.dart';
 import 'data/models/job_model.dart';
 import 'data/models/employer_profile.dart';
 import 'data/sample_jobs.dart';
-import 'features/splash/splash_screen.dart';
 import 'features/auth/role_selection_screen.dart';
 import 'features/candidate/candidate_guidelines_screen.dart';
 import 'features/employer/employer_guidelines_screen.dart';
@@ -31,13 +30,6 @@ import 'features/legal/privacy_policy_screen.dart';
 import 'features/notifications/notification_center_screen.dart';
 import 'core/services/supabase_service.dart';
 import 'core/services/app_auth_bridge.dart';
-
-@pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  try {
-    await Firebase.initializeApp();
-  } catch (_) {}
-}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -66,24 +58,7 @@ class _Career360BootstrapState extends State<Career360Bootstrap> {
     } catch (e) {
       debugPrint('[Supabase Initialization Notice] $e');
     }
-    try {
-      await Firebase.initializeApp();
-      FirebaseMessaging.onBackgroundMessage(
-        _firebaseMessagingBackgroundHandler,
-      );
-      final messaging = FirebaseMessaging.instance;
-      await messaging.requestPermission(alert: true, badge: true, sound: true);
-      final token = await messaging.getToken();
-      if (token != null && token.isNotEmpty) {
-        debugPrint('[FCM Push Token] $token');
-        await SupabaseService.registerDeviceFcmToken(token);
-      }
-      messaging.onTokenRefresh.listen((newToken) {
-        SupabaseService.registerDeviceFcmToken(newToken);
-      });
-    } catch (e) {
-      debugPrint('[Firebase Messaging Setup Notice] $e');
-    }
+    unawaited(PushNotificationService.instance.initialize());
   }
 
   @override
@@ -94,26 +69,7 @@ class _Career360BootstrapState extends State<Career360Bootstrap> {
         if (snapshot.connectionState != ConnectionState.done) {
           return const MaterialApp(
             debugShowCheckedModeBanner: false,
-            home: Scaffold(
-              body: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.work_outline_rounded,
-                      size: 42,
-                      color: Color(0xFF155EEF),
-                    ),
-                    SizedBox(height: 18),
-                    SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            home: SessionLoadingScreen(),
           );
         }
         return const Career360App();
@@ -184,7 +140,6 @@ class Career360App extends StatefulWidget {
 }
 
 class _Career360AppState extends State<Career360App> {
-  bool _showSplash = true;
   bool _showCandidateGuidelines = false;
   bool _showCandidateLogin = false;
   bool _showEmployerGuidelines = false;
@@ -202,12 +157,6 @@ class _Career360AppState extends State<Career360App> {
       debugPrint('[Session retry] Firebase refresh failed: $error');
     }
     await Future<void>.delayed(const Duration(milliseconds: 300));
-  }
-
-  void _onSplashFinished() {
-    setState(() {
-      _showSplash = false;
-    });
   }
 
   void _onRoleSelected(AppUserRole role) {
@@ -268,7 +217,6 @@ class _Career360AppState extends State<Career360App> {
 
   Future<void> _onCandidateOnboardingBack() async {
     setState(() {
-      _showSplash = false;
       _showCandidateGuidelines = true;
       _showCandidateLogin = false;
       _showEmployerGuidelines = false;
@@ -280,7 +228,6 @@ class _Career360AppState extends State<Career360App> {
 
   Future<void> _signOutToRoleSelection() async {
     setState(() {
-      _showSplash = false;
       _showCandidateGuidelines = false;
       _showCandidateLogin = false;
       _showEmployerGuidelines = false;
@@ -301,12 +248,6 @@ class _Career360AppState extends State<Career360App> {
   }
 
   Widget _buildCurrentScreen() {
-    if (_showSplash) {
-      return SplashScreen(
-        key: const ValueKey('splash_screen'),
-        onFinish: _onSplashFinished,
-      );
-    }
     if (_showCandidateGuidelines) {
       return CandidateGuidelinesScreen(
         key: const ValueKey('guidelines_screen'),
@@ -591,7 +532,7 @@ class EmployerSessionGate extends StatefulWidget {
 }
 
 class _EmployerSessionGateState extends State<EmployerSessionGate> {
-  late final Stream<EmployerProfile?> _profileStream;
+  late Stream<EmployerProfile?> _profileStream;
   bool _keepRegistrationVisible = false;
 
   @override
@@ -631,13 +572,27 @@ class _EmployerSessionGateState extends State<EmployerSessionGate> {
               if (mounted) setState(() => _keepRegistrationVisible = false);
             },
             onFinished: () {
-              if (mounted) setState(() => _keepRegistrationVisible = false);
+              if (mounted) {
+                setState(() {
+                  _keepRegistrationVisible = false;
+                  _profileStream = EmployerService().watchProfile(
+                    widget.user.uid,
+                  );
+                });
+              }
             },
           );
         }
         return EmployerWorkspaceScreen(
           profile: profile,
           onSignOut: widget.onSignOut,
+          onProfileUpdated: () {
+            if (mounted) {
+              setState(() {
+                _profileStream = EmployerService().watchProfile(widget.user.uid);
+              });
+            }
+          },
         );
       },
     );
@@ -742,11 +697,26 @@ class SessionLoadingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       body: Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2.5),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/images/career360_icon.png',
+              width: 88,
+              height: 88,
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              'Loading...',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textSecondary,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1046,6 +1016,11 @@ class _MainShellScreenState extends State<MainShellScreen> {
   void initState() {
     super.initState();
     unawaited(_loadManagedCategories());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(PushNotificationService.instance.registerAfterPortalEntry());
+      }
+    });
     _savedSub = _firestoreService.streamSavedJobIds(_currentUid).listen((ids) {
       if (mounted) {
         setState(
@@ -3657,12 +3632,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
             ? _profileString(profile, 'fullName')
             : AppAuthBridge.currentUser?.displayName ?? 'Candidate';
         final phone = _profileString(profile, 'phone');
-        final district = _profileString(profile, 'district');
-        final state = _profileString(profile, 'state');
-        final locationDisplay = [
-          district,
-          state,
-        ].where((part) => part.isNotEmpty).toSet().join(', ');
         final qualification = _profileString(profile, 'qualification');
         final educationLevel = _profileString(profile, 'educationLevel');
         final preferredRoles = _profileStringList(
@@ -3688,129 +3657,194 @@ class _MainShellScreenState extends State<MainShellScreen> {
             .map((part) => part[0])
             .join()
             .toUpperCase();
+        final district = _profileString(profile, 'district');
+        final candidateSubtitle = preferredRoles.isNotEmpty
+            ? preferredRoles.first + (district.isNotEmpty ? ' • $district' : '')
+            : (district.isNotEmpty ? district : 'Job Seeker');
 
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
           children: [
             Container(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+              padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: AppTheme.border),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
                 boxShadow: [
                   BoxShadow(
-                    color: AppTheme.primaryDark.withValues(alpha: 0.04),
-                    blurRadius: 14,
+                    color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+                    blurRadius: 16,
                     offset: const Offset(0, 4),
                   ),
                 ],
               ),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Stack(
-                    clipBehavior: Clip.none,
+                  // Top Row: Avatar | Vertical Divider | Candidate Details | Squircle Edit Button
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      CircleAvatar(
-                        radius: 40,
-                        backgroundColor: AppTheme.primaryLight,
-                        child: CircleAvatar(
-                          radius: 36,
-                          backgroundColor: Colors.white,
-                          child: ClipOval(
-                            child: SizedBox(
-                              width: 66,
-                              height: 66,
-                              child: profilePhotoUrl.isEmpty
-                                  ? _buildProfileInitials(initials)
-                                  : Image.network(
-                                      profilePhotoUrl,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, _, _) =>
-                                          _buildProfileInitials(initials),
-                                    ),
+                      // Candidate Photo
+                      GestureDetector(
+                        onTap: _isUploadingPhoto
+                            ? null
+                            : () => _showPhotoActions(profile ?? {}),
+                        child: Container(
+                          width: 72,
+                          height: 72,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: const Color(0xFFDBEAFE),
+                              width: 1.5,
                             ),
                           ),
+                          clipBehavior: Clip.antiAlias,
+                          child: profilePhotoUrl.isNotEmpty
+                              ? Image.network(
+                                  profilePhotoUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) =>
+                                      _buildProfileInitials(initials),
+                                )
+                              : _buildProfileInitials(initials),
                         ),
                       ),
-                      Positioned(
-                        right: -5,
-                        bottom: -3,
-                        child: Material(
-                          color: AppTheme.primary,
-                          shape: const CircleBorder(),
-                          child: IconButton(
-                            tooltip: 'Edit profile photo',
-                            onPressed: _isUploadingPhoto
-                                ? null
-                                : () => _showPhotoActions(profile ?? {}),
-                            icon: _isUploadingPhoto
-                                ? const SizedBox(
-                                    width: 17,
-                                    height: 17,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
+                      const SizedBox(width: 14),
+                      // Subtle vertical divider line
+                      Container(
+                        width: 1,
+                        height: 52,
+                        color: const Color(0xFFE2E8F0),
+                      ),
+                      const SizedBox(width: 14),
+                      // Full Name, Subtitle, and Status Badge
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              fullName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 19,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF0F172A),
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              candidateSubtitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            _buildCandidateStatusBadge(
+                              experienceRecorded: experienceRecorded,
+                              hasExperience: hasExperience,
+                              experienceYears:
+                                  _profileString(profile, 'experienceYears'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Squircle edit/photo icon button
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: _isUploadingPhoto
+                              ? null
+                              : () => _showPhotoActions(profile ?? {}),
+                          borderRadius: BorderRadius.circular(14),
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEFF6FF),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: _isUploadingPhoto
+                                ? const Center(
+                                    child: SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: AppTheme.primary,
+                                      ),
                                     ),
                                   )
                                 : const Icon(
-                                    Icons.camera_alt_outlined,
-                                    color: Colors.white,
-                                    size: 19,
+                                    Icons.edit_outlined,
+                                    color: AppTheme.primary,
+                                    size: 20,
                                   ),
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    fullName,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 19,
-                      fontWeight: FontWeight.w800,
-                      color: AppTheme.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    locationDisplay.isEmpty
-                        ? 'Candidate profile'
-                        : locationDisplay,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppTheme.textSecondary,
-                    ),
+                  const SizedBox(height: 16),
+                  const Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: Color(0xFFF1F5F9),
                   ),
                   const SizedBox(height: 16),
+                  // Bottom Dual Action Buttons
                   Row(
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: _openCandidateApplications,
-                          icon: const Icon(Icons.work_outline, size: 17),
-                          label: const Text('Applied jobs'),
+                          icon: const Icon(Icons.work_outline_rounded, size: 18),
+                          label: const Text('Applied Jobs'),
                           style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            textStyle: const TextStyle(fontSize: 12),
+                            foregroundColor: AppTheme.primary,
+                            side: const BorderSide(
+                              color: AppTheme.primary,
+                              width: 1.5,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                            textStyle: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: ElevatedButton.icon(
                           onPressed: () => _openCandidateProfileEditor(profile),
-                          icon: const Icon(Icons.edit_outlined, size: 17),
-                          label: const Text('Edit profile'),
+                          icon: const Icon(Icons.edit_outlined, size: 18),
+                          label: const Text('Edit Profile'),
                           style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            textStyle: const TextStyle(fontSize: 12),
+                            backgroundColor: AppTheme.primary,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                            textStyle: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ),
@@ -3818,24 +3852,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 14),
-            _buildProfileContactCard(
-              icon: Icons.phone_outlined,
-              title: 'Phone number',
-              value: phone.isEmpty ? 'Add your phone number' : phone,
-              actionLabel: 'Change',
-              onTap: () => _openCandidateProfileEditor(profile),
-            ),
-            const SizedBox(height: 10),
-            _buildProfileContactCard(
-              icon: Icons.location_on_outlined,
-              title: 'Location',
-              value: locationDisplay.isEmpty
-                  ? 'Add your location'
-                  : locationDisplay,
-              actionLabel: 'Change',
-              onTap: () => _openCandidateProfileEditor(profile),
             ),
             const SizedBox(height: 22),
             const Text(
@@ -3852,6 +3868,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
               icon: Icons.person_outline_rounded,
               fields: [
                 ('Email', _orNotProvided(email)),
+                ('Phone number', _orNotProvided(phone)),
                 ('Gender', _profileValue(profile, 'gender')),
                 ('Marital status', _profileValue(profile, 'maritalStatus')),
                 ('Birth month / year', _orNotProvided(birthDisplay)),
@@ -3988,15 +4005,68 @@ class _MainShellScreenState extends State<MainShellScreen> {
 
   Widget _buildProfileInitials(String initials) {
     return Container(
-      color: AppTheme.primaryLight,
+      color: const Color(0xFFEFF6FF),
       alignment: Alignment.center,
       child: Text(
         initials.isEmpty ? 'C' : initials,
         style: const TextStyle(
-          fontSize: 21,
+          fontSize: 22,
           fontWeight: FontWeight.w800,
           color: AppTheme.primary,
         ),
+      ),
+    );
+  }
+
+  Widget _buildCandidateStatusBadge({
+    required bool experienceRecorded,
+    required bool hasExperience,
+    required String experienceYears,
+  }) {
+    final Color bgColor;
+    final Color textColor;
+    final IconData icon;
+    final String label;
+
+    if (!experienceRecorded) {
+      bgColor = const Color(0xFFFEF3C7);
+      textColor = const Color(0xFFB45309);
+      icon = Icons.access_time_rounded;
+      label = 'Profile in progress';
+    } else if (hasExperience) {
+      bgColor = const Color(0xFFEFF6FF);
+      textColor = const Color(0xFF1D4ED8);
+      icon = Icons.work_history_rounded;
+      label = experienceYears.isNotEmpty && experienceYears != '0'
+          ? '$experienceYears yrs exp'
+          : 'Experienced';
+    } else {
+      bgColor = const Color(0xFFDCFCE7);
+      textColor = const Color(0xFF15803D);
+      icon = Icons.school_rounded;
+      label = 'Fresher';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: textColor),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              color: textColor,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -4075,62 +4145,18 @@ class _MainShellScreenState extends State<MainShellScreen> {
                   ),
                 ),
                 if (index < fields.length - 1)
-                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  Divider(
+                    height: 1,
+                    thickness: 1,
+                    indent: 16,
+                    endIndent: 16,
+                    color: AppTheme.border.withValues(alpha: 0.55),
+                  ),
               ],
             ],
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildProfileContactCard({
-    required IconData icon,
-    required String title,
-    required String value,
-    required String actionLabel,
-    required VoidCallback onTap,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: AppTheme.primary, size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 11,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  value,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppTheme.textPrimary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          TextButton(onPressed: onTap, child: Text(actionLabel)),
-        ],
-      ),
     );
   }
 

@@ -224,7 +224,16 @@ class SupabaseService {
     required String phone,
     required String email,
     required String district,
-    String? designation,
+    required String designation,
+    required String industry,
+    required String companySize,
+    required String description,
+    required String whatsappPhone,
+    required bool whatsappSameAsPhone,
+    required String website,
+    required String address,
+    required String state,
+    required String postalCode,
     String? city,
     String? logoUrl,
   }) async {
@@ -237,11 +246,24 @@ class SupabaseService {
       'district': district,
       'designation': designation,
       'city': city,
+      'industry': industry,
+      'company_size': companySize,
+      'description': description,
+      'whatsapp_phone': whatsappPhone,
+      'whatsapp_same_as_phone': whatsappSameAsPhone,
+      'website': website,
+      'address': address,
+      'state': state,
+      'postal_code': postalCode,
       'updated_at': DateTime.now().toIso8601String(),
     };
     if (logoUrl != null) payload['logo_url'] = logoUrl;
 
-    await client.from('employers').upsert(payload, onConflict: 'user_id');
+    await client
+        .from('employers')
+        .upsert(payload, onConflict: 'user_id')
+        .select('id')
+        .single();
   }
 
   // ---------------------------------------------------------------------------

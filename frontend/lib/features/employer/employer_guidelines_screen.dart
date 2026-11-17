@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-
 import '../../core/theme/app_theme.dart';
+import '../../core/responsive/responsive_layout.dart';
+import '../../core/widgets/bouncy_button.dart';
 
-/// Hiring rules shown before an employer continues to sign in.
+/// Hiring rules shown before an employer continues to sign in or register.
 class EmployerGuidelinesScreen extends StatefulWidget {
   final VoidCallback onAccepted;
   final VoidCallback onBack;
@@ -21,253 +22,420 @@ class EmployerGuidelinesScreen extends StatefulWidget {
 class _EmployerGuidelinesScreenState extends State<EmployerGuidelinesScreen> {
   bool _hasAgreed = false;
 
-  @override
-  Widget build(BuildContext context) => PopScope(
-    canPop: false,
-    onPopInvokedWithResult: (didPop, result) {
-      if (!didPop) widget.onBack();
-    },
-    child: Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        scrolledUnderElevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          tooltip: 'Back',
-          onPressed: widget.onBack,
-          icon: const Icon(Icons.arrow_back_rounded),
+  void _handleAccept() {
+    if (!_hasAgreed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: AppTheme.primaryDark,
+          content: Text(
+            'Please agree to the Employer Hiring Guidelines to proceed.',
+          ),
+          duration: Duration(seconds: 2),
         ),
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Image.asset(
-              'assets/images/career360_icon.png',
-              width: 27,
-              height: 27,
-            ),
-            const SizedBox(width: 6),
-            const Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: 'CAREER',
-                    style: TextStyle(color: AppTheme.primaryDark),
+      );
+      return;
+    }
+    widget.onAccepted();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isDesktop = ResponsiveLayout.isDesktop(context);
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        widget.onBack();
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF1F5F9),
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: AppTheme.textPrimary),
+            onPressed: widget.onBack,
+          ),
+          centerTitle: true,
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Image.asset(
+                  'assets/images/career360_icon.png',
+                  fit: BoxFit.contain,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Row(
+                children: const [
+                  Text(
+                    'CAREER',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: AppTheme.primaryDark,
+                      letterSpacing: 0.5,
+                    ),
                   ),
-                  TextSpan(
-                    text: '360',
-                    style: TextStyle(color: AppTheme.primary),
+                  Text(
+                    '360',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: AppTheme.primary,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ],
               ),
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0.2,
-              ),
-            ),
-          ],
-        ),
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 600),
-          child: Column(
-            children: [
-              Expanded(
-                child: ListView(
-                  physics: const BouncingScrollPhysics(),
-                  children: [
-                    _hero(),
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(20, 22, 20, 0),
-                      child: Column(
-                        children: [
-                          _GuidelineRow(
-                            icon: Icons.verified_outlined,
-                            title: 'Instant company onboarding',
-                            description: 'Enter your business details and start managing hiring immediately.',
-                          ),
-                          _GuidelineRow(
-                            icon: Icons.subject_rounded,
-                            title: 'Describe the role clearly',
-                            description: 'Include accurate pay, work location, and requirements.',
-                          ),
-                          _GuidelineRow(
-                            icon: Icons.shield_outlined,
-                            title: 'Respect candidate privacy',
-                            description: 'Use candidate contact details only for recruitment.',
-                          ),
-                          _GuidelineRow(
-                            icon: Icons.block_outlined,
-                            title: 'Never charge candidates',
-                            description: 'Do not ask for application fees, deposits, or interview charges.',
-                            showDivider: false,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-                  ],
-                ),
-              ),
-              _footer(),
             ],
           ),
         ),
-      ),
-    ),
-  );
+        body: SafeArea(
+          bottom: true,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 580),
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Hero Blue Banner
+                    _buildHeroHeader(isDesktop),
 
-  Widget _hero() => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.fromLTRB(20, 20, 20, 21),
-    decoration: const BoxDecoration(
-      gradient: LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [Color(0xFF0A2351), Color(0xFF0C3D8F), AppTheme.primary],
+                    const SizedBox(height: 16),
+
+                    // Central Guidelines Card
+                    Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isDesktop ? 24 : 16,
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(
+                            color: const Color(0xFFE2E8F0),
+                            width: 1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF0F172A).withValues(alpha: 0.05),
+                              blurRadius: 18,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          children: [
+                            _buildGuidelineRow(
+                              icon: Icons.verified_outlined,
+                              title: 'Instant Company Onboarding',
+                              description:
+                                  'Enter your business details and start managing hiring immediately.',
+                            ),
+                            const Divider(
+                              height: 32,
+                              thickness: 1,
+                              color: Color(0xFFF1F5F9),
+                            ),
+                            _buildGuidelineRow(
+                              icon: Icons.work_outline_rounded,
+                              title: 'Describe the Role Clearly',
+                              description:
+                                  'Job listings must include accurate pay, work locations, eligibility requirements, and transparent compensation details.',
+                            ),
+                            const Divider(
+                              height: 32,
+                              thickness: 1,
+                              color: Color(0xFFF1F5F9),
+                            ),
+                            _buildGuidelineRow(
+                              icon: Icons.lock_outline_rounded,
+                              title: 'Respect Candidate Privacy',
+                              description:
+                                  'Use candidate resumes and contact details strictly for recruitment and keep all applicant information confidential.',
+                            ),
+                            const Divider(
+                              height: 32,
+                              thickness: 1,
+                              color: Color(0xFFF1F5F9),
+                            ),
+                            _buildGuidelineRow(
+                              icon: Icons.block_flipped,
+                              title: 'Never Charge Candidates',
+                              descriptionRich: TextSpan(
+                                text:
+                                    'Do not ask for application fees, training deposits, or interview charges. Report any suspicious recruitment activities immediately to ',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFF475569),
+                                  height: 1.45,
+                                ),
+                                children: const [
+                                  TextSpan(
+                                    text: 'support@career360.com.',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+
+                            // Support Info Banner
+                            _buildSupportBanner(),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    // Agreement Checkbox + CTA Action Section
+                    Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isDesktop ? 24 : 16,
+                      ),
+                      child: Column(
+                        children: [
+                          _buildAgreementCheckbox(),
+                          const SizedBox(height: 14),
+                          _buildActionButton(),
+                          const SizedBox(height: 24),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
-    ),
-    child: Row(
+    );
+  }
+
+  // --- Hero Blue Banner ---
+  Widget _buildHeroHeader(bool isDesktop) {
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF0A2351),
+            Color(0xFF0C3D8F),
+            Color(0xFF155EEF),
+          ],
+        ),
+      ),
+      padding: EdgeInsets.symmetric(
+        horizontal: isDesktop ? 28 : 20,
+        vertical: 24,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Title & Subtitle
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  'Employer Hiring &\nCommunity Guidelines',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: -0.3,
+                    height: 1.25,
+                  ),
+                ),
+                SizedBox(height: 10),
+                Text(
+                  'What to know before your company starts hiring and posting jobs on Career360.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFFE0E7FF),
+                    height: 1.45,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 14),
+
+          // High-Trust Vector Shield Badge
+          _buildEmployerBadge(),
+        ],
+      ),
+    );
+  }
+
+  // --- High-Trust Employer Badge ---
+  Widget _buildEmployerBadge() {
+    return Container(
+      width: 76,
+      height: 76,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white.withValues(alpha: 0.1),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.22),
+          width: 1.5,
+        ),
+      ),
+      alignment: Alignment.center,
+      child: Container(
+        width: 60,
+        height: 60,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF38BDF8),
+              Color(0xFF155EEF),
+            ],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF38BDF8).withValues(alpha: 0.4),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: const Icon(
+          Icons.business_center_rounded,
+          color: Colors.white,
+          size: 30,
+        ),
+      ),
+    );
+  }
+
+  // --- Guideline Row Item ---
+  Widget _buildGuidelineRow({
+    required IconData icon,
+    required String title,
+    String? description,
+    InlineSpan? descriptionRich,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Expanded(
+        // Blue Tint Icon Box
+        Container(
+          width: 46,
+          height: 46,
+          decoration: BoxDecoration(
+            color: const Color(0xFFEFF6FF),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: const Color(0xFFDBEAFE),
+              width: 1,
+            ),
+          ),
+          alignment: Alignment.center,
+          child: Icon(
+            icon,
+            color: AppTheme.primary,
+            size: 22,
+          ),
+        ),
+        const SizedBox(width: 14),
+
+        // Text Column
+        Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Employer hiring\nguidelines',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  height: 1.18,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.3,
+                title,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF0F172A),
+                  letterSpacing: -0.2,
                 ),
               ),
-              SizedBox(height: 8),
-              Text(
-                'What to know before your first job goes live.',
-                style: TextStyle(
-                  color: Color(0xFFE0E7FF),
-                  fontSize: 12.5,
-                  height: 1.4,
+              const SizedBox(height: 5),
+              if (descriptionRich != null)
+                Text.rich(descriptionRich)
+              else
+                Text(
+                  description ?? '',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF475569),
+                    height: 1.45,
+                  ),
                 ),
-              ),
             ],
           ),
         ),
-        const SizedBox(width: 16),
-        Container(
-          width: 58,
-          height: 58,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white.withValues(alpha: 0.12),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
-          ),
-          child: const Icon(
-            Icons.business_center_rounded,
-            color: Colors.white,
-            size: 27,
-          ),
-        ),
       ],
-    ),
-  );
+    );
+  }
 
-  Widget _footer() => SafeArea(
-    top: false,
-    child: Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: AppTheme.border)),
+  // --- Support Info Banner ---
+  Widget _buildSupportBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F7FF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFFBAE6FD),
+          width: 1,
+        ),
       ),
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Row(
         children: [
-          CheckboxListTile(
-            value: _hasAgreed,
-            onChanged: (value) => setState(() => _hasAgreed = value ?? false),
-            controlAffinity: ListTileControlAffinity.leading,
-            contentPadding: EdgeInsets.zero,
-            title: const Text(
-              'I agree to the employer hiring guidelines.',
-              style: TextStyle(fontSize: 13, height: 1.3),
-            ),
+          const Icon(
+            Icons.info_outline_rounded,
+            color: AppTheme.primary,
+            size: 20,
           ),
-          const SizedBox(height: 2),
-          SizedBox(
-            height: 50,
-            child: FilledButton(
-              onPressed: _hasAgreed ? widget.onAccepted : null,
-              style: FilledButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Accept & Continue'),
-                  SizedBox(width: 8),
-                  Icon(Icons.arrow_forward_rounded, size: 18),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _GuidelineRow extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String description;
-  final bool showDivider;
-
-  const _GuidelineRow({
-    required this.icon,
-    required this.title,
-    required this.description,
-    this.showDivider = true,
-  });
-
-  @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 22,
-            child: Icon(icon, color: AppTheme.primary, size: 19),
-          ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+            child: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              alignment: WrapAlignment.spaceBetween,
+              spacing: 6,
+              runSpacing: 4,
+              children: const [
                 Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    height: 1.25,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary,
+                  'Have questions or need employer assistance?',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: Color(0xFF334155),
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-                const SizedBox(height: 5),
                 Text(
-                  description,
-                  style: const TextStyle(
+                  'support@career360.com',
+                  style: TextStyle(
                     fontSize: 12.5,
-                    height: 1.45,
-                    color: AppTheme.textSecondary,
+                    color: AppTheme.primary,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ],
@@ -275,14 +443,125 @@ class _GuidelineRow extends StatelessWidget {
           ),
         ],
       ),
-      if (showDivider) ...[
-        const SizedBox(height: 19),
-        const Padding(
-          padding: EdgeInsets.only(left: 34),
-          child: Divider(height: 1, thickness: 1, color: AppTheme.border),
+    );
+  }
+
+  // --- Agreement Checkbox ---
+  Widget _buildAgreementCheckbox() {
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _hasAgreed = !_hasAgreed;
+        });
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 22,
+              height: 22,
+              child: Checkbox(
+                value: _hasAgreed,
+                activeColor: AppTheme.primary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                side: const BorderSide(
+                  color: Color(0xFF94A3B8),
+                  width: 1.8,
+                ),
+                onChanged: (val) {
+                  setState(() {
+                    _hasAgreed = val ?? false;
+                  });
+                },
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  text: 'I understand and agree to the ',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF1E293B),
+                  ),
+                  children: const [
+                    TextSpan(
+                      text: 'Employer Hiring Guidelines.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 19),
-      ],
-    ],
-  );
+      ),
+    );
+  }
+
+  // --- Action Button ---
+  Widget _buildActionButton() {
+    return BouncyButton(
+      onPressed: _hasAgreed ? _handleAccept : null,
+      borderRadius: BorderRadius.circular(14),
+      pressOverlayColor: const Color(0xFF0C3E9E).withValues(alpha: 0.35),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: double.infinity,
+        height: 52,
+        decoration: BoxDecoration(
+          gradient: _hasAgreed
+              ? const LinearGradient(
+                  colors: [
+                    Color(0xFF155EEF),
+                    Color(0xFF0F4AC7),
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                )
+              : null,
+          color: _hasAgreed ? null : const Color(0xFFE2E8F0),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: _hasAgreed
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF155EEF).withValues(alpha: 0.32),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ]
+              : null,
+        ),
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'Accept & Continue',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: _hasAgreed ? Colors.white : const Color(0xFF94A3B8),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              Icons.arrow_forward_rounded,
+              size: 18,
+              color: _hasAgreed ? Colors.white : const Color(0xFF94A3B8),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
