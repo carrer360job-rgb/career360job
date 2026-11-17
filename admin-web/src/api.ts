@@ -153,7 +153,7 @@ export type PaymentRecord = { id: string; employerUid: string; planId: string; p
   paidAt: string | null; refundedAt: string | null; failedAt?: string | null; failureCode?: string | null;
   refundStatus?: string | null; refundReason?: string | null; refundRequestedAt?: string | null };
 export const listPayments = (token: string, status = 'all', cursor?: string) =>
-  adminRequest<{ payments: PaymentRecord[]; nextCursor: string | null }>(token,
+  adminRequest<{ available?: boolean; payments: PaymentRecord[]; nextCursor: string | null }>(token,
     `/payments?status=${encodeURIComponent(status)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
 export const refundPayment = (token: string, orderId: string, reason: string) =>
   adminRequest<{ status: string; refundId: string | null }>(token, `/payments/${encodeURIComponent(orderId)}/refund`, 'POST', { reason });
@@ -172,7 +172,7 @@ export type JobReport = { id: string; jobId: string; jobTitle: string; companyNa
   candidateUid: string; reason: string; details: string; status: string; createdAt: string | null };
 export type ReportSummary = { candidates: number; employers: number; jobs: number; applications: number; paidOrders: number };
 export const getReports = (token: string, cursor?: string) => adminRequest<{
-  summary: ReportSummary; reports: JobReport[]; nextCursor: string | null;
+  available?: boolean; summary: ReportSummary | null; reports: JobReport[]; nextCursor: string | null;
 }>(token, `/reports${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`);
 export const resolveReport = (token: string, id: string, decision: 'dismissed' | 'job_closed', notes = '') =>
   adminRequest<{ status: string }>(token, `/reports/${encodeURIComponent(id)}/resolve`, 'POST', { decision, notes });

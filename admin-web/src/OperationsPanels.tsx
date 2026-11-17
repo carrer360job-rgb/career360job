@@ -20,6 +20,7 @@ export default function OperationsPanels({ kind }: Props) {
   const [nextReportCursor, setNextReportCursor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [available, setAvailable] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [editing, setEditing] = useState<ContentItem | null>(null);
@@ -31,10 +32,10 @@ export default function OperationsPanels({ kind }: Props) {
     setLoading(true); setError('');
     try {
       const idToken = await token();
-      if (kind === 'users') { const data = await listUsers(idToken, search); setUsers(data.users); setNextPage(data.nextPageToken); }
-      if (kind === 'payments') { const data = await listPayments(idToken, status); setPayments(data.payments); setNextPaymentCursor(data.nextCursor); }
-      if (kind === 'content') setContent((await listContent(idToken)).items);
-      if (kind === 'reports') { const data = await getReports(idToken); setReports(data.reports); setSummary(data.summary); setNextReportCursor(data.nextCursor); }
+      if (kind === 'users') { const data = await listUsers(idToken, search); setUsers(data.users); setNextPage(data.nextPageToken); setAvailable(true); }
+      if (kind === 'payments') { const data = await listPayments(idToken, status); setPayments(data.payments); setNextPaymentCursor(data.nextCursor); setAvailable(data.available !== false); }
+      if (kind === 'content') { setContent((await listContent(idToken)).items); setAvailable(true); }
+      if (kind === 'reports') { const data = await getReports(idToken); setReports(data.reports); setSummary(data.summary); setNextReportCursor(data.nextCursor); setAvailable(data.available !== false); }
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : (caught as Error).message);
     } finally { setLoading(false); }
@@ -59,16 +60,16 @@ export default function OperationsPanels({ kind }: Props) {
       <div><p className="eyebrow">CAREER360 OPERATIONS</p><h2>{kind === 'users' ? 'User accounts' : kind === 'payments' ? 'Payments ledger' : kind === 'content' ? 'Platform content' : 'Reports & moderation'}</h2></div>
       <div className="toolbar-actions">
         {kind === 'users' && <input aria-label="Search users" placeholder="Search this page" value={search} onChange={(e) => setSearch(e.target.value)} />}
-        {kind === 'payments' && <select aria-label="Filter payments" value={status} onChange={(e) => setStatus(e.target.value)}><option value="all">All statuses</option><option value="paid">Paid</option><option value="created">Awaiting payment</option><option value="failed">Failed</option><option value="refunded">Refunded</option></select>}
+        {kind === 'payments' && available && <select aria-label="Filter payments" value={status} onChange={(e) => setStatus(e.target.value)}><option value="all">All statuses</option><option value="paid">Paid</option><option value="created">Awaiting payment</option><option value="failed">Failed</option><option value="refunded">Refunded</option></select>}
         {kind === 'content' && <button className="primary-button" onClick={() => setEditing({ id: '', kind: 'announcement', title: '', content: '', active: true, sortOrder: 0 })}>Add content</button>}
-        {kind === 'payments' && <button className="text-button" onClick={() => downloadCsv('career360-payments.csv', payments as unknown as Array<Record<string, unknown>>)}>Export CSV</button>}
-        {kind === 'reports' && <button className="text-button" onClick={() => downloadCsv('career360-reports.csv', reports as unknown as Array<Record<string, unknown>>)}>Export CSV</button>}
+        {kind === 'payments' && available && <button className="text-button" onClick={() => downloadCsv('career360-payments.csv', payments as unknown as Array<Record<string, unknown>>)}>Export CSV</button>}
+        {kind === 'reports' && available && <button className="text-button" onClick={() => downloadCsv('career360-reports.csv', reports as unknown as Array<Record<string, unknown>>)}>Export CSV</button>}
         <button className="text-button" disabled={loading} onClick={() => void load()}>Refresh</button>
       </div>
     </div>
     {error && <div className="banner error" role="alert">{error}</div>}
     {notice && <div className="banner success" role="status">{notice}</div>}
-    {loading ? <div className="panel-loading">Loading secure records…</div> : <>
+    {loading ? <div className="panel-loading">Loading secure records…</div> : !available ? <div className="empty-state" role="status"><h3>{kind === 'payments' ? 'Billing records are unavailable' : 'Job reports are unavailable'}</h3><p>This section will reopen when its stored records are connected to the admin service.</p></div> : <>
       {kind === 'users' && <><div className="operations-table-wrap"><table className="operations-table"><thead><tr><th>Account</th><th>Role</th><th>Verification</th><th>Last sign in</th><th>Status / action</th></tr></thead><tbody>
         {users.map((user) => <tr key={user.uid}><td><strong>{user.displayName || 'Unnamed account'}</strong><small>{user.email || user.uid}</small></td><td>{user.role}</td><td>{user.emailVerified ? 'Verified' : 'Unverified'}</td><td>{date(user.lastSignInAt)}</td><td><span className={`status-pill ${user.disabled ? 'status-danger' : 'status-live'}`}>{user.disabled ? 'Suspended' : 'Active'}</span>{user.uid !== auth?.currentUser?.uid && <button className="row-action" disabled={busy} onClick={() => { const reason = user.disabled ? '' : window.prompt('Reason for suspending this account?'); if (user.disabled || reason) void act(async () => setUserDisabled(await token(), user.uid, !user.disabled, reason || ''), 'Account status updated.'); }}> {user.disabled ? 'Restore' : 'Suspend'}</button>}</td></tr>)}
         {!users.length && <tr><td colSpan={5}>No accounts found in this page.</td></tr>}
