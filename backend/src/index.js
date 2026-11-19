@@ -40,6 +40,7 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     service: 'Job Portal Core API',
     version: '1.0.0',
+    revision: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || 'local',
   });
 });
 
