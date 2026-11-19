@@ -1,15 +1,4 @@
 import { supabaseAdmin } from '../config/supabase.js';
-import { firebaseApp } from '../config/firebase.js';
-import { getFirestore } from 'firebase-admin/firestore';
-
-export function catalogDb() {
-  if (firebaseApp) {
-    try {
-      return getFirestore(firebaseApp);
-    } catch (_) {}
-  }
-  return null;
-}
 
 const tiers = new Set(['standard', 'featured', 'elite']);
 const taxModes = new Set(['inclusive', 'exclusive']);

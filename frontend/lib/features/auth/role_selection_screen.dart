@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/constants/app_constants.dart';
 import '../../core/responsive/responsive_layout.dart';
 import '../../core/widgets/bouncy_button.dart';
 import '../../main.dart';
@@ -16,115 +15,185 @@ class RoleSelectionScreen extends StatelessWidget {
     final bool isSmall = ResponsiveLayout.isSmallMobile(context);
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.symmetric(
-              horizontal: isSmall ? 16 : (isDesktopOrTablet ? 40 : 24),
-              vertical: isDesktopOrTablet ? 40 : 20,
-            ),
-            child: ConstrainedBox(
-              // Allow wider container on tablets/laptops for side-by-side cards
-              constraints: BoxConstraints(
-                maxWidth: isDesktopOrTablet ? 860 : 440,
+      backgroundColor: Colors.white,
+      body: Stack(
+        children: [
+          // Ambient soft mint top background glow
+          Positioned(
+            top: -100,
+            left: -60,
+            right: -60,
+            height: 320,
+            child: Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    AppTheme.primaryLight.withValues(alpha: 0.7),
+                    Colors.white.withValues(alpha: 0.0),
+                  ],
+                ),
               ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // Brand Emblem Badge
-                  Container(
-                    width: isDesktopOrTablet ? 80 : 68,
-                    height: isDesktopOrTablet ? 80 : 68,
-                    decoration: BoxDecoration(
-                      color: AppTheme.cardSurface,
-                      borderRadius: BorderRadius.circular(isDesktopOrTablet ? 22 : 18),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.primary.withValues(alpha: 0.12),
-                          blurRadius: 16,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Image.asset(
-                      'assets/images/career360_icon.png',
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
+            ),
+          ),
 
-                  // Brand Typography: Career360
-                  Row(
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.symmetric(
+                  horizontal: isSmall ? 16 : (isDesktopOrTablet ? 40 : 22),
+                  vertical: isDesktopOrTablet ? 40 : 20,
+                ),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: isDesktopOrTablet ? 980 : 460,
+                  ),
+                  child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Text(
-                        'Career',
-                        style: TextStyle(
-                          fontSize: isDesktopOrTablet ? 30 : 26,
-                          fontWeight: FontWeight.w900,
-                          color: AppTheme.primaryDark,
-                          letterSpacing: 0.2,
+                      // Brand Emblem Badge
+                      Container(
+                        width: isDesktopOrTablet ? 74 : 64,
+                        height: isDesktopOrTablet ? 74 : 64,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: AppTheme.primaryLightBorder,
+                            width: 1.2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppTheme.primary.withValues(alpha: 0.14),
+                              blurRadius: 20,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Image.asset(
+                          'assets/images/career360_icon.png',
+                          fit: BoxFit.contain,
                         ),
                       ),
-                      Text(
-                        '360',
+                      const SizedBox(height: 12),
+
+                      // Brand Typography: Career360
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Text(
+                            'Career',
+                            style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w900,
+                              color: AppTheme.primaryDark,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          Text(
+                            '360',
+                            style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w900,
+                              color: AppTheme.primary,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        '—  JOB PORTAL  —',
                         style: TextStyle(
-                          fontSize: isDesktopOrTablet ? 30 : 26,
-                          fontWeight: FontWeight.w900,
-                          color: AppTheme.primary,
-                          letterSpacing: 0.2,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textSecondary,
+                          letterSpacing: 2.5,
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'JOB PORTAL',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.textSecondary,
-                      letterSpacing: 3.0,
-                    ),
-                  ),
 
-                  const SizedBox(height: 24),
+                      const SizedBox(height: 24),
 
-                  // Headings
-                  Text(
-                    'Choose Your Role',
-                    style: TextStyle(
-                      fontSize: isDesktopOrTablet ? 26 : 22,
-                      fontWeight: FontWeight.w800,
-                      color: AppTheme.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Select how you would like to use ${AppConstants.appName}',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: isDesktopOrTablet ? 14 : 13,
-                      color: AppTheme.textSecondary,
-                    ),
-                  ),
+                      // Headings
+                      Text(
+                        'Choose Your Role',
+                        style: TextStyle(
+                          fontSize: isDesktopOrTablet ? 26 : 24,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.textPrimary,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Select how you would like to use Career360',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
 
-                  const SizedBox(height: 32),
+                      const SizedBox(height: 28),
 
-                  // Responsive Role Cards (Side-by-side on Tablets/Laptops, Stacked on Phones)
-                  if (isDesktopOrTablet)
-                    IntrinsicHeight(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(
-                            child: _buildCorporateRoleCard(
+                      // Responsive Role Cards (3 Columns on Desktop/Tablet, Stacked on Mobile)
+                      if (isDesktopOrTablet)
+                        IntrinsicHeight(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                child: _buildCorporateRoleCard(
+                                  context: context,
+                                  icon: Icons.person_search_rounded,
+                                  iconColor: AppTheme.primary,
+                                  title: 'Job Seeker',
+                                  description:
+                                      'Discover thousands of verified career opportunities, apply with 1-tap, and track interview progress.',
+                                  buttonText: 'Continue as Job Seeker',
+                                  buttonColor: AppTheme.primary,
+                                  onTap: () => onSelectRole(AppUserRole.candidate),
+                                ),
+                              ),
+                              const SizedBox(width: 18),
+                              Expanded(
+                                child: _buildCorporateRoleCard(
+                                  context: context,
+                                  icon: Icons.business_center_rounded,
+                                  iconColor: AppTheme.primaryDark,
+                                  title: 'Employer / Recruiter',
+                                  description:
+                                      'Post job vacancies, review qualified applicants, and manage your hiring pipeline.',
+                                  buttonText: 'Continue as Employer',
+                                  buttonColor: AppTheme.primaryDark,
+                                  onTap: () => onSelectRole(AppUserRole.employer),
+                                ),
+                              ),
+                              const SizedBox(width: 18),
+                              Expanded(
+                                child: _buildCorporateRoleCard(
+                                  context: context,
+                                  icon: Icons.school_rounded,
+                                  iconColor: AppTheme.primary,
+                                  title: 'Institution',
+                                  description:
+                                      'Manage students, placements and campus recruitment, and connect with top employers.',
+                                  buttonText: 'Continue as Institution',
+                                  buttonColor: AppTheme.primary,
+                                  onTap: () => onSelectRole(AppUserRole.institution),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Column(
+                          children: [
+                            _buildCorporateRoleCard(
                               context: context,
                               icon: Icons.person_search_rounded,
-                              iconBgColor: AppTheme.primaryLight,
                               iconColor: AppTheme.primary,
                               title: 'Job Seeker',
                               description:
@@ -133,73 +202,63 @@ class RoleSelectionScreen extends StatelessWidget {
                               buttonColor: AppTheme.primary,
                               onTap: () => onSelectRole(AppUserRole.candidate),
                             ),
-                          ),
-                          const SizedBox(width: 24),
-                          Expanded(
-                            child: _buildCorporateRoleCard(
+                            const SizedBox(height: 16),
+                            _buildCorporateRoleCard(
                               context: context,
                               icon: Icons.business_center_rounded,
-                              iconBgColor: const Color(0xFFF1F5F9),
                               iconColor: AppTheme.primaryDark,
                               title: 'Employer / Recruiter',
                               description:
-                                  'Post job vacancies, review qualified applicants, and manage your hiring pipeline efficiently.',
+                                  'Post job vacancies, review qualified applicants, and manage your hiring pipeline.',
                               buttonText: 'Continue as Employer',
                               buttonColor: AppTheme.primaryDark,
                               onTap: () => onSelectRole(AppUserRole.employer),
                             ),
+                            const SizedBox(height: 16),
+                            _buildCorporateRoleCard(
+                              context: context,
+                              icon: Icons.school_rounded,
+                              iconColor: AppTheme.primary,
+                              title: 'Institution',
+                              description:
+                                  'Manage students, placements and campus recruitment, and connect with top employers.',
+                              buttonText: 'Continue as Institution',
+                              buttonColor: AppTheme.primary,
+                              onTap: () => onSelectRole(AppUserRole.institution),
+                            ),
+                          ],
+                        ),
+
+                      const SizedBox(height: 36),
+
+                      // Footer URL with Globe Icon
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(
+                            Icons.language_rounded,
+                            size: 15,
+                            color: AppTheme.textSecondary,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            'www.career360.com',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: AppTheme.textSecondary,
+                              fontWeight: FontWeight.w500,
+                              letterSpacing: 0.4,
+                            ),
                           ),
                         ],
                       ),
-                    )
-                  else
-                    Column(
-                      children: [
-                        _buildCorporateRoleCard(
-                          context: context,
-                          icon: Icons.person_search_rounded,
-                          iconBgColor: AppTheme.primaryLight,
-                          iconColor: AppTheme.primary,
-                          title: 'Job Seeker',
-                          description:
-                              'Discover thousands of verified career opportunities, apply with 1-tap, and track interview progress.',
-                          buttonText: 'Continue as Job Seeker',
-                          buttonColor: AppTheme.primary,
-                          onTap: () => onSelectRole(AppUserRole.candidate),
-                        ),
-                        const SizedBox(height: 18),
-                        _buildCorporateRoleCard(
-                          context: context,
-                          icon: Icons.business_center_rounded,
-                          iconBgColor: const Color(0xFFF1F5F9),
-                          iconColor: AppTheme.primaryDark,
-                          title: 'Employer / Recruiter',
-                          description:
-                              'Post job vacancies, review qualified applicants, and manage your hiring pipeline efficiently.',
-                          buttonText: 'Continue as Employer',
-                          buttonColor: AppTheme.primaryDark,
-                          onTap: () => onSelectRole(AppUserRole.employer),
-                        ),
-                      ],
-                    ),
-
-                  const SizedBox(height: 32),
-
-                  // Footer URL
-                  const Text(
-                    'www.career360.com',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textSecondary,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: 0.5,
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -207,7 +266,6 @@ class RoleSelectionScreen extends StatelessWidget {
   Widget _buildCorporateRoleCard({
     required BuildContext context,
     required IconData icon,
-    required Color iconBgColor,
     required Color iconColor,
     required String title,
     required String description,
@@ -217,82 +275,87 @@ class RoleSelectionScreen extends StatelessWidget {
   }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: AppTheme.cardSurface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: AppTheme.border, width: 1.2),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-          BoxShadow(
-            color: buttonColor.withValues(alpha: 0.06),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
           ),
         ],
       ),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Column(
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Icon
+              // Circular Icon Badge with Soft Mint Background
               Container(
-                padding: const EdgeInsets.all(14),
+                width: 50,
+                height: 50,
                 decoration: BoxDecoration(
-                  color: iconBgColor,
+                  color: AppTheme.primaryLight,
                   shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppTheme.primaryLightBorder,
+                    width: 1.2,
+                  ),
                 ),
-                child: Icon(icon, size: 28, color: iconColor),
+                child: Icon(icon, size: 25, color: iconColor),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(width: 14),
 
-              // Title
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              // Description
-              Text(
-                description,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 13,
-                  height: 1.5,
-                  color: AppTheme.textSecondary,
+              // Title & Description
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.textPrimary,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      description,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        height: 1.45,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
 
-          // Action Button with Visual Click Color Animation
+          // Action Button
           BouncyButton(
             onPressed: onTap,
             borderRadius: BorderRadius.circular(12),
-            pressOverlayColor: Colors.black.withValues(alpha: 0.20),
+            pressOverlayColor: Colors.black.withValues(alpha: 0.15),
             child: Container(
               width: double.infinity,
-              height: 48,
+              height: 44,
               decoration: BoxDecoration(
                 color: buttonColor,
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: buttonColor.withValues(alpha: 0.32),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
+                    color: buttonColor.withValues(alpha: 0.28),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
                   ),
                 ],
               ),
@@ -315,7 +378,7 @@ class RoleSelectionScreen extends StatelessWidget {
                   const SizedBox(width: 8),
                   const Icon(
                     Icons.arrow_forward_rounded,
-                    size: 18,
+                    size: 17,
                     color: Colors.white,
                   ),
                 ],

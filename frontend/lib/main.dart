@@ -12,6 +12,7 @@ import 'core/constants/app_constants.dart';
 import 'core/responsive/responsive_layout.dart';
 import 'core/services/candidate_photo_service.dart';
 import 'core/services/employer_service.dart';
+import 'core/services/employer_api_service.dart';
 import 'core/services/platform_content_service.dart';
 import 'core/services/push_notification_service.dart';
 import 'core/widgets/bouncy_button.dart';
@@ -21,6 +22,10 @@ import 'data/sample_jobs.dart';
 import 'features/auth/role_selection_screen.dart';
 import 'features/candidate/candidate_guidelines_screen.dart';
 import 'features/employer/employer_guidelines_screen.dart';
+import 'features/employer/employer_login_screen.dart';
+import 'features/institution/institution_guidelines_screen.dart';
+import 'features/institution/institution_login_screen.dart';
+import 'features/institution/institution_workspace_screen.dart';
 import 'features/auth/candidate_login_screen.dart';
 import 'features/candidate/candidate_onboarding_wizard_screen.dart';
 import 'features/candidate/sample_job_details_screen.dart';
@@ -53,12 +58,17 @@ class _Career360BootstrapState extends State<Career360Bootstrap> {
   }
 
   Future<void> _initApp() async {
+    final stopwatch = Stopwatch()..start();
     try {
       await SupabaseService.initialize();
     } catch (e) {
       debugPrint('[Supabase Initialization Notice] $e');
     }
     unawaited(PushNotificationService.instance.initialize());
+    final elapsed = stopwatch.elapsedMilliseconds;
+    if (elapsed < 1200) {
+      await Future<void>.delayed(Duration(milliseconds: 1200 - elapsed));
+    }
   }
 
   @override
@@ -128,7 +138,7 @@ class FirebaseConfigurationFailure extends StatelessWidget {
   }
 }
 
-enum AppUserRole { candidate, employer, admin }
+enum AppUserRole { candidate, employer, institution, admin }
 
 class Career360App extends StatefulWidget {
   final Stream<dynamic>? authChanges;
@@ -144,6 +154,8 @@ class _Career360AppState extends State<Career360App> {
   bool _showCandidateLogin = false;
   bool _showEmployerGuidelines = false;
   bool _showEmployerLogin = false;
+  bool _showInstitutionGuidelines = false;
+  bool _showInstitutionLogin = false;
   AppUserRole? _currentRole;
   int _sessionGeneration = 0;
 
@@ -170,6 +182,11 @@ class _Career360AppState extends State<Career360App> {
         _currentRole = role;
         _showEmployerGuidelines = true;
       });
+    } else if (role == AppUserRole.institution) {
+      setState(() {
+        _currentRole = role;
+        _showInstitutionGuidelines = true;
+      });
     }
   }
 
@@ -191,6 +208,27 @@ class _Career360AppState extends State<Career360App> {
     setState(() {
       _showEmployerLogin = false;
       _showEmployerGuidelines = true;
+    });
+  }
+
+  void _onInstitutionGuidelinesAccepted() {
+    setState(() {
+      _showInstitutionGuidelines = false;
+      _showInstitutionLogin = true;
+    });
+  }
+
+  void _onInstitutionGuidelinesBack() {
+    setState(() {
+      _showInstitutionGuidelines = false;
+      _currentRole = null;
+    });
+  }
+
+  void _onInstitutionLoginBack() {
+    setState(() {
+      _showInstitutionLogin = false;
+      _showInstitutionGuidelines = true;
     });
   }
 
@@ -221,6 +259,8 @@ class _Career360AppState extends State<Career360App> {
       _showCandidateLogin = false;
       _showEmployerGuidelines = false;
       _showEmployerLogin = false;
+      _showInstitutionGuidelines = false;
+      _showInstitutionLogin = false;
       _currentRole = null;
     });
     await SupabaseService.client.auth.signOut();
@@ -232,6 +272,8 @@ class _Career360AppState extends State<Career360App> {
       _showCandidateLogin = false;
       _showEmployerGuidelines = false;
       _showEmployerLogin = false;
+      _showInstitutionGuidelines = false;
+      _showInstitutionLogin = false;
       _currentRole = null;
     });
     await SupabaseService.client.auth.signOut();
@@ -243,6 +285,8 @@ class _Career360AppState extends State<Career360App> {
       _showCandidateLogin = false;
       _showEmployerGuidelines = false;
       _showEmployerLogin = false;
+      _showInstitutionGuidelines = false;
+      _showInstitutionLogin = false;
       _currentRole = null;
     });
   }
@@ -269,10 +313,22 @@ class _Career360AppState extends State<Career360App> {
       );
     }
     if (_showEmployerLogin) {
-      return CandidateLoginScreen(
+      return EmployerLoginScreen(
         key: const ValueKey('employer_login_screen'),
-        isEmployer: true,
         onBack: _onEmployerLoginBack,
+      );
+    }
+    if (_showInstitutionGuidelines) {
+      return InstitutionGuidelinesScreen(
+        key: const ValueKey('institution_guidelines_screen'),
+        onAccepted: _onInstitutionGuidelinesAccepted,
+        onBack: _onInstitutionGuidelinesBack,
+      );
+    }
+    if (_showInstitutionLogin) {
+      return InstitutionLoginScreen(
+        key: const ValueKey('institution_login_screen'),
+        onBack: _onInstitutionLoginBack,
       );
     }
     if (_currentRole == null) {
@@ -393,18 +449,18 @@ class AccountSessionGate extends StatelessWidget {
       }
     } catch (e) {
       debugPrint('[Account role fetch notice] $e');
-      yield [];
+      rethrow;
     }
 
     try {
       yield* SupabaseService.client
           .from('profiles')
           .stream(primaryKey: ['id'])
-          .eq('id', uid)
-          .handleError((err) {
-            debugPrint('[Profiles Realtime Notice] $err');
-          });
-    } catch (_) {}
+          .eq('id', uid);
+    } catch (error) {
+      debugPrint('[Profiles Realtime Notice] $error');
+      rethrow;
+    }
   }
 
   @override
@@ -433,8 +489,12 @@ class AccountSessionGate extends StatelessWidget {
               : null;
           final selectedRole = storedRole == 'employer'
               ? AppUserRole.employer
+              : storedRole == 'institution'
+              ? AppUserRole.institution
               : storedRole == 'candidate'
               ? AppUserRole.candidate
+              : storedRole == 'admin'
+              ? AppUserRole.admin
               : requestedRole;
           if (selectedRole == null) {
             return Scaffold(
@@ -458,6 +518,10 @@ class AccountSessionGate extends StatelessWidget {
               requestedRole != selectedRole) {
             final correct = selectedRole == AppUserRole.employer
                 ? 'employer'
+                : selectedRole == AppUserRole.institution
+                ? 'institution'
+                : selectedRole == AppUserRole.admin
+                ? 'admin'
                 : 'job seeker';
             return Scaffold(
               body: Center(
@@ -496,11 +560,38 @@ class AccountSessionGate extends StatelessWidget {
               ),
             );
           }
+          if (selectedRole == AppUserRole.admin) {
+            return Scaffold(
+              body: Center(child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.admin_panel_settings_outlined, size: 48),
+                  const SizedBox(height: 12),
+                  const Text('Use the web dashboard for this admin account.',
+                      textAlign: TextAlign.center),
+                  const SizedBox(height: 16),
+                  FilledButton(onPressed: onSignOutRequested,
+                      child: const Text('Sign out')),
+                ]),
+              )),
+            );
+          }
           if (selectedRole == AppUserRole.employer) {
             return EmployerSessionGate(
               user: user,
               onSignOut: onSignOutRequested,
               onRetry: onRetry,
+            );
+          }
+          if (selectedRole == AppUserRole.institution) {
+            return InstitutionWorkspaceScreen(
+              key: ValueKey('institution_workspace_${user.uid}'),
+              userId: user.uid,
+              email: user.email ?? '',
+              metadata: Map<String, dynamic>.from(
+                SupabaseService.client.auth.currentUser?.userMetadata ?? {},
+              ),
+              onSignOut: onSignOutRequested,
             );
           }
           return CandidateSessionGate(
@@ -691,33 +782,193 @@ class _CandidateSessionGateState extends State<CandidateSessionGate> {
   }
 }
 
-class SessionLoadingScreen extends StatelessWidget {
+class SessionLoadingScreen extends StatefulWidget {
   const SessionLoadingScreen({super.key});
+
+  @override
+  State<SessionLoadingScreen> createState() => _SessionLoadingScreenState();
+}
+
+class _SessionLoadingScreenState extends State<SessionLoadingScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _animController;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeOut,
+    );
+    _scaleAnimation = Tween<double>(begin: 0.92, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animController,
+        curve: Curves.easeOutBack,
+      ),
+    );
+    _animController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Image.asset(
-              'assets/images/career360_icon.png',
-              width: 88,
-              height: 88,
-            ),
-            const SizedBox(height: 18),
-            const Text(
-              'Loading...',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textSecondary,
+      body: Stack(
+        children: [
+          Positioned(
+            top: -120,
+            left: -80,
+            right: -80,
+            height: 380,
+            child: Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    AppTheme.primaryLight.withValues(alpha: 0.8),
+                    Colors.white.withValues(alpha: 0.0),
+                  ],
+                ),
               ),
             ),
-          ],
-        ),
+          ),
+          SafeArea(
+            child: Center(
+              child: FadeTransition(
+                opacity: _fadeAnimation,
+                child: ScaleTransition(
+                  scale: _scaleAnimation,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Spacer(),
+                      Container(
+                        width: 96,
+                        height: 96,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(26),
+                          border: Border.all(
+                            color: AppTheme.primaryLightBorder,
+                            width: 1.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppTheme.primary.withValues(alpha: 0.16),
+                              blurRadius: 28,
+                              offset: const Offset(0, 10),
+                            ),
+                          ],
+                        ),
+                        child: Image.asset(
+                          'assets/images/career360_icon.png',
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Text(
+                            'Career',
+                            style: TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.w900,
+                              color: AppTheme.primaryDark,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          Text(
+                            '360',
+                            style: TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.w900,
+                              color: AppTheme.primary,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Find Your Dream Job',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textPrimary,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Explore thousands of opportunities in Tamil Nadu',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+
+                      // Clean branded loading text (matching test specification)
+                      const Text(
+                        'Loading...',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+
+                      const Spacer(),
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 24),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryLight,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: AppTheme.primaryLightBorder),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(
+                              Icons.verified_rounded,
+                              size: 15,
+                              color: AppTheme.primary,
+                            ),
+                            SizedBox(width: 6),
+                            Text(
+                              'Verified Tamil Nadu Job Platform',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.primaryDark,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1122,11 +1373,17 @@ class _MainShellScreenState extends State<MainShellScreen> {
         _savedJobIds.add(id);
       }
     });
-    final saved = await _firestoreService.toggleSaveJob(
-      candidateUid: _currentUid,
-      jobId: id,
-      isSaved: isSaved,
-    );
+    bool saved;
+    try {
+      saved = await _firestoreService.toggleSaveJob(
+        candidateUid: _currentUid,
+        jobId: id,
+        isSaved: isSaved,
+      );
+    } catch (error) {
+      debugPrint('[Saved jobs] $error');
+      saved = isSaved;
+    }
     if (!mounted) return;
     if (saved == isSaved) {
       setState(() {
@@ -2138,6 +2395,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
         return 'Candidate';
       case AppUserRole.employer:
         return 'Recruiter ATS';
+      case AppUserRole.institution:
+        return 'Institution';
       case AppUserRole.admin:
         return 'Admin';
     }
@@ -2276,6 +2535,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
         return 'JOB SEEKER WORKSPACE';
       case AppUserRole.employer:
         return 'RECRUITER ATS DESK';
+      case AppUserRole.institution:
+        return 'INSTITUTION PLACEMENT DESK';
       case AppUserRole.admin:
         return 'ADMIN CONTROL PANEL';
     }
@@ -2324,6 +2585,24 @@ class _MainShellScreenState extends State<MainShellScreen> {
             'shortLabel': 'Applicants',
           },
         ];
+      case AppUserRole.institution:
+        return [
+          {
+            'icon': Icons.school_outlined,
+            'label': 'Campus Placements',
+            'shortLabel': 'Placements',
+          },
+          {
+            'icon': Icons.people_alt_outlined,
+            'label': 'Student Roster',
+            'shortLabel': 'Students',
+          },
+          {
+            'icon': Icons.business_outlined,
+            'label': 'Recruiter Drives',
+            'shortLabel': 'Drives',
+          },
+        ];
       case AppUserRole.admin:
         return [
           {
@@ -2354,6 +2633,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
         return _buildCandidateProfileScreen();
 
       case AppUserRole.employer:
+      case AppUserRole.institution:
         if (_selectedTabIndex == 0) return _buildEmployerOverview();
         if (_selectedTabIndex == 1) return _buildEmployerPostJob();
         return _buildEmployerApplicants();
@@ -4535,7 +4815,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
         postedAt: DateTime.now(),
       );
 
-      await _firestoreService.createJobPost(newJob);
+      await EmployerApiService().publishJob(newJob.toMap());
 
       if (!mounted) return;
       setState(() {

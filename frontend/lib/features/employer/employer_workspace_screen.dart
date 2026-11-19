@@ -71,6 +71,11 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
           ? _service.watchApplications(widget.profile.uid)
           : Stream.value(const <Map<String, dynamic>>[]);
       _entitlementFuture = widget.profile.isApproved ? _api.entitlement() : null;
+    } else if (oldWidget.profile.activePlan != widget.profile.activePlan ||
+        oldWidget.profile.planTier != widget.profile.planTier ||
+        oldWidget.profile.postingCredits != widget.profile.postingCredits ||
+        oldWidget.profile.creditsExpireAt != widget.profile.creditsExpireAt) {
+      _entitlementFuture = widget.profile.isApproved ? _api.entitlement() : null;
     }
   }
 
@@ -1521,19 +1526,20 @@ class EmployerPaymentHistoryScreen extends StatelessWidget {
           itemBuilder: (context, index) {
             final order = orders[index];
             final amount =
-                (order['amountPaise'] is num
-                    ? order['amountPaise'] as num
+                (order['amount_paise'] is num
+                    ? order['amount_paise'] as num
                     : 0) /
                 100;
-            final tax = ((order['taxPaise'] as num?) ?? 0) / 100;
+            final tax = ((order['tax_paise'] as num?) ?? 0) / 100;
             return Card(
               margin: const EdgeInsets.only(bottom: 9),
               child: ListTile(
-                title: Text('${order['planName'] ?? 'Hiring plan'} · ₹${amount.toStringAsFixed(2)}'),
+                title: Text('${order['plan_name'] ?? 'Hiring plan'} · ₹${amount.toStringAsFixed(2)}'),
                 subtitle: Text('GST ₹${tax.toStringAsFixed(2)} · Order ${order['id']}'),
                 trailing: _StatusPill(
                   text: order['status'] == 'paid' ? 'Paid' :
-                      order['status'] == 'refunded' ? 'Refunded' : 'Pending',
+                      order['status'] == 'refunded' ? 'Refunded' :
+                      order['status'] == 'failed' ? 'Failed' : 'Pending',
                   positive: order['status'] == 'paid',
                 ),
               ),

@@ -4,6 +4,7 @@ class AppConstants {
   static const String appTagline = 'Job Portal';
   static const String heroTitle = 'Find Your Next Career Move';
   static const String heroSubtitle = 'Explore thousands of verified opportunities';
+  static const String supportEmail = 'carrer360job@gmail.com';
 
   // Major Job Locations
   static const List<String> jobLocations = [

@@ -4,13 +4,13 @@ import { createHmac } from 'node:crypto';
 import { hasTrustedApproval, signaturesMatch } from '../src/routes/employerRoutes.js';
 
 test('employer access needs a recorded admin review', () => {
-  assert.equal(hasTrustedApproval({ status: 'approved' }), false);
-  assert.equal(hasTrustedApproval({ status: 'approved', reviewedBy: 'admin' }), false);
+  assert.equal(hasTrustedApproval({ is_verified: true }), false);
+  assert.equal(hasTrustedApproval({ is_verified: true, reviewed_by: 'admin' }), false);
   assert.equal(hasTrustedApproval({
-    status: 'approved', reviewedBy: 'admin', reviewedAt: { toMillis: () => 100 },
+    is_verified: true, reviewed_by: 'admin', reviewed_at: '2026-11-19T00:00:00Z',
   }), true);
   assert.equal(hasTrustedApproval({
-    status: 'pending', reviewedBy: 'admin', reviewedAt: { toMillis: () => 100 },
+    is_verified: false, reviewed_by: 'admin', reviewed_at: '2026-11-19T00:00:00Z',
   }), false);
 });
 

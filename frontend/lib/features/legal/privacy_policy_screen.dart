@@ -170,7 +170,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
               const SizedBox(height: 4),
               _buildContactItem('Company:', 'Career360 Technologies Private Limited'),
               _buildContactItem('Legal Email:', 'privacy@career360.com'),
-              _buildContactItem('Help Desk:', 'support@career360.com'),
+              _buildContactItem('Help Desk:', 'carrer360job@gmail.com'),
               _buildContactItem('Registered Office:', 'OMR Tech Corridor, Chennai, Tamil Nadu - 600096, India'),
               const SizedBox(height: 32),
 

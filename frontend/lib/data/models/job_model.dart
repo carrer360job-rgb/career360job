@@ -77,6 +77,11 @@ class JobModel {
     }
 
     final locationStr = data['locationCity'] ?? data['location_city'] ?? data['district'] ?? 'Tamil Nadu / Remote';
+    final minimum = data['min_salary'] ?? data['minSalary'];
+    final maximum = data['max_salary'] ?? data['maxSalary'];
+    final salary = minimum == null ? 'Salary not specified' :
+        maximum == null || maximum == minimum ? '₹$minimum' : '₹$minimum - ₹$maximum';
+    final rawStatus = (data['status']?.toString() ?? 'active').toLowerCase();
     final isStatewideJob = data['isStatewide'] == true ||
         data['is_statewide'] == true ||
         data['reach'] == 'statewide' ||
@@ -85,28 +90,31 @@ class JobModel {
     return JobModel(
       id: docId,
       title: data['title'] ?? 'Untitled Opportunity',
-      companyName: data['companyName'] ?? data['company_name'] ?? 'Career360 Partner',
+      companyName: data['companyName'] ?? data['company_name'] ??
+          (data['employers'] is Map ? data['employers']['company_name'] : null) ??
+          'Career360 Partner',
       locationCity: locationStr,
-      salaryText: data['salaryText'] ?? data['salary_text'] ?? (data['minSalary'] != null ? '₹${data['minSalary']} - ${data['maxSalary'] ?? ''}' : '₹3 - 5 LPA'),
+      salaryText: data['salaryText'] ?? data['salary_text'] ?? salary,
       category: data['category'] ?? 'IT & Software',
-      workMode: data['workMode'] ?? data['work_mode'] ?? 'On-Site',
+      workMode: data['workMode'] ?? data['work_mode'] ?? data['job_type'] ?? 'On-site',
       vacanciesCount: (data['vacanciesCount'] is int)
           ? data['vacanciesCount']
           : (data['vacancies_count'] is int)
               ? data['vacancies_count']
-              : int.tryParse(data['vacanciesCount']?.toString() ?? data['vacancies_count']?.toString() ?? '1') ?? 1,
+          : int.tryParse(data['vacanciesCount']?.toString() ?? data['vacancies_count']?.toString() ?? data['vacancies']?.toString() ?? '1') ?? 1,
       description: data['description'] ?? 'Verified Career360 job opening.',
-      isVerified: data['isVerified'] ?? data['is_verified'] ?? true,
+      isVerified: data['isVerified'] ?? data['is_verified'] ??
+          (data['employers'] is Map ? data['employers']['is_verified'] : null) ?? false,
       postedAt: posted,
       employerUid: data['employerUid'] ?? data['employer_id'] ?? data['companyId'] ?? data['company_id'],
-      phone: data['phone'] is String ? data['phone'] as String : null,
-      email: data['email'] is String ? data['email'] as String : null,
+      phone: (data['phone'] ?? data['contact_phone']) as String?,
+      email: (data['email'] ?? data['contact_email']) as String?,
       whatsappNumber: (data['whatsappNumber'] is String ? data['whatsappNumber'] as String : null) ??
           (data['whatsapp_number'] is String ? data['whatsapp_number'] as String : null) ??
           (data['phone'] is String ? data['phone'] as String : null),
       contactName: (data['contactName'] is String ? data['contactName'] as String : null) ??
           (data['contact_name'] is String ? data['contact_name'] as String : null),
-      status: (data['status'] is String ? data['status'] as String : 'active').toLowerCase(),
+      status: rawStatus == 'published' ? 'active' : rawStatus,
       expiresAt: expires,
       isFeatured: data['isFeatured'] == true || data['is_featured'] == true || data['planTier'] == 'featured' || data['planTier'] == 'elite',
       isStatewide: isStatewideJob,
@@ -126,16 +134,17 @@ class JobModel {
     }
     return {
       'title': title,
-      'company_name': companyName,
-      'location_city': locationCity,
-      'salary_text': salaryText,
+      'district': locationCity,
+      'salaryText': salaryText,
       'category': category,
-      'work_mode': workMode,
-      'vacancies_count': vacanciesCount,
+      'workMode': workMode,
+      'vacanciesCount': vacanciesCount,
       'description': description,
-      'is_verified': isVerified,
-      'posted_at': DateTime.now().toIso8601String(),
-      'employer_id': employerUid,
+      'contactName': contactName,
+      'phone': phone,
+      'email': email,
+      'whatsappNumber': whatsappNumber,
+      'isStatewide': isStatewide,
     };
   }
 }

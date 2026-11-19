@@ -205,16 +205,8 @@ class SupabaseService {
   // ---------------------------------------------------------------------------
 
   static Future<Map<String, dynamic>?> getEmployer(String userId) async {
-    try {
-      final data = await client
-          .from('employers')
-          .select()
-          .eq('user_id', userId)
-          .maybeSingle();
-      return data;
-    } catch (_) {
-      return null;
-    }
+    return client.from('employers').select()
+        .eq('user_id', userId).maybeSingle();
   }
 
   static Future<void> upsertEmployer({
@@ -296,64 +288,6 @@ class SupabaseService {
         .order('created_at', ascending: false);
   }
 
-  static Stream<List<Map<String, dynamic>>> streamEmployerApplications(
-    String employerId,
-  ) {
-    return client
-        .from('job_applications')
-        .stream(primaryKey: ['id'])
-        .eq('employer_id', employerId)
-        .order('created_at', ascending: false);
-  }
-
-  static Future<void> postJob(Map<String, dynamic> jobData) async {
-    await client.from('jobs').insert(jobData);
-  }
-
-  static Future<void> applyForJob({
-    required String jobId,
-    required String candidateId,
-    required String employerId,
-    required String applicantName,
-    required String applicantPhone,
-    String? applicantDistrict,
-    String? resumeUrl,
-    String? notes,
-  }) async {
-    await client.from('job_applications').insert({
-      'job_id': jobId,
-      'candidate_id': candidateId,
-      'employer_id': employerId,
-      'applicant_name': applicantName,
-      'applicant_phone': applicantPhone,
-      'applicant_district': applicantDistrict,
-      'resume_url': resumeUrl,
-      'notes': notes,
-      'status': 'SUBMITTED',
-    });
-  }
-
-  static Future<void> updateApplicationStatus({
-    required String applicationId,
-    required String status,
-    DateTime? interviewDate,
-    String? notes,
-  }) async {
-    final payload = <String, dynamic>{
-      'status': status,
-      'updated_at': DateTime.now().toIso8601String(),
-    };
-    if (interviewDate != null) {
-      payload['interview_date'] = interviewDate.toIso8601String();
-    }
-    if (notes != null) payload['notes'] = notes;
-
-    await client
-        .from('job_applications')
-        .update(payload)
-        .eq('id', applicationId);
-  }
-
   // ---------------------------------------------------------------------------
   // Plans & Pricing
   // ---------------------------------------------------------------------------
@@ -392,10 +326,6 @@ class SupabaseService {
   // ---------------------------------------------------------------------------
   // Realtime Database & Job Operations (Supabase PostgreSQL)
   // ---------------------------------------------------------------------------
-
-  static final Map<String, Set<String>> _savedJobsCache = {};
-  static final StreamController<Map<String, Set<String>>> _savedJobsController =
-      StreamController<Map<String, Set<String>>>.broadcast();
 
   Stream<List<JobModel>> streamJobs({
     String? category,
@@ -445,7 +375,9 @@ class SupabaseService {
       } else {
         yield filterJobs(SampleJobs.all);
       }
-    } catch (_) {
+    } catch (error) {
+      if (kReleaseMode) rethrow;
+      debugPrint('[Jobs preview] $error');
       yield filterJobs(SampleJobs.all);
     }
 
@@ -460,35 +392,10 @@ class SupabaseService {
               return filtered;
             }
             return filterJobs(SampleJobs.all);
-          })
-          .handleError((err) {
-            debugPrint('[Jobs Realtime Notice]: $err');
           });
-    } catch (_) {}
-  }
-
-  Future<String> createJobPost(JobModel job) async {
-    try {
-      final res = await client
-          .from('jobs')
-          .insert({
-            'title': job.title,
-            'category': job.category,
-            'description': job.description,
-            'location_city': job.locationCity,
-            'salary_text': job.salaryText,
-            'work_mode': job.workMode,
-            'vacancies_count': job.vacanciesCount,
-            'is_verified': job.isVerified,
-            'employer_id': job.employerUid,
-            'status': 'PUBLISHED',
-          })
-          .select()
-          .single();
-      return res['id']?.toString() ?? '';
-    } catch (e) {
-      debugPrint('[SupabaseService] Error creating job: $e');
-      rethrow;
+    } catch (error) {
+      if (kReleaseMode) rethrow;
+      debugPrint('[Jobs Realtime Notice]: $error');
     }
   }
 
@@ -500,24 +407,38 @@ class SupabaseService {
   }) async {
     if (job.isDemo) return false;
     try {
+      if (client.auth.currentUser?.id != candidateUid) return false;
+      final candidate = await client
+          .from('candidate_profiles')
+          .select('id,full_name,district')
+          .eq('user_id', candidateUid)
+          .maybeSingle();
+      final listing = await client
+          .from('jobs')
+          .select('employer_id,status')
+          .eq('id', jobId)
+          .maybeSingle();
+      if (candidate == null || listing?['status'] != 'PUBLISHED') return false;
       await client.from('job_applications').insert({
         'job_id': jobId,
-        'job_title': job.title,
-        'company_name': job.companyName,
-        'employer_id': job.employerUid ?? '',
-        'candidate_id': candidateUid,
+        'employer_id': listing!['employer_id'],
+        'candidate_id': candidate['id'],
         'applicant_name':
             candidateProfile['fullName'] ??
-            candidateProfile['displayName'] ??
+            candidate['full_name'] ??
             'Applicant',
         'applicant_phone': candidateProfile['phone'] ?? '',
         'applicant_district':
             candidateProfile['district'] ??
-            candidateProfile['locationCity'] ??
+            candidate['district'] ??
             '',
         'status': 'SUBMITTED',
       });
       return true;
+    } on PostgrestException catch (e) {
+      if (e.code == '23505') return true;
+      debugPrint('[SupabaseService] Error applying to job: $e');
+      return false;
     } catch (e) {
       debugPrint('[SupabaseService] Error applying to job: $e');
       return false;
@@ -529,70 +450,88 @@ class SupabaseService {
     required String jobId,
     required bool isSaved,
   }) async {
-    final current = _savedJobsCache[candidateUid] ?? <String>{};
-    if (isSaved) {
-      current.remove(jobId);
-    } else {
-      current.add(jobId);
+    if (client.auth.currentUser?.id != candidateUid) {
+      throw StateError('Sign in to save jobs.');
     }
-    _savedJobsCache[candidateUid] = current;
-    _savedJobsController.add(Map.from(_savedJobsCache));
+    final candidate = await client.from('candidate_profiles')
+        .select('id').eq('user_id', candidateUid).maybeSingle();
+    final profileId = candidate?['id']?.toString();
+    if (profileId == null) throw StateError('Complete your profile first.');
+    if (isSaved) {
+      await client.from('saved_jobs').delete()
+          .eq('candidate_id', profileId).eq('job_id', jobId);
+    } else {
+      await client.from('saved_jobs').insert({
+        'candidate_id': profileId,
+        'job_id': jobId,
+      });
+    }
     return !isSaved;
   }
 
-  Stream<Set<String>> streamSavedJobIds(String candidateUid) {
-    if (candidateUid.isEmpty) return Stream.value(<String>{});
-    return _savedJobsController.stream
-        .map((cache) => cache[candidateUid] ?? <String>{})
-        .startWith(_savedJobsCache[candidateUid] ?? <String>{});
+  Stream<Set<String>> streamSavedJobIds(String candidateUid) async* {
+    if (candidateUid.isEmpty) { yield <String>{}; return; }
+    final candidate = await client.from('candidate_profiles')
+        .select('id').eq('user_id', candidateUid).maybeSingle();
+    final profileId = candidate?['id']?.toString();
+    if (profileId == null) { yield <String>{}; return; }
+    yield* client.from('saved_jobs')
+        .stream(primaryKey: ['candidate_id', 'job_id'])
+        .eq('candidate_id', profileId)
+        .map((rows) => rows.map((row) => row['job_id']?.toString() ?? '')
+            .where((id) => id.isNotEmpty).toSet());
   }
 
-  Stream<Set<String>> streamAppliedJobIds(String candidateUid) {
-    if (candidateUid.isEmpty) return Stream.value(<String>{});
-    try {
-      return client
-          .from('job_applications')
-          .stream(primaryKey: ['id'])
-          .eq('candidate_id', candidateUid)
-          .map(
-            (rows) => rows
-                .map((r) => r['job_id']?.toString() ?? '')
-                .where((id) => id.isNotEmpty)
-                .toSet(),
-          );
-    } catch (_) {
-      return Stream.value(<String>{});
-    }
+  Stream<Set<String>> streamAppliedJobIds(String candidateUid) async* {
+    if (candidateUid.isEmpty) { yield <String>{}; return; }
+    final candidate = await client.from('candidate_profiles')
+        .select('id').eq('user_id', candidateUid).maybeSingle();
+    final profileId = candidate?['id']?.toString();
+    if (profileId == null) { yield <String>{}; return; }
+    yield* client.from('job_applications').stream(primaryKey: ['id'])
+        .eq('candidate_id', profileId)
+        .map((rows) => rows.map((r) => r['job_id']?.toString() ?? '')
+            .where((id) => id.isNotEmpty).toSet());
   }
 
   Stream<List<Map<String, dynamic>>> streamCandidateApplications(
     String candidateUid,
-  ) {
-    if (candidateUid.isEmpty) return Stream.value([]);
-    try {
-      return client
-          .from('job_applications')
-          .stream(primaryKey: ['id'])
-          .eq('candidate_id', candidateUid)
-          .order('created_at', ascending: false);
-    } catch (_) {
-      return Stream.value([]);
-    }
+  ) async* {
+    if (candidateUid.isEmpty) { yield []; return; }
+    final candidate = await client.from('candidate_profiles')
+        .select('id').eq('user_id', candidateUid).maybeSingle();
+    final profileId = candidate?['id']?.toString();
+    if (profileId == null) { yield []; return; }
+    yield* client.from('job_applications').stream(primaryKey: ['id'])
+        .eq('candidate_id', profileId)
+        .order('created_at', ascending: false)
+        .asyncMap((rows) async {
+          if (rows.isEmpty) return rows;
+          final ids = rows.map((row) => row['job_id']?.toString())
+              .whereType<String>().toSet().toList();
+          final jobs = await client.from('jobs').select('id,title,company_name,district')
+              .inFilter('id', ids);
+          final listings = {for (final row in jobs) row['id'].toString(): row};
+          return rows.map((row) => {
+            ...row,
+            'jobTitle': listings[row['job_id']?.toString()]?['title'] ?? 'Job',
+            'companyName': listings[row['job_id']?.toString()]?['company_name'] ?? 'Company',
+            'locationCity': listings[row['job_id']?.toString()]?['district'] ?? '',
+          }).toList();
+        });
   }
 
   Stream<List<Map<String, dynamic>>> streamRecruiterApplicants({
     required String employerUid,
-  }) {
-    if (employerUid.isEmpty) return Stream.value([]);
-    try {
-      return client
-          .from('job_applications')
-          .stream(primaryKey: ['id'])
-          .eq('employer_id', employerUid)
-          .order('created_at', ascending: false);
-    } catch (_) {
-      return Stream.value([]);
-    }
+  }) async* {
+    if (employerUid.isEmpty) { yield []; return; }
+    final employer = await client.from('employers')
+        .select('id').eq('user_id', employerUid).maybeSingle();
+    final employerId = employer?['id']?.toString();
+    if (employerId == null) { yield []; return; }
+    yield* client.from('job_applications').stream(primaryKey: ['id'])
+        .eq('employer_id', employerId)
+        .order('created_at', ascending: false);
   }
 
   Stream<Map<String, dynamic>?> streamCandidateProfile(String uid) async* {
@@ -620,12 +559,5 @@ class SupabaseService {
     if (uid.isEmpty) return Stream.value(null);
     return streamCandidateProfile(uid)
         .map((p) => p?['profile_photo_url'] as String?);
-  }
-}
-
-extension _StreamStartWith<T> on Stream<T> {
-  Stream<T> startWith(T initial) async* {
-    yield initial;
-    yield* this;
   }
 }

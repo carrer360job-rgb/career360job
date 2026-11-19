@@ -48,7 +48,7 @@ class _CandidateGuidelinesScreenState extends State<CandidateGuidelinesScreen> {
         widget.onBack();
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFFF1F5F9),
+        backgroundColor: AppTheme.background,
         appBar: AppBar(
           backgroundColor: Colors.white,
           elevation: 0,
@@ -183,7 +183,7 @@ class _CandidateGuidelinesScreenState extends State<CandidateGuidelinesScreen> {
                                 ),
                                 children: const [
                                   TextSpan(
-                                    text: 'support@career360.com.',
+                                    text: 'carrer360job@gmail.com.',
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: AppTheme.primary,
@@ -227,7 +227,7 @@ class _CandidateGuidelinesScreenState extends State<CandidateGuidelinesScreen> {
     );
   }
 
-  // --- Hero Blue Banner ---
+  // --- Hero Emerald & Pine Banner ---
   Widget _buildHeroHeader(bool isDesktop) {
     return Container(
       width: double.infinity,
@@ -236,9 +236,9 @@ class _CandidateGuidelinesScreenState extends State<CandidateGuidelinesScreen> {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Color(0xFF0A2351),
-            Color(0xFF0C3D8F),
-            Color(0xFF155EEF),
+            Color(0xFF064E3B), // Deep Forest Pine
+            Color(0xFF065F46), // Primary Dark
+            Color(0xFF16A34A), // Emerald Green
           ],
         ),
       ),
@@ -269,7 +269,7 @@ class _CandidateGuidelinesScreenState extends State<CandidateGuidelinesScreen> {
                   'We ensure a safe, transparent, and trustworthy job ecosystem for every candidate on Career360.',
                   style: TextStyle(
                     fontSize: 13,
-                    color: Color(0xFFE0E7FF),
+                    color: Color(0xFFDCFCE7),
                     height: 1.45,
                   ),
                 ),
@@ -292,9 +292,9 @@ class _CandidateGuidelinesScreenState extends State<CandidateGuidelinesScreen> {
       height: 76,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.white.withValues(alpha: 0.1),
+        color: Colors.white.withValues(alpha: 0.12),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.22),
+          color: Colors.white.withValues(alpha: 0.25),
           width: 1.5,
         ),
       ),
@@ -308,13 +308,13 @@ class _CandidateGuidelinesScreenState extends State<CandidateGuidelinesScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Color(0xFF38BDF8),
-              Color(0xFF155EEF),
+              Color(0xFF22C55E), // Electric Green
+              Color(0xFF16A34A), // Emerald Green
             ],
           ),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF38BDF8).withValues(alpha: 0.4),
+              color: const Color(0xFF16A34A).withValues(alpha: 0.4),
               blurRadius: 16,
               offset: const Offset(0, 4),
             ),
@@ -339,15 +339,15 @@ class _CandidateGuidelinesScreenState extends State<CandidateGuidelinesScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Blue Tint Icon Box
+        // Mint Tint Icon Box
         Container(
           width: 46,
           height: 46,
           decoration: BoxDecoration(
-            color: const Color(0xFFEFF6FF),
+            color: AppTheme.primaryLight,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: const Color(0xFFDBEAFE),
+              color: AppTheme.primaryLightBorder,
               width: 1,
             ),
           ),
@@ -399,10 +399,10 @@ class _CandidateGuidelinesScreenState extends State<CandidateGuidelinesScreen> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F7FF),
+        color: AppTheme.primaryLight,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: const Color(0xFFBAE6FD),
+          color: AppTheme.primaryLightBorder,
           width: 1,
         ),
       ),
@@ -430,10 +430,10 @@ class _CandidateGuidelinesScreenState extends State<CandidateGuidelinesScreen> {
                   ),
                 ),
                 Text(
-                  'support@career360.com',
+                  'carrer360job@gmail.com',
                   style: TextStyle(
                     fontSize: 12.5,
-                    color: AppTheme.primary,
+                    color: AppTheme.primaryDark,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -512,7 +512,7 @@ class _CandidateGuidelinesScreenState extends State<CandidateGuidelinesScreen> {
     return BouncyButton(
       onPressed: _hasAgreed ? _handleAccept : null,
       borderRadius: BorderRadius.circular(14),
-      pressOverlayColor: const Color(0xFF0C3E9E).withValues(alpha: 0.35),
+      pressOverlayColor: const Color(0xFF064E3B).withValues(alpha: 0.35),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         width: double.infinity,
@@ -521,8 +521,8 @@ class _CandidateGuidelinesScreenState extends State<CandidateGuidelinesScreen> {
           gradient: _hasAgreed
               ? const LinearGradient(
                   colors: [
-                    Color(0xFF155EEF),
-                    Color(0xFF0F4AC7),
+                    Color(0xFF16A34A), // Emerald Green
+                    Color(0xFF15803D), // Deep Emerald
                   ],
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
@@ -533,12 +533,12 @@ class _CandidateGuidelinesScreenState extends State<CandidateGuidelinesScreen> {
           boxShadow: _hasAgreed
               ? [
                   BoxShadow(
-                    color: const Color(0xFF155EEF).withValues(alpha: 0.32),
+                    color: const Color(0xFF16A34A).withValues(alpha: 0.32),
                     blurRadius: 16,
                     offset: const Offset(0, 6),
                   ),
                 ]
-              : null,
+             : null,
         ),
         alignment: Alignment.center,
         child: Row(

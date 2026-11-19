@@ -3,13 +3,14 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
 
-import '../../core/theme/app_theme.dart';
+import '../../core/constants/app_constants.dart';
 import '../../core/services/supabase_auth_service.dart';
 import '../../core/widgets/bouncy_button.dart';
 import '../legal/privacy_policy_screen.dart';
 
 enum AuthScreenState { signIn, signUp, verifyEmail, forgotPassword }
 
+/// Dedicated Authentication Portal for Job Seekers & Candidates.
 class CandidateLoginScreen extends StatefulWidget {
   final VoidCallback onBack;
   final bool isEmployer;
@@ -27,16 +28,17 @@ class CandidateLoginScreen extends StatefulWidget {
 class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   final SupabaseAuthService _supabaseAuth = SupabaseAuthService();
   AuthScreenState _screenState = AuthScreenState.signIn;
+  int _forgotPasswordStep = 1; // 1 = Enter Email, 2 = Enter OTP & Set New Password
 
-  // Strict Design Tokens from Reference Screenshot
-  static const Color _primaryBlue = Color(0xFF155EEF);
-  static const Color _deepNavy = Color(0xFF0B347C);
-  static const Color _secondaryBlue = Color(0xFF1765E8);
-  static const Color _navyText = Color(0xFF101828);
-  static const Color _secondaryText = Color(0xFF667085);
+  // Emerald Growth Theme Design Tokens
+  static const Color _emeraldPrimary = Color(0xFF16A34A);
+  static const Color _deepPine = Color(0xFF065F46);
+  static const Color _deepForest = Color(0xFF064E3B);
+  static const Color _mintBg = Color(0xFFF0FDF4);
+  static const Color _navyText = Color(0xFF0F172A);
+  static const Color _secondaryText = Color(0xFF64748B);
   static const Color _inputBorder = Color(0xFFD0D5DD);
-  static const Color _dividerColor = Color(0xFFE4E7EC);
-  static const Color _successGreen = Color(0xFF039855);
+  static const Color _dividerColor = Color(0xFFE2E8F0);
   static const double _buttonHeight = 52.0;
   static const double _inputHeight = 52.0;
   static const double _inputRadius = 10.0;
@@ -53,16 +55,30 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   final TextEditingController _signUpEmailController = TextEditingController();
   final TextEditingController _signUpPasswordController =
       TextEditingController();
+  final TextEditingController _signUpConfirmPasswordController =
+      TextEditingController();
+  bool _obscureSignUpPassword = true;
+  bool _obscureConfirmPassword = true;
+  bool _agreedToGuidelines = false;
+
+  // Verification & Sign Up OTP Controllers
   final TextEditingController _emailOtpController = TextEditingController();
   String? _pendingSignupEmail;
   String? _pendingSignupRole;
   Timer? _resendCooldownTimer;
   int _resendCountdown = 0;
-  bool _obscureSignUpPassword = true;
 
   // Forgot Password Controllers
   final TextEditingController _forgotEmailController = TextEditingController();
-  bool _resetLinkSent = false;
+  final TextEditingController _forgotOtpController = TextEditingController();
+  final TextEditingController _forgotNewPasswordController =
+      TextEditingController();
+  final TextEditingController _forgotConfirmPasswordController =
+      TextEditingController();
+  bool _obscureForgotNewPassword = true;
+  bool _obscureForgotConfirmPassword = true;
+  Timer? _forgotResendCooldownTimer;
+  int _forgotResendCountdown = 0;
 
   bool _isLoading = false;
   bool _isGoogleLoading = false;
@@ -82,13 +98,18 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   @override
   void dispose() {
     _resendCooldownTimer?.cancel();
+    _forgotResendCooldownTimer?.cancel();
     _signInEmailController.dispose();
     _signInPasswordController.dispose();
     _signUpNameController.dispose();
     _signUpEmailController.dispose();
     _signUpPasswordController.dispose();
+    _signUpConfirmPasswordController.dispose();
     _emailOtpController.dispose();
     _forgotEmailController.dispose();
+    _forgotOtpController.dispose();
+    _forgotNewPasswordController.dispose();
+    _forgotConfirmPasswordController.dispose();
     _termsRecognizer.dispose();
     _privacyRecognizer.dispose();
     super.dispose();
@@ -103,16 +124,73 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         timer.cancel();
         return;
       }
-      if (_resendCountdown <= 1) {
-        timer.cancel();
-        setState(() => _resendCountdown = 0);
-      } else {
-        setState(() => _resendCountdown--);
-      }
+      setState(() {
+        if (_resendCountdown > 1) {
+          _resendCountdown--;
+        } else {
+          _resendCountdown = 0;
+          timer.cancel();
+        }
+      });
     });
   }
 
-  // --- Handlers ---
+  void _startForgotResendCooldown([int seconds = 60]) {
+    _forgotResendCooldownTimer?.cancel();
+    if (!mounted) return;
+    setState(() => _forgotResendCountdown = seconds);
+    _forgotResendCooldownTimer =
+        Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        if (_forgotResendCountdown > 1) {
+          _forgotResendCountdown--;
+        } else {
+          _forgotResendCountdown = 0;
+          timer.cancel();
+        }
+      });
+    });
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: const Color(0xFFDC2626),
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  void _showSuccess(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: _deepPine,
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  // --- Auth Handlers ---
 
   Future<void> _handleSignIn() async {
     if (_isLoading || _isGoogleLoading) return;
@@ -129,13 +207,9 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     }
 
     setState(() => _isLoading = true);
-
     try {
-      // 1. Authenticate with Supabase Auth (Primary)
       await _supabaseAuth.signInWithEmail(email: email, password: password);
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     } on AuthException catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -154,6 +228,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     final name = _signUpNameController.text.trim();
     final email = _signUpEmailController.text.trim();
     final password = _signUpPasswordController.text;
+    final confirmPassword = _signUpConfirmPasswordController.text;
 
     if (name.isEmpty) {
       _showError('Please enter your full name.');
@@ -167,22 +242,32 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       _showError('Password must be at least 6 characters.');
       return;
     }
+    if (password != confirmPassword) {
+      _showError('Passwords do not match. Please check and try again.');
+      return;
+    }
+    if (!_agreedToGuidelines) {
+      _showError('Please agree to the Candidate Safety Guidelines & Privacy Policy.');
+      return;
+    }
 
     setState(() => _isLoading = true);
+
+    final role = widget.isEmployer ? 'EMPLOYER' : 'CANDIDATE';
 
     try {
       await _supabaseAuth.signUpWithEmail(
         fullName: name,
         email: email,
         password: password,
-        role: widget.isEmployer ? 'EMPLOYER' : 'CANDIDATE',
+        role: role,
       );
 
       if (mounted) {
         setState(() {
           _isLoading = false;
           _pendingSignupEmail = email;
-          _pendingSignupRole = widget.isEmployer ? 'EMPLOYER' : 'CANDIDATE';
+          _pendingSignupRole = role;
           _emailOtpController.clear();
           _screenState = AuthScreenState.verifyEmail;
         });
@@ -198,9 +283,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       if (mounted) {
         setState(() => _isLoading = false);
         _showError(
-          e is StateError
-              ? e.message
-              : 'Could not create the account. Try again.',
+          e is StateError ? e.message : 'Could not create account. Try again.',
         );
       }
     }
@@ -208,13 +291,14 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
 
   Future<void> _handleVerifyEmailOtp() async {
     final email = _pendingSignupEmail;
-    final role = _pendingSignupRole;
+    final role = _pendingSignupRole ?? 'CANDIDATE';
     final code = _emailOtpController.text.trim();
-    if (_isLoading || email == null || role == null) return;
+    if (_isLoading || email == null) return;
     if (!RegExp(r'^\d{6}$').hasMatch(code)) {
-      _showError('Enter the 6-digit code from your email.');
+      _showError('Enter the 6-digit verification code from your email.');
       return;
     }
+
     setState(() => _isLoading = true);
     try {
       await _supabaseAuth.verifySignupOtp(
@@ -223,17 +307,14 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         role: role,
       );
       if (mounted) setState(() => _isLoading = false);
-      // The verified Supabase session moves the app to onboarding.
     } on AuthException catch (error) {
       if (mounted) {
         setState(() => _isLoading = false);
         final msg = error.message.toLowerCase();
         if (msg.contains('expired')) {
           _showError('This code has expired. Tap "Resend code" for a fresh code.');
-        } else if (msg.contains('invalid') || msg.contains('wrong') || msg.contains('incorrect') || msg.contains('match')) {
-          _showError('Incorrect 6-digit code. Please check your email and try again.');
-        } else if (msg.contains('rate') || msg.contains('limit') || msg.contains('seconds')) {
-          _showError('Too many attempts. Please wait a moment before trying again.');
+        } else if (msg.contains('invalid') || msg.contains('wrong') || msg.contains('incorrect')) {
+          _showError('Incorrect 6-digit code. Please check your email.');
         } else {
           _showError(error.message);
         }
@@ -242,9 +323,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       if (mounted) {
         setState(() => _isLoading = false);
         _showError(
-          e is StateError
-              ? e.message
-              : 'The code could not be verified. Request a new code and try again.',
+          e is StateError ? e.message : 'The code could not be verified. Try again.',
         );
       }
     }
@@ -252,65 +331,13 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
 
   Future<void> _handleResendEmailOtp() async {
     final email = _pendingSignupEmail;
-    if (_isLoading || email == null) return;
-    if (_resendCountdown > 0) {
-      _showError('Please wait $_resendCountdown seconds before requesting another code.');
-      return;
-    }
-    setState(() => _isLoading = true);
+    if (email == null || _resendCountdown > 0) return;
     try {
       await _supabaseAuth.resendSignupOtp(email);
-      if (mounted) {
-        setState(() => _isLoading = false);
-        _startResendCooldown(60);
-        _showSuccess('A new verification code was sent to $email.');
-      }
-    } on AuthException catch (error) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        final msg = error.message.toLowerCase();
-        if (msg.contains('rate') || msg.contains('limit') || msg.contains('seconds')) {
-          _showError('Rate limit reached. Please wait a moment before requesting another code.');
-        } else {
-          _showError(error.message);
-        }
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        _showError('Could not resend the code. Try again.');
-      }
-    }
-  }
-
-  Future<void> _handleSendResetLink() async {
-    if (_isLoading || _isGoogleLoading) return;
-    final email = _forgotEmailController.text.trim();
-    if (email.isEmpty || !email.contains('@')) {
-      _showError('Please enter a valid email address.');
-      return;
-    }
-
-    setState(() => _isLoading = true);
-    try {
-      await _supabaseAuth.resetPassword(email: email);
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _resetLinkSent = true;
-        });
-        _showSuccess('Password reset link sent to your email.');
-      }
-    } on AuthException catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        _showError(e.message);
-      }
+      _startResendCooldown(60);
+      _showSuccess('A fresh 6-digit code has been sent to $email.');
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        _showError('Unable to send reset link: ${e.toString()}');
-      }
+      _showError('Could not resend verification code. Please wait and try again.');
     }
   }
 
@@ -318,42 +345,130 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     if (_isLoading || _isGoogleLoading) return;
     setState(() => _isGoogleLoading = true);
     try {
-      // Trigger Supabase Google OAuth Browser Flow
       await _supabaseAuth.signInWithGoogle();
+      if (mounted) setState(() => _isGoogleLoading = false);
+    } catch (e) {
       if (mounted) {
         setState(() => _isGoogleLoading = false);
+        _showError('Google sign-in could not be completed. Please try again.');
       }
-    } on AuthException catch (error) {
-      debugPrint('[Google Sign-In] Supabase AuthException: ${error.message}');
-      if (!mounted) return;
-      setState(() => _isGoogleLoading = false);
-      _showError(error.message);
-    } catch (error) {
-      debugPrint('[Google Sign-In] Unexpected error: $error');
-      if (!mounted) return;
-      setState(() => _isGoogleLoading = false);
-      _showError('Could not sign in with Google. Please try again.');
     }
   }
 
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(backgroundColor: AppTheme.error, content: Text(message)),
-    );
+  // --- 2-Step Password Reset Handlers ---
+
+  Future<void> _handleSendForgotPasswordOtp() async {
+    if (_isLoading) return;
+    final email = _forgotEmailController.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      _showError('Please enter a valid registered email address.');
+      return;
+    }
+    setState(() => _isLoading = true);
+    try {
+      await _supabaseAuth.resetPassword(email: email);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _forgotPasswordStep = 2;
+          _forgotOtpController.clear();
+          _forgotNewPasswordController.clear();
+          _forgotConfirmPasswordController.clear();
+        });
+        _startForgotResendCooldown(60);
+        _showSuccess('Verification code sent to $email.');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        _showError('Unable to send verification code. Please check the email.');
+      }
+    }
   }
 
-  void _showSuccess(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(backgroundColor: _successGreen, content: Text(message)),
-    );
+  Future<void> _handleVerifyForgotOtpAndResetPassword() async {
+    if (_isLoading) return;
+    final email = _forgotEmailController.text.trim();
+    final otp = _forgotOtpController.text.trim();
+    final newPassword = _forgotNewPasswordController.text;
+    final confirmPassword = _forgotConfirmPasswordController.text;
+
+    if (!RegExp(r'^\d{6}$').hasMatch(otp)) {
+      _showError('Enter the 6-digit verification code from your email.');
+      return;
+    }
+    if (newPassword.length < 6) {
+      _showError('Password must be at least 6 characters.');
+      return;
+    }
+    if (newPassword != confirmPassword) {
+      _showError('Passwords do not match. Please check and try again.');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      await _supabaseAuth.verifyPasswordResetOtpAndSetPassword(
+        email: email,
+        token: otp,
+        newPassword: newPassword,
+      );
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _forgotPasswordStep = 1;
+          _screenState = AuthScreenState.signIn;
+          _signInEmailController.text = email;
+          _signInPasswordController.clear();
+        });
+        _showSuccess('Password reset successfully! Please sign in with your new password.');
+      }
+    } on AuthException catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        final msg = e.message.toLowerCase();
+        if (msg.contains('expired')) {
+          _showError('This code has expired. Tap "Resend code" for a fresh code.');
+        } else if (msg.contains('invalid') || msg.contains('wrong') || msg.contains('incorrect')) {
+          _showError('Incorrect 6-digit code. Please check your email.');
+        } else {
+          _showError(e.message);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        _showError(e is StateError ? e.message : 'Could not reset password. Please try again.');
+      }
+    }
+  }
+
+  Future<void> _handleResendForgotOtp() async {
+    final email = _forgotEmailController.text.trim();
+    if (email.isEmpty || _forgotResendCountdown > 0) return;
+    try {
+      await _supabaseAuth.resendPasswordResetOtp(email: email);
+      _startForgotResendCooldown(60);
+      _showSuccess('A fresh 6-digit verification code has been sent to $email.');
+    } catch (e) {
+      _showError('Could not resend code. Please wait and try again.');
+    }
   }
 
   void _handleBackNavigation() {
     if (_screenState == AuthScreenState.forgotPassword) {
-      setState(() {
-        _resetLinkSent = false;
-        _screenState = AuthScreenState.signIn;
-      });
+      if (_forgotPasswordStep == 2) {
+        _forgotResendCooldownTimer?.cancel();
+        setState(() {
+          _forgotResendCountdown = 0;
+          _forgotPasswordStep = 1;
+        });
+      } else {
+        setState(() {
+          _forgotPasswordStep = 1;
+          _screenState = AuthScreenState.signIn;
+        });
+      }
     } else if (_screenState == AuthScreenState.signUp) {
       setState(() {
         _screenState = AuthScreenState.signIn;
@@ -379,89 +494,95 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       },
       child: Scaffold(
         backgroundColor: Colors.white,
-        // 1. Top Navigation: White background, Career360 branding
         appBar: _buildAuthenticationHeader(),
         body: SafeArea(
           bottom: true,
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // 2. Enterprise Hero Header
-                _buildAuthHero(),
-
-                // 3. Curved Overlapping Bottom Sheet (Full width, 36px top rounded corners)
-                Transform.translate(
-                  offset: const Offset(0, -36),
-                  child: Container(
-                    width: double.infinity,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(36),
-                        topRight: Radius.circular(36),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
+                        maxWidth: 580,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Color(0x180B347C),
-                          blurRadius: 20,
-                          offset: Offset(0, -4),
-                        ),
-                      ],
-                    ),
-                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Simple Text-Based Underline Tabs (Sign In / Sign Up)
-                        if (_screenState == AuthScreenState.signIn ||
-                            _screenState == AuthScreenState.signUp) ...[
-                          _buildAuthTabs(
-                            isSignIn: _screenState == AuthScreenState.signIn,
-                          ),
-                          const SizedBox(height: 24),
-                        ],
+                      child: IntrinsicHeight(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // Emerald & Pine Hero Header
+                            _buildAuthHero(),
 
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 280),
-                          switchInCurve: Curves.easeOutCubic,
-                          switchOutCurve: Curves.easeInCubic,
-                          transitionBuilder: (child, animation) {
-                            return FadeTransition(
-                              opacity: animation,
-                              child: SlideTransition(
-                                position: Tween<Offset>(
-                                  begin: const Offset(0.04, 0),
-                                  end: Offset.zero,
-                                ).animate(animation),
-                                child: child,
+                            // Elevated Form Card (Stretches Full Height)
+                            Expanded(
+                              child: Transform.translate(
+                                offset: const Offset(0, -28),
+                                child: Container(
+                                  width: double.infinity,
+                                  decoration: const BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.only(
+                                      topLeft: Radius.circular(32),
+                                      topRight: Radius.circular(32),
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Color(0x15064E3B),
+                                        blurRadius: 24,
+                                        offset: Offset(0, -4),
+                                      ),
+                                    ],
+                                  ),
+                                  padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      // Sign In / Register Tabs
+                                      if (_screenState == AuthScreenState.signIn ||
+                                          _screenState == AuthScreenState.signUp) ...[
+                                        _buildAuthTabs(
+                                          isSignIn:
+                                              _screenState == AuthScreenState.signIn,
+                                        ),
+                                        const SizedBox(height: 24),
+                                      ],
+
+                                      AnimatedSwitcher(
+                                        duration: const Duration(milliseconds: 260),
+                                        switchInCurve: Curves.easeOutCubic,
+                                        switchOutCurve: Curves.easeInCubic,
+                                        child: KeyedSubtree(
+                                          key: ValueKey('${_screenState.name}_$_forgotPasswordStep'),
+                                          child: _buildCurrentForm(),
+                                        ),
+                                      ),
+
+                                      const SizedBox(height: 20),
+                                      _buildAuthLegalFooter(),
+                                    ],
+                                  ),
+                                ),
                               ),
-                            );
-                          },
-                          child: KeyedSubtree(
-                            key: ValueKey(_screenState),
-                            child: _buildCurrentForm(),
-                          ),
+                            ),
+                          ],
                         ),
-
-                        const SizedBox(height: 22),
-
-                        // Terms & Privacy Footer: Strictly on one continuous line
-                        _buildAuthLegalFooter(),
-                      ],
+                      ),
                     ),
                   ),
                 ),
-              ],
-            ),
+              );
+            },
           ),
         ),
       ),
     );
   }
 
-  /// Component 1: AuthenticationHeader (White background, back button, Career360 logo)
+  // --- App Bar ---
   PreferredSizeWidget _buildAuthenticationHeader() {
     return AppBar(
       backgroundColor: Colors.white,
@@ -483,7 +604,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
               'assets/images/career360_icon.png',
               fit: BoxFit.contain,
               errorBuilder: (context, error, stackTrace) =>
-                  const Icon(Icons.work_rounded, color: _primaryBlue, size: 24),
+                  const Icon(Icons.person_rounded, color: _emeraldPrimary, size: 24),
             ),
           ),
           const SizedBox(width: 8),
@@ -494,7 +615,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
-                  color: Color(0xFF0A2351),
+                  color: _deepForest,
                   letterSpacing: 0.5,
                 ),
               ),
@@ -503,129 +624,149 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
-                  color: _primaryBlue,
+                  color: _emeraldPrimary,
                   letterSpacing: 0.5,
                 ),
               ),
             ],
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(
+              color: const Color(0xFFDCFCE7),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFF86EFAC), width: 0.8),
+            ),
+            child: Text(
+              widget.isEmployer ? 'EMPLOYER' : 'JOB SEEKER',
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF166534),
+                letterSpacing: 0.5,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  /// Component 2: AuthHero (Pure Enterprise Minimalist - Direction A)
+  // --- Hero Section ---
   Widget _buildAuthHero() {
     String badgeText = widget.isEmployer
-        ? 'Employer Portal'
+        ? 'Verified Recruiter Network'
         : 'Verified Candidate Portal';
-    IconData badgeIcon = Icons.shield_outlined;
-    String heading = 'Welcome Back';
+    IconData badgeIcon =
+        widget.isEmployer ? Icons.business_center_rounded : Icons.person_pin_rounded;
+    String heading =
+        widget.isEmployer ? 'Recruiter Sign In' : 'Find Your Dream Job';
     String description = widget.isEmployer
-        ? 'Sign in to manage your hiring with Career360.'
-        : 'Sign in to your Career360 account to continue your journey.';
+        ? 'Sign in to manage job listings, review applicant resumes, and hire talent.'
+        : 'Sign in to discover thousands of verified career opportunities across Tamil Nadu.';
 
     if (_screenState == AuthScreenState.signUp) {
       badgeText = widget.isEmployer
-          ? 'Employer Registration'
-          : 'Candidate Registration';
-      badgeIcon = Icons.person_add_alt_1_outlined;
-      heading = 'Create Your Account';
+          ? 'Company & Recruiter Registration'
+          : '1-Tap Job Applications';
+      badgeIcon = Icons.person_add_alt_1_rounded;
+      heading = widget.isEmployer ? 'Register Your Company' : 'Create Candidate Account';
       description = widget.isEmployer
-          ? 'Create your account to register your company and start hiring.'
-          : 'Join Career360 and take the next step in your career.';
+          ? 'Start posting jobs and sourcing verified talent across Tamil Nadu.'
+          : 'Create your profile to apply for jobs, track interviews, and connect with top employers.';
     } else if (_screenState == AuthScreenState.verifyEmail) {
-      badgeText = 'Email Verification';
+      badgeText = 'Candidate Email Verification';
       badgeIcon = Icons.mark_email_read_outlined;
-      heading = 'Check Your Email';
-      description = 'Enter the verification code to continue.';
+      heading = 'Verify Your Email';
+      description =
+          'Enter the 6-digit confirmation code sent to your email to activate your account.';
     } else if (_screenState == AuthScreenState.forgotPassword) {
-      badgeText = 'Account Security';
-      badgeIcon = Icons.lock_reset_rounded;
-      heading = 'Forgot Password?';
-      description = 'Enter your email address and we\'ll send you a link to reset your password.';
+      if (_forgotPasswordStep == 1) {
+        badgeText = 'Security & Access Recovery';
+        badgeIcon = Icons.lock_reset_rounded;
+        heading = 'Reset Password';
+        description =
+            'Enter your registered email address and we\'ll send you a 6-digit verification code.';
+      } else {
+        badgeText = 'Enter Verification Code';
+        badgeIcon = Icons.password_rounded;
+        heading = 'Set New Password';
+        description =
+            'Enter the 6-digit code sent to your email and create a new secure password.';
+      }
     }
 
     return Container(
       width: double.infinity,
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [_deepNavy, _secondaryBlue],
-        ),
-      ),
-      padding: const EdgeInsets.fromLTRB(24, 30, 24, 68),
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 260),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeInCubic,
-        transitionBuilder: (child, animation) {
-          return FadeTransition(opacity: animation, child: child);
-        },
-        child: Column(
-          key: ValueKey(_screenState),
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Security Status Chip (Stripe / Apple Style)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.22),
-                  width: 1.0,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(badgeIcon, size: 13, color: const Color(0xFF93C5FD)),
-                  const SizedBox(width: 6),
-                  Text(
-                    badgeText,
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-
-            // Authoritative Heading
-            Text(
-              heading,
-              style: const TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-                letterSpacing: -0.5,
-                height: 1.2,
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            // Subtitle
-            Text(
-              description,
-              style: const TextStyle(
-                fontSize: 14,
-                color: Color(0xFFE0E7FF),
-                height: 1.45,
-              ),
-            ),
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF064E3B), // Deep Forest Pine
+            Color(0xFF065F46), // Primary Dark
+            Color(0xFF16A34A), // Emerald Green
           ],
         ),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 26, 24, 52),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.25),
+                width: 1.0,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(badgeIcon, size: 14, color: const Color(0xFF86EFAC)),
+                const SizedBox(width: 6),
+                Text(
+                  badgeText,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            heading,
+            style: const TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+              letterSpacing: -0.4,
+              height: 1.2,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            description,
+            style: const TextStyle(
+              fontSize: 13.5,
+              color: Color(0xFFD1FAE5),
+              height: 1.4,
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  /// Component 3: Simple Text-Based Underline Tabs (Sign In / Sign Up)
+  // --- Auth Tabs (Sign In / Register) ---
   Widget _buildAuthTabs({required bool isSignIn}) {
     return Column(
       children: [
@@ -634,19 +775,19 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
             Expanded(
               child: BouncyButton(
                 scaleDown: 0.97,
-                onPressed: () =>
-                    setState(() => _screenState = AuthScreenState.signIn),
+                onPressed: () => setState(
+                  () => _screenState = AuthScreenState.signIn,
+                ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Center(
                     child: Text(
-                      'Sign In',
+                      'Candidate Sign In',
                       style: TextStyle(
-                        fontSize: 16.5,
-                        fontWeight: isSignIn
-                            ? FontWeight.w700
-                            : FontWeight.w600,
-                        color: isSignIn ? _primaryBlue : _secondaryText,
+                        fontSize: 15.5,
+                        fontWeight:
+                            isSignIn ? FontWeight.w700 : FontWeight.w600,
+                        color: isSignIn ? _emeraldPrimary : _secondaryText,
                         letterSpacing: -0.2,
                       ),
                     ),
@@ -657,19 +798,19 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
             Expanded(
               child: BouncyButton(
                 scaleDown: 0.97,
-                onPressed: () =>
-                    setState(() => _screenState = AuthScreenState.signUp),
+                onPressed: () => setState(
+                  () => _screenState = AuthScreenState.signUp,
+                ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Center(
                     child: Text(
-                      'Sign Up',
+                      'Create Account',
                       style: TextStyle(
-                        fontSize: 16.5,
-                        fontWeight: !isSignIn
-                            ? FontWeight.w700
-                            : FontWeight.w600,
-                        color: !isSignIn ? _primaryBlue : _secondaryText,
+                        fontSize: 15.5,
+                        fontWeight:
+                            !isSignIn ? FontWeight.w700 : FontWeight.w600,
+                        color: !isSignIn ? _emeraldPrimary : _secondaryText,
                         letterSpacing: -0.2,
                       ),
                     ),
@@ -681,21 +822,18 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         ),
         Stack(
           children: [
-            // Thin full-width baseline divider
             Container(height: 1.5, color: _dividerColor),
-            // Blue underline indicator below the active tab
             AnimatedAlign(
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeInOut,
-              alignment: isSignIn
-                  ? Alignment.centerLeft
-                  : Alignment.centerRight,
+              alignment:
+                  isSignIn ? Alignment.centerLeft : Alignment.centerRight,
               child: FractionallySizedBox(
                 widthFactor: 0.5,
                 child: Container(
                   height: 3.0,
                   decoration: BoxDecoration(
-                    color: _primaryBlue,
+                    color: _emeraldPrimary,
                     borderRadius: BorderRadius.circular(2.0),
                   ),
                 ),
@@ -708,14 +846,15 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   }
 
   Widget _buildCurrentForm() {
-    if (_screenState == AuthScreenState.signIn) {
-      return _buildSignInForm();
-    } else if (_screenState == AuthScreenState.signUp) {
-      return _buildSignUpForm();
-    } else if (_screenState == AuthScreenState.verifyEmail) {
-      return _buildVerifyEmailForm();
-    } else {
-      return _buildForgotPasswordForm();
+    switch (_screenState) {
+      case AuthScreenState.signIn:
+        return _buildSignInForm();
+      case AuthScreenState.signUp:
+        return _buildSignUpForm();
+      case AuthScreenState.verifyEmail:
+        return _buildVerifyEmailForm();
+      case AuthScreenState.forgotPassword:
+        return _buildForgotPasswordForm();
     }
   }
 
@@ -742,164 +881,301 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
           controller: _signInPasswordController,
           hint: 'Enter your password',
           obscureText: _obscureSignInPassword,
-          onToggleVisibility: () =>
-              setState(() => _obscureSignInPassword = !_obscureSignInPassword),
+          onToggleVisibility: () => setState(
+            () => _obscureSignInPassword = !_obscureSignInPassword,
+          ),
         ),
         const SizedBox(height: 12),
 
-        // Remember me & Forgot Password
+        // Remember Me & Forgot Password Row
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Expanded(
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: Checkbox(
-                      value: _rememberMe,
-                      activeColor: _primaryBlue,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      side: const BorderSide(color: _inputBorder, width: 1.4),
-                      onChanged: (val) =>
-                          setState(() => _rememberMe = val ?? false),
+            Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: Checkbox(
+                    value: _rememberMe,
+                    activeColor: _emeraldPrimary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
                     ),
+                    side: const BorderSide(color: _inputBorder, width: 1.4),
+                    onChanged: (val) =>
+                        setState(() => _rememberMe = val ?? false),
                   ),
-                  const SizedBox(width: 8),
-                  const Flexible(
-                    child: Text(
-                      'Remember me',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Color(0xFF344054),
-                        fontWeight: FontWeight.w500,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Remember me',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF334155),
+                    fontWeight: FontWeight.w500,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
             BouncyButton(
               scaleDown: 0.95,
-              onPressed: () {
-                setState(() {
-                  _forgotEmailController.text = _signInEmailController.text;
-                  _resetLinkSent = false;
-                  _screenState = AuthScreenState.forgotPassword;
-                });
-              },
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                child: Text(
-                  'Forgot password?',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: _primaryBlue,
-                  ),
+              onPressed: () => setState(() {
+                _forgotPasswordStep = 1;
+                _screenState = AuthScreenState.forgotPassword;
+              }),
+              child: const Text(
+                'Forgot Password?',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: _deepPine,
                 ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 22),
 
-        // Primary Button
-        _buildPrimaryButton(label: 'Sign In  ➔', onPressed: _handleSignIn),
         const SizedBox(height: 20),
 
-        _buildDivider('or'),
-        const SizedBox(height: 18),
+        _buildPrimaryButton(
+          label: 'Sign In to Job Portal',
+          icon: Icons.login_rounded,
+          onPressed: _handleSignIn,
+        ),
 
-        // Google Sign-In Button
+        const SizedBox(height: 20),
+
+        // Divider
+        Row(
+          children: [
+            Expanded(child: Container(height: 1, color: _dividerColor)),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 14),
+              child: Text(
+                'OR',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF94A3B8),
+                ),
+              ),
+            ),
+            Expanded(child: Container(height: 1, color: _dividerColor)),
+          ],
+        ),
+
+        const SizedBox(height: 20),
+
         _buildGoogleSignInButton(),
+
+        const SizedBox(height: 20),
+
+        // Registration Prompter
+        Center(
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.center,
+            children: [
+              const Text(
+                'Don\'t have a candidate account? ',
+                style: TextStyle(fontSize: 13.5, color: _secondaryText),
+              ),
+              BouncyButton(
+                scaleDown: 0.95,
+                onPressed: () => setState(
+                  () => _screenState = AuthScreenState.signUp,
+                ),
+                child: const Text(
+                  'Create Account',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: _deepPine,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
 
   // ==========================================
-  // VIEW 2: SIGN UP FORM
+  // VIEW 2: REGISTRATION FORM
   // ==========================================
   Widget _buildSignUpForm() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildFieldLabel('Full Name'),
+        // Full Name
+        _buildFieldLabel('Full Name *'),
         const SizedBox(height: 6),
         _buildFormInput(
           controller: _signUpNameController,
-          hint: 'Enter your full name',
+          hint: 'e.g. Priya Sundaram',
           prefixIcon: Icons.person_outline_rounded,
           textCapitalization: TextCapitalization.words,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
 
-        _buildFieldLabel('Email Address'),
+        // Email Address
+        _buildFieldLabel('Email Address *'),
         const SizedBox(height: 6),
         _buildFormInput(
           controller: _signUpEmailController,
-          hint: 'Enter your email address',
+          hint: 'e.g. priya@gmail.com',
           prefixIcon: Icons.mail_outline_rounded,
           keyboardType: TextInputType.emailAddress,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
 
-        _buildFieldLabel('Password'),
+        // Password
+        _buildFieldLabel('Password *'),
         const SizedBox(height: 6),
         _buildPasswordInput(
           controller: _signUpPasswordController,
-          hint: 'Create a password',
+          hint: 'Create a password (min. 6 characters)',
           obscureText: _obscureSignUpPassword,
-          onToggleVisibility: () =>
-              setState(() => _obscureSignUpPassword = !_obscureSignUpPassword),
+          onToggleVisibility: () => setState(
+            () => _obscureSignUpPassword = !_obscureSignUpPassword,
+          ),
         ),
-        const SizedBox(height: 6),
-        const Text(
-          'Use at least 8 characters with a mix of letters, numbers and symbols.',
-          style: TextStyle(fontSize: 11.5, color: _secondaryText, height: 1.3),
-        ),
-        const SizedBox(height: 22),
+        const SizedBox(height: 14),
 
-        // Primary Button
-        _buildPrimaryButton(
-          label: 'Create Account & Send OTP  ➔',
-          onPressed: _handleInitiateSignUp,
+        // Confirm Password
+        _buildFieldLabel('Confirm Password *'),
+        const SizedBox(height: 6),
+        _buildPasswordInput(
+          controller: _signUpConfirmPasswordController,
+          hint: 'Re-enter your password to confirm',
+          obscureText: _obscureConfirmPassword,
+          onToggleVisibility: () => setState(
+            () => _obscureConfirmPassword = !_obscureConfirmPassword,
+          ),
         ),
+        const SizedBox(height: 16),
+
+        // Guidelines Agreement Checkbox
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 22,
+              height: 22,
+              child: Checkbox(
+                value: _agreedToGuidelines,
+                activeColor: _emeraldPrimary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                side: const BorderSide(color: _inputBorder, width: 1.4),
+                onChanged: (val) =>
+                    setState(() => _agreedToGuidelines = val ?? false),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  text: 'I understand and agree to the ',
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: Color(0xFF475569),
+                    height: 1.35,
+                  ),
+                  children: [
+                    TextSpan(
+                      text: 'Candidate Safety Guidelines',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: _deepPine,
+                      ),
+                      recognizer: TapGestureRecognizer()
+                        ..onTap = () => PrivacyPolicyScreen.open(context),
+                    ),
+                    const TextSpan(text: ' & '),
+                    TextSpan(
+                      text: 'Privacy Policy',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: _deepPine,
+                      ),
+                      recognizer: _privacyRecognizer,
+                    ),
+                    const TextSpan(text: '.'),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+
         const SizedBox(height: 20),
 
-        _buildDivider('or'),
-        const SizedBox(height: 18),
+        _buildPrimaryButton(
+          label: 'Create Candidate Account',
+          icon: Icons.person_add_rounded,
+          onPressed: _handleInitiateSignUp,
+        ),
 
-        // Google Sign-In Button
-        _buildGoogleSignInButton(),
+        const SizedBox(height: 20),
+
+        // Sign In switch
+        Center(
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.center,
+            children: [
+              const Text(
+                'Already have an account? ',
+                style: TextStyle(fontSize: 13.5, color: _secondaryText),
+              ),
+              BouncyButton(
+                scaleDown: 0.95,
+                onPressed: () => setState(
+                  () => _screenState = AuthScreenState.signIn,
+                ),
+                child: const Text(
+                  'Sign In to Job Portal',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: _deepPine,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
 
+  // ==========================================
+  // VIEW 3: OTP VERIFICATION (SIGN UP)
+  // ==========================================
   Widget _buildVerifyEmailForm() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Container(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFFF0F9FF),
+            color: _mintBg,
             borderRadius: BorderRadius.circular(_inputRadius),
-            border: Border.all(color: const Color(0xFFB9E6FE), width: 1.2),
+            border: Border.all(color: const Color(0xFFBBF7D0), width: 1.2),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Icon(
                 Icons.mark_email_read_outlined,
-                color: _primaryBlue,
-                size: 22,
+                color: _deepPine,
+                size: 24,
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -907,15 +1183,19 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                     const Text(
                       'Check your inbox',
                       style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: _deepNavy,
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                        color: _deepForest,
                       ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 4),
                     Text(
                       'We sent a 6-digit confirmation code to ${_pendingSignupEmail ?? 'your email'}.',
-                      style: const TextStyle(fontSize: 12.5, color: _secondaryText, height: 1.3),
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: _secondaryText,
+                        height: 1.35,
+                      ),
                     ),
                   ],
                 ),
@@ -923,7 +1203,9 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
             ],
           ),
         ),
+
         const SizedBox(height: 20),
+
         _buildFieldLabel('6-Digit Verification Code'),
         const SizedBox(height: 6),
         SizedBox(
@@ -959,17 +1241,22 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(_inputRadius),
-                borderSide: const BorderSide(color: _primaryBlue, width: 1.8),
+                borderSide: const BorderSide(color: _emeraldPrimary, width: 1.8),
               ),
             ),
           ),
         ),
+
         const SizedBox(height: 20),
+
         _buildPrimaryButton(
           label: 'Verify Email & Continue',
+          icon: Icons.check_circle_rounded,
           onPressed: _handleVerifyEmailOtp,
         ),
-        const SizedBox(height: 12),
+
+        const SizedBox(height: 14),
+
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -982,14 +1269,22 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                   _screenState = AuthScreenState.signUp;
                 });
               },
-              child: const Text('Change email'),
+              child: const Text(
+                'Change email',
+                style: TextStyle(
+                  color: _deepPine,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
             TextButton(
               onPressed: _resendCountdown > 0 ? null : _handleResendEmailOtp,
               child: Text(
-                _resendCountdown > 0 ? 'Resend in ${_resendCountdown}s' : 'Resend code',
+                _resendCountdown > 0
+                    ? 'Resend code in ${_resendCountdown}s'
+                    : 'Resend code',
                 style: TextStyle(
-                  color: _resendCountdown > 0 ? _secondaryText : _primaryBlue,
+                  color: _resendCountdown > 0 ? _secondaryText : _deepPine,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1001,73 +1296,35 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
   }
 
   // ==========================================
-  // VIEW 4: FORGOT PASSWORD FORM
+  // VIEW 4: 2-STEP FORGOT PASSWORD FLOW
   // ==========================================
   Widget _buildForgotPasswordForm() {
+    if (_forgotPasswordStep == 1) {
+      return _buildForgotEmailStep();
+    }
+    return _buildForgotVerifyAndResetStep();
+  }
+
+  Widget _buildForgotEmailStep() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildFieldLabel('Email Address'),
+        _buildFieldLabel('Registered Email Address *'),
         const SizedBox(height: 6),
         _buildFormInput(
           controller: _forgotEmailController,
-          hint: 'Enter your email address',
-          prefixIcon: Icons.mail_outline_rounded,
+          hint: 'Enter your registered email address',
+          prefixIcon: Icons.alternate_email_rounded,
           keyboardType: TextInputType.emailAddress,
         ),
+
         const SizedBox(height: 20),
 
         _buildPrimaryButton(
-          label: 'Send Reset Link',
-          onPressed: _handleSendResetLink,
+          label: 'Send Verification Code',
+          icon: Icons.send_rounded,
+          onPressed: _handleSendForgotPasswordOtp,
         ),
-
-        if (_resetLinkSent) ...[
-          const SizedBox(height: 18),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFECFDF5),
-              borderRadius: BorderRadius.circular(_inputRadius),
-              border: Border.all(color: const Color(0xFFA7F3D0), width: 1.2),
-            ),
-            child: const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.check_circle_rounded,
-                  color: Color(0xFF10B981),
-                  size: 20,
-                ),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Reset link sent!',
-                        style: TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF065F46),
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        'If the email is registered, you\'ll receive a password reset link shortly.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF047857),
-                          height: 1.3,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
 
         const SizedBox(height: 22),
 
@@ -1076,7 +1333,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
             scaleDown: 0.95,
             onPressed: () {
               setState(() {
-                _resetLinkSent = false;
+                _forgotPasswordStep = 1;
                 _screenState = AuthScreenState.signIn;
               });
             },
@@ -1085,14 +1342,15 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.arrow_back_rounded, size: 16, color: _primaryBlue),
+                  Icon(Icons.arrow_back_rounded,
+                      size: 16, color: _emeraldPrimary),
                   SizedBox(width: 6),
                   Text(
-                    'Back to Sign In',
+                    'Back to Candidate Sign In',
                     style: TextStyle(
                       fontSize: 13.5,
                       fontWeight: FontWeight.w600,
-                      color: _primaryBlue,
+                      color: _deepPine,
                     ),
                   ),
                 ],
@@ -1104,7 +1362,205 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     );
   }
 
-  // --- Shared Design Components ---
+  Widget _buildForgotVerifyAndResetStep() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: _mintBg,
+            borderRadius: BorderRadius.circular(_inputRadius),
+            border: Border.all(color: const Color(0xFFBBF7D0), width: 1.2),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.mark_email_read_outlined,
+                color: _deepPine,
+                size: 22,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Verification code sent',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: _deepForest,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Enter the 6-digit code sent to ${_forgotEmailController.text.trim()} to reset your password.',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: _secondaryText,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+
+        // OTP Field
+        _buildFieldLabel('6-Digit Verification Code *'),
+        const SizedBox(height: 6),
+        SizedBox(
+          height: _inputHeight,
+          child: TextFormField(
+            controller: _forgotOtpController,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 8,
+              color: _navyText,
+            ),
+            decoration: InputDecoration(
+              counterText: '',
+              hintText: '• • • • • •',
+              hintStyle: const TextStyle(
+                fontSize: 18,
+                letterSpacing: 6,
+                color: Color(0xFF98A2B3),
+              ),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(_inputRadius),
+                borderSide: const BorderSide(color: _inputBorder, width: 1.2),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(_inputRadius),
+                borderSide: const BorderSide(color: _emeraldPrimary, width: 1.8),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // New Password
+        _buildFieldLabel('New Password *'),
+        const SizedBox(height: 6),
+        _buildPasswordInput(
+          controller: _forgotNewPasswordController,
+          hint: 'Enter new password (min. 6 characters)',
+          obscureText: _obscureForgotNewPassword,
+          onToggleVisibility: () => setState(
+            () => _obscureForgotNewPassword = !_obscureForgotNewPassword,
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // Confirm New Password
+        _buildFieldLabel('Confirm New Password *'),
+        const SizedBox(height: 6),
+        _buildPasswordInput(
+          controller: _forgotConfirmPasswordController,
+          hint: 'Re-enter new password to confirm',
+          obscureText: _obscureForgotConfirmPassword,
+          onToggleVisibility: () => setState(
+            () => _obscureForgotConfirmPassword = !_obscureForgotConfirmPassword,
+          ),
+        ),
+
+        const SizedBox(height: 20),
+
+        _buildPrimaryButton(
+          label: 'Reset & Save Password',
+          icon: Icons.check_circle_rounded,
+          onPressed: _handleVerifyForgotOtpAndResetPassword,
+        ),
+
+        const SizedBox(height: 14),
+
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            TextButton(
+              onPressed: () {
+                _forgotResendCooldownTimer?.cancel();
+                setState(() {
+                  _forgotResendCountdown = 0;
+                  _forgotOtpController.clear();
+                  _forgotPasswordStep = 1;
+                });
+              },
+              child: const Text(
+                'Change email',
+                style: TextStyle(
+                  color: _deepPine,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: _forgotResendCountdown > 0 ? null : _handleResendForgotOtp,
+              child: Text(
+                _forgotResendCountdown > 0
+                    ? 'Resend code in ${_forgotResendCountdown}s'
+                    : 'Resend code',
+                style: TextStyle(
+                  color: _forgotResendCountdown > 0 ? _secondaryText : _deepPine,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 10),
+
+        Center(
+          child: BouncyButton(
+            scaleDown: 0.95,
+            onPressed: () {
+              setState(() {
+                _forgotPasswordStep = 1;
+                _screenState = AuthScreenState.signIn;
+              });
+            },
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.arrow_back_rounded,
+                      size: 16, color: _emeraldPrimary),
+                  SizedBox(width: 6),
+                  Text(
+                    'Back to Candidate Sign In',
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      color: _deepPine,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // --- Shared Form Field Builders ---
 
   Widget _buildFieldLabel(String label) {
     return Text(
@@ -1112,12 +1568,11 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
       style: const TextStyle(
         fontSize: 13.5,
         fontWeight: FontWeight.w600,
-        color: Color(0xFF344054),
+        color: Color(0xFF334155),
       ),
     );
   }
 
-  /// Component 4: FormInput (56px Height, 10px Radius)
   Widget _buildFormInput({
     required TextEditingController controller,
     required String hint,
@@ -1134,7 +1589,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         style: const TextStyle(fontSize: 15, color: _navyText),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: const TextStyle(fontSize: 14.5, color: Color(0xFF98A2B3)),
+          hintStyle: const TextStyle(fontSize: 14.0, color: Color(0xFF94A3B8)),
           prefixIcon: Icon(prefixIcon, color: _secondaryText, size: 20),
           filled: true,
           fillColor: Colors.white,
@@ -1148,14 +1603,13 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(_inputRadius),
-            borderSide: const BorderSide(color: _primaryBlue, width: 1.8),
+            borderSide: const BorderSide(color: _emeraldPrimary, width: 1.8),
           ),
         ),
       ),
     );
   }
 
-  /// Component 5: PasswordInput (52px Height, Show/Hide Visibility Toggle)
   Widget _buildPasswordInput({
     required TextEditingController controller,
     required String hint,
@@ -1170,17 +1624,14 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
         style: const TextStyle(fontSize: 15, color: _navyText),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: const TextStyle(fontSize: 14.5, color: Color(0xFF98A2B3)),
-          prefixIcon: const Icon(
-            Icons.lock_outline_rounded,
-            color: _secondaryText,
-            size: 20,
-          ),
+          hintStyle: const TextStyle(fontSize: 14.0, color: Color(0xFF94A3B8)),
+          prefixIcon:
+              const Icon(Icons.lock_outline_rounded, color: _secondaryText, size: 20),
           suffixIcon: IconButton(
             icon: Icon(
               obscureText
                   ? Icons.visibility_off_outlined
-                  : Icons.remove_red_eye_outlined,
+                  : Icons.visibility_outlined,
               color: _secondaryText,
               size: 20,
             ),
@@ -1198,36 +1649,39 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(_inputRadius),
-            borderSide: const BorderSide(color: _primaryBlue, width: 1.8),
+            borderSide: const BorderSide(color: _emeraldPrimary, width: 1.8),
           ),
         ),
       ),
     );
   }
 
-  /// Component 6: PrimaryButton (Visual Click Color Animation, 52px Height, 10px Radius, Electric Blue #155EEF)
   Widget _buildPrimaryButton({
     required String label,
     required VoidCallback onPressed,
+    IconData? icon,
   }) {
     final bool isEnabled = !_isLoading && !_isGoogleLoading;
     return BouncyButton(
       onPressed: isEnabled ? onPressed : null,
       borderRadius: BorderRadius.circular(_inputRadius),
-      pressOverlayColor: const Color(0xFF0C3E9E).withValues(alpha: 0.35),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
+      child: Container(
         height: _buttonHeight,
         width: double.infinity,
         decoration: BoxDecoration(
-          color: isEnabled
-              ? _primaryBlue
-              : _primaryBlue.withValues(alpha: 0.65),
+          gradient: isEnabled
+              ? const LinearGradient(
+                  colors: [_deepPine, _emeraldPrimary],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                )
+              : null,
+          color: isEnabled ? null : _emeraldPrimary.withValues(alpha: 0.65),
           borderRadius: BorderRadius.circular(_inputRadius),
           boxShadow: isEnabled
               ? [
                   BoxShadow(
-                    color: _primaryBlue.withValues(alpha: 0.30),
+                    color: _emeraldPrimary.withValues(alpha: 0.30),
                     blurRadius: 14,
                     offset: const Offset(0, 4),
                   ),
@@ -1247,28 +1701,36 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                     valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                   ),
                 )
-              : Text(
-                  label,
-                  key: ValueKey(label),
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.1,
-                    color: Colors.white,
-                  ),
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (icon != null) ...[
+                      Icon(icon, color: Colors.white, size: 18),
+                      const SizedBox(width: 8),
+                    ],
+                    Text(
+                      label,
+                      key: ValueKey(label),
+                      style: const TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.1,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
                 ),
         ),
       ),
     );
   }
 
-  /// Component 7: GoogleSignInButton (Visual Click Color Animation, 52px Height, Neutral Border #D0D5DD)
   Widget _buildGoogleSignInButton() {
     final bool isEnabled = !_isLoading && !_isGoogleLoading;
     return BouncyButton(
       onPressed: isEnabled ? _handleGoogleSignIn : null,
       borderRadius: BorderRadius.circular(_inputRadius),
-      pressOverlayColor: const Color(0xFF155EEF).withValues(alpha: 0.10),
+      pressOverlayColor: _emeraldPrimary.withValues(alpha: 0.10),
       child: Container(
         height: _buttonHeight,
         width: double.infinity,
@@ -1300,7 +1762,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                         child: CircularProgressIndicator(
                           strokeWidth: 2.2,
                           valueColor: AlwaysStoppedAnimation<Color>(
-                            _primaryBlue,
+                            _emeraldPrimary,
                           ),
                         ),
                       ),
@@ -1308,7 +1770,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                       Text(
                         'Connecting to Google...',
                         style: TextStyle(
-                          fontSize: 15.0,
+                          fontSize: 14.5,
                           fontWeight: FontWeight.w600,
                           color: _navyText,
                         ),
@@ -1334,7 +1796,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                       const Text(
                         'Continue with Google',
                         style: TextStyle(
-                          fontSize: 15.5,
+                          fontSize: 15.0,
                           fontWeight: FontWeight.w600,
                           color: _navyText,
                         ),
@@ -1347,65 +1809,53 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     );
   }
 
-  /// Component 8: AuthLegalFooter (Single Continuous Line)
   Widget _buildAuthLegalFooter() {
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.shield_outlined, size: 15, color: _primaryBlue),
-          const SizedBox(width: 6),
-          RichText(
-            text: TextSpan(
+    return Column(
+      children: [
+        Center(
+          child: Text.rich(
+            TextSpan(
+              text: 'By continuing, you agree to our ',
               style: const TextStyle(
-                color: _secondaryText,
                 fontSize: 11.5,
-                fontWeight: FontWeight.w400,
+                color: Color(0xFF94A3B8),
+                height: 1.4,
               ),
               children: [
-                const TextSpan(text: 'By continuing, you agree to our '),
                 TextSpan(
                   text: 'Terms of Service',
                   style: const TextStyle(
-                    color: _primaryBlue,
                     fontWeight: FontWeight.w600,
+                    color: _deepPine,
                   ),
                   recognizer: _termsRecognizer,
                 ),
-                const TextSpan(text: ' & '),
+                const TextSpan(text: ' and '),
                 TextSpan(
-                  text: 'Privacy Policy.',
+                  text: 'Privacy Policy',
                   style: const TextStyle(
-                    color: _primaryBlue,
                     fontWeight: FontWeight.w600,
+                    color: _deepPine,
                   ),
                   recognizer: _privacyRecognizer,
                 ),
+                const TextSpan(text: '.'),
               ],
             ),
+            textAlign: TextAlign.center,
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDivider(String text) {
-    return Row(
-      children: [
-        const Expanded(child: Divider(color: Color(0xFFEAECF0), thickness: 1)),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+        ),
+        const SizedBox(height: 8),
+        const Center(
           child: Text(
-            text,
-            style: const TextStyle(
-              fontSize: 12.5,
+            'Candidate Support: ${AppConstants.supportEmail}',
+            style: TextStyle(
+              fontSize: 11.0,
               fontWeight: FontWeight.w500,
-              color: _secondaryText,
+              color: Color(0xFF64748B),
             ),
           ),
         ),
-        const Expanded(child: Divider(color: _dividerColor, thickness: 1)),
       ],
     );
   }

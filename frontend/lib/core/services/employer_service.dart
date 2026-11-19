@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 import 'employer_api_service.dart';
 import 'supabase_service.dart';
 import 'app_auth_bridge.dart';
@@ -92,8 +90,12 @@ class EmployerService {
     }
   }
 
-  Stream<List<JobModel>> watchJobs(String uid) {
-    return SupabaseService.streamEmployerJobs(uid).map((rows) {
+  Stream<List<JobModel>> watchJobs(String uid) async* {
+    final employer = await SupabaseService.client.from('employers')
+        .select('id').eq('user_id', uid).maybeSingle();
+    final employerId = employer?['id']?.toString();
+    if (employerId == null) { yield []; return; }
+    yield* SupabaseService.streamEmployerJobs(employerId).map((rows) {
       final jobs = rows.map((r) => JobModel.fromMap(r)).toList();
       jobs.sort((a, b) => b.postedAt.compareTo(a.postedAt));
       return jobs;
@@ -114,18 +116,14 @@ class EmployerService {
     }
   }
 
-  Stream<List<Map<String, dynamic>>> watchPayments(String uid) {
-    try {
-      return SupabaseService.client
-          .from('employer_orders')
-          .stream(primaryKey: ['id'])
-          .eq('employer_id', uid)
-          .order('created_at', ascending: false)
-          .handleError((err) {
-            debugPrint('[EmployerService] watchPayments error: $err');
-          });
-    } catch (_) {
-      return Stream.value([]);
-    }
+  Stream<List<Map<String, dynamic>>> watchPayments(String uid) async* {
+    final employer = await SupabaseService.client.from('employers')
+        .select('id').eq('user_id', uid).maybeSingle();
+    final employerId = employer?['id']?.toString();
+    if (employerId == null) { yield []; return; }
+    yield* SupabaseService.client.from('employer_orders')
+        .stream(primaryKey: ['id'])
+        .eq('employer_id', employerId)
+        .order('created_at', ascending: false);
   }
 }

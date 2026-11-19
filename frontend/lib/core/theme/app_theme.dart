@@ -1,20 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 
-/// Career360 Corporate Blue Design System & Theme
+/// Career360 Emerald Growth Design System & Theme
 class AppTheme {
-  // Official Client Color Palette (Corporate Blue)
-  static const Color primary = Color(0xFF155EEF);      // Corporate Blue (#155EEF)
-  static const Color primaryDark = Color(0xFF0B1F3A);  // Deep Midnight Navy (#0B1F3A)
-  static const Color accent = Color(0xFF38BDF8);       // Sky Blue / Cyan Accent (#38BDF8)
+  // Official Client Color Palette (Emerald Growth & Pine Green)
+  static const Color primary = Color(0xFF16A34A);      // Emerald Green (#16A34A)
+  static const Color primaryDark = Color(0xFF065F46);  // Deep Pine Green (#065F46)
+  static const Color accent = Color(0xFF22C55E);       // Electric Green Accent (#22C55E)
   static const Color background = Color(0xFFF8FAFC);   // Background Canvas (#F8FAFC)
   static const Color cardSurface = Color(0xFFFFFFFF);  // Pure White (#FFFFFF)
-  static const Color textPrimary = Color(0xFF172B4D);  // Main Text & Headings (#172B4D)
+  static const Color textPrimary = Color(0xFF172B40);  // Main Text & Headings (#172B40)
   static const Color textSecondary = Color(0xFF64748B);// Muted Subtitles (#64748B)
 
   // Functional Colors
   static const Color border = Color(0xFFE2E8F0);       // Clean Border (#E2E8F0)
-  static const Color primaryLight = Color(0xFFEFF8FF); // Soft Blue Tint (#EFF8FF)
+  static const Color primaryLight = Color(0xFFF0FDF4); // Fresh Mint Tint (#F0FDF4)
+  static const Color primaryLightBorder = Color(0xFFDCFCE7); // Mint Border (#DCFCE7)
   static const Color success = Color(0xFF16A34A);      // Success / Verified Green (#16A34A)
   static const Color warning = Color(0xFFF59E0B);      // Warning Amber (#F59E0B)
   static const Color error = Color(0xFFDC2626);        // Error Crimson (#DC2626)

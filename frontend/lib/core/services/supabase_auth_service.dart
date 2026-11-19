@@ -51,6 +51,7 @@ class SupabaseAuthService {
     required String password,
     String? fullName,
     String role = 'CANDIDATE',
+    Map<String, dynamic> profileMetadata = const {},
   }) async {
     try {
       final settingsResponse = await http.get(
@@ -74,6 +75,7 @@ class SupabaseAuthService {
         data: {
           if (fullName != null) 'full_name': fullName.trim(),
           'role': role,
+          ...profileMetadata,
         },
       );
       if (response.session != null) {
@@ -154,9 +156,37 @@ class SupabaseAuthService {
     }
   }
 
-  /// Send Password Reset Email
+  /// Send Password Reset Email / OTP
   Future<void> resetPassword({required String email}) async {
     await _client.auth.resetPasswordForEmail(email.trim());
+  }
+
+  /// Resend Password Reset OTP
+  Future<void> resendPasswordResetOtp({required String email}) async {
+    await _client.auth.resend(
+      type: OtpType.recovery,
+      email: email.trim(),
+    );
+  }
+
+  /// Verify Password Reset OTP and update password
+  Future<void> verifyPasswordResetOtpAndSetPassword({
+    required String email,
+    required String token,
+    required String newPassword,
+  }) async {
+    final response = await _client.auth.verifyOTP(
+      email: email.trim(),
+      token: token.trim(),
+      type: OtpType.recovery,
+    );
+    if (response.session == null) {
+      throw StateError('The recovery code could not be verified. Please try again.');
+    }
+    await _client.auth.updateUser(
+      UserAttributes(password: newPassword),
+    );
+    await _client.auth.signOut();
   }
 
   /// Sign Out current user
