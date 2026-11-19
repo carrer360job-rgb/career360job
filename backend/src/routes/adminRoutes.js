@@ -125,6 +125,23 @@ router.post('/employers/:uid/review', async (req, res) => {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uid)) {
       return res.status(400).json({ error: { message: 'Invalid employer ID.' } });
     }
+    if (decision === 'approved') {
+      const [identityResult, companyResult] = await Promise.all([
+        supabaseAdmin.auth.admin.getUserById(uid),
+        supabaseAdmin.from('employers').select('email').eq('user_id', uid).maybeSingle(),
+      ]);
+      if (identityResult.error || companyResult.error) {
+        throw Object.assign(new Error('Employer identity could not be checked.'), { status: 503 });
+      }
+      if (!companyResult.data) {
+        return res.status(404).json({ error: { message: 'Employer account not found.' } });
+      }
+      const identity = identityResult.data?.user;
+      if (!identity?.email_confirmed_at ||
+          identity.email?.toLowerCase() !== companyResult.data.email?.toLowerCase()) {
+        return res.status(409).json({ error: { message: 'The verified login email must match the company profile.' } });
+      }
+    }
     const { data, error } = await supabaseAdmin.rpc('admin_review_employer', {
       p_actor_uid: req.user.uid, p_employer_uid: uid, p_decision: decision, p_notes: reason || null,
     });

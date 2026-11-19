@@ -464,6 +464,19 @@ employerRouter.post('/admin/employers/:uid/decision', verifyAdminToken, requireA
   try {
     const decision = req.body?.decision;
     if (!['approved', 'rejected'].includes(decision)) throw fail('Choose approved or rejected.');
+    if (decision === 'approved') {
+      const [identityResult, companyResult] = await Promise.all([
+        supabaseAdmin.auth.admin.getUserById(req.params.uid),
+        supabaseAdmin.from('employers').select('email').eq('user_id', req.params.uid).maybeSingle(),
+      ]);
+      if (identityResult.error || companyResult.error) throw fail('Employer identity could not be checked.', 503);
+      if (!companyResult.data) throw fail('Employer account not found.', 404);
+      const identity = identityResult.data?.user;
+      if (!identity?.email_confirmed_at ||
+          identity.email?.toLowerCase() !== companyResult.data.email?.toLowerCase()) {
+        throw fail('The verified login email must match the company profile.', 409);
+      }
+    }
     const result = checked(await supabaseAdmin.rpc('admin_review_employer', {
       p_actor_uid: req.user.uid, p_employer_uid: req.params.uid,
       p_decision: decision, p_notes: req.body?.notes || null,
