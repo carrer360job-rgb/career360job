@@ -272,7 +272,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
           _screenState = AuthScreenState.verifyEmail;
         });
         _startResendCooldown(60);
-        _showSuccess('Verification code sent to $email.');
+        _showSuccess('Check $email for your verification code.');
       }
     } on AuthException catch (e) {
       if (mounted) {
@@ -335,7 +335,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
     try {
       await _supabaseAuth.resendSignupOtp(email);
       _startResendCooldown(60);
-      _showSuccess('A fresh 6-digit code has been sent to $email.');
+      _showSuccess('Check $email for a new verification code.');
     } catch (e) {
       _showError('Could not resend verification code. Please wait and try again.');
     }
@@ -1190,7 +1190,7 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'We sent a 6-digit confirmation code to ${_pendingSignupEmail ?? 'your email'}.',
+                      'Check ${_pendingSignupEmail ?? 'your email'} for a 6-digit code. If you used this email before, sign in instead.',
                       style: const TextStyle(
                         fontSize: 12.5,
                         color: _secondaryText,
@@ -1290,6 +1290,14 @@ class _CandidateLoginScreenState extends State<CandidateLoginScreen> {
               ),
             ),
           ],
+        ),
+        TextButton(
+          onPressed: () {
+            _resendCooldownTimer?.cancel();
+            _signInEmailController.text = _pendingSignupEmail ?? '';
+            setState(() => _screenState = AuthScreenState.signIn);
+          },
+          child: const Text('Already registered? Sign in'),
         ),
       ],
     );

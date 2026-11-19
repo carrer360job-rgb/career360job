@@ -300,7 +300,7 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
           _screenState = InstitutionAuthState.verifyEmail;
         });
         _startResendCooldown(60);
-        _showSuccess('Verification code sent to $email.');
+        _showSuccess('Check $email for your verification code.');
       }
     } on AuthException catch (e) {
       if (mounted) {
@@ -378,7 +378,7 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
     try {
       await _supabaseAuth.resendSignupOtp(email);
       _startResendCooldown(60);
-      _showSuccess('A fresh 6-digit code has been sent to $email.');
+      _showSuccess('Check $email for a new verification code.');
     } catch (e) {
       _showError('Could not resend verification code. Please wait and try again.');
     }
@@ -1323,7 +1323,7 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'We sent a 6-digit verification code to ${_pendingSignupEmail ?? 'your email'}.',
+                      'Check ${_pendingSignupEmail ?? 'your email'} for a 6-digit code. If you used this email before, sign in instead.',
                       style: const TextStyle(
                         fontSize: 12.5,
                         color: _secondaryText,
@@ -1423,6 +1423,14 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
               ),
             ),
           ],
+        ),
+        TextButton(
+          onPressed: () {
+            _resendCooldownTimer?.cancel();
+            _signInEmailController.text = _pendingSignupEmail ?? '';
+            setState(() => _screenState = InstitutionAuthState.signIn);
+          },
+          child: const Text('Already registered? Sign in'),
         ),
       ],
     );

@@ -82,6 +82,9 @@ class SupabaseAuthService {
         await _client.auth.signOut();
         throw StateError('Email verification must be enabled before signup.');
       }
+      if (response.user == null) {
+        throw StateError('Could not start email verification. Try again.');
+      }
       return response;
     } on AuthException catch (e) {
       debugPrint('[SupabaseAuthService] Sign-up error: ${e.message}');
