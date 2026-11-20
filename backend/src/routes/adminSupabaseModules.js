@@ -84,34 +84,32 @@ router.post('/jobs/:id/close', async (req, res) => {
   } catch (error) { fail(res, error); }
 });
 
-router.get('/users', async (req, res) => {
+router.get('/job-seekers', async (req, res) => {
   try {
     const page = pageOffset(req.query.pageToken) + 1;
     const search = String(req.query.search || '').trim().toLowerCase();
     const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 100 });
-    if (error) throw unavailable('User accounts are temporarily unavailable.');
+    if (error) throw unavailable('Job seeker accounts are temporarily unavailable.');
     const users = data?.users || [];
     const ids = users.map((user) => user.id);
-    const [profileResult, candidateResult, employerResult] = ids.length ? await Promise.all([
+    const [profileResult, candidateResult] = ids.length ? await Promise.all([
       supabaseAdmin.from('profiles').select('id,role,status').in('id', ids),
       supabaseAdmin.from('candidate_profiles').select('user_id,full_name').in('user_id', ids),
-      supabaseAdmin.from('employers').select('user_id,contact_name').in('user_id', ids),
-    ]) : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
-    if (profileResult.error || candidateResult.error || employerResult.error) throw unavailable('User profiles are temporarily unavailable.');
+    ]) : [{ data: [], error: null }, { data: [], error: null }];
+    if (profileResult.error || candidateResult.error) throw unavailable('Job seeker profiles are temporarily unavailable.');
     const profiles = new Map(profileResult.data.map((row) => [row.id, row]));
-    const names = new Map([...candidateResult.data.map((row) => [row.user_id, row.full_name]),
-      ...employerResult.data.map((row) => [row.user_id, row.contact_name])]);
-    const records = users.map((user) => {
+    const names = new Map(candidateResult.data.map((row) => [row.user_id, row.full_name]));
+    const records = users.flatMap((user) => {
       const profile = profiles.get(user.id);
-      return { uid: user.id, email: user.email || '', displayName: names.get(user.id) || '',
-        role: profile?.role?.toLowerCase() || 'unassigned',
+      if (profile?.role !== 'CANDIDATE') return [];
+      return [{ uid: user.id, email: user.email || '', displayName: names.get(user.id) || '',
         disabled: ['SUSPENDED', 'BLOCKED'].includes(profile?.status) || Boolean(user.banned_until && new Date(user.banned_until) > new Date()),
         emailVerified: Boolean(user.email_confirmed_at), createdAt: user.created_at || null,
-        lastSignInAt: user.last_sign_in_at || null };
+        lastSignInAt: user.last_sign_in_at || null }];
     });
     const filtered = search ? records.filter((user) => [user.email, user.displayName, user.uid]
       .some((value) => value.toLowerCase().includes(search))) : records;
-    res.set('Cache-Control', 'no-store').json({ users: filtered, nextPageToken: users.length === 100 ? String(page) : null });
+    res.set('Cache-Control', 'no-store').json({ jobSeekers: filtered, nextPageToken: users.length === 100 ? String(page) : null });
   } catch (error) { fail(res, error); }
 });
 
