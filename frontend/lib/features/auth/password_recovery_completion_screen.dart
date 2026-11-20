@@ -33,13 +33,11 @@ class _PasswordRecoveryCompletionScreenState
   String get _roleLabel => switch (widget.role) {
     PasswordRecoveryRole.candidate => 'JOB SEEKER',
     PasswordRecoveryRole.employer => 'EMPLOYER',
-    PasswordRecoveryRole.institution => 'INSTITUTION',
   };
 
   String get _signInLabel => switch (widget.role) {
     PasswordRecoveryRole.candidate => 'Candidate Sign In',
     PasswordRecoveryRole.employer => 'Employer Sign In',
-    PasswordRecoveryRole.institution => 'Institution Sign In',
   };
 
   @override

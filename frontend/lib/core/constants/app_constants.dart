@@ -10,13 +10,13 @@ class AppConstants {
   static const List<String> jobLocations = [
     'All Locations',
     'Chennai',
+    'Coimbatore',
+    'Erode',
+    'Madurai',
+    'Salem',
+    'Trichy',
     'Bengaluru',
     'Hyderabad',
-    'Mumbai',
-    'Delhi-NCR',
-    'Pune',
-    'Coimbatore',
-    'Kochi',
     'Remote',
   ];
 

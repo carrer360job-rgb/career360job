@@ -143,15 +143,15 @@ export default function JobsPanel() {
         </div>
       ) : (
         <div className="jobs-table-container">
-          <table className="admin-table">
+          <table className="admin-table jobs-table">
             <thead>
               <tr>
                 <th>Job Title & Company</th>
                 <th>Category & Work Mode</th>
                 <th>Location & Salary</th>
                 <th>Direct Recruiter Contact</th>
-                <th>Status</th>
-                <th>Actions</th>
+                <th className="cell-status">Status</th>
+                <th className="cell-actions">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -180,12 +180,12 @@ export default function JobsPanel() {
                         )}
                       </div>
                     </td>
-                    <td>
+                    <td className="cell-status">
                       <span className={`status-pill pill-${job.status}`}>
                         {job.status === 'active' ? 'Live' : 'Closed'}
                       </span>
                     </td>
-                    <td>
+                    <td className="cell-actions">
                       {job.status === 'active' ? (
                         <button
                           className="danger-button-sm"

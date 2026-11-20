@@ -5,7 +5,6 @@ import 'package:vetrijobs/features/auth/role_selection_screen.dart';
 import 'package:vetrijobs/core/services/app_auth_bridge.dart';
 import 'package:vetrijobs/core/services/supabase_auth_service.dart';
 import 'package:vetrijobs/features/employer/employer_login_screen.dart';
-import 'package:vetrijobs/features/institution/institution_login_screen.dart';
 
 void main() {
   testWidgets('Career360 App smoke test', (WidgetTester tester) async {
@@ -50,26 +49,6 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('institution recovery form fits a narrow phone', (
-    WidgetTester tester,
-  ) async {
-    tester.view.physicalSize = const Size(320, 600);
-    tester.view.devicePixelRatio = 1;
-    SupabaseAuthService.recoveryVerified.value = true;
-    SupabaseAuthService.recoveryRole = PasswordRecoveryRole.institution;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-      SupabaseAuthService.recoveryVerified.value = false;
-      SupabaseAuthService.recoveryRole = null;
-    });
-    await tester.pumpWidget(Career360App(authChanges: Stream.value(null)));
-    await tester.pump();
-    expect(find.text('INSTITUTION'), findsOneWidget);
-    expect(find.text('Set New Password'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
   testWidgets('employer registration asks to confirm password, not phone', (
     tester,
   ) async {
@@ -89,25 +68,4 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('institution registration asks to confirm password, not phone', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(360, 740);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
-    await tester.pumpWidget(
-      MaterialApp(home: InstitutionLoginScreen(onBack: () {})),
-    );
-    await tester.tap(
-      find.text('Register Institution').first,
-      warnIfMissed: false,
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Confirm Password *'), findsOneWidget);
-    expect(find.text('Placement Cell Contact Number (Optional)'), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
 }

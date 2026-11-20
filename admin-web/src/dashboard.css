@@ -1924,6 +1924,48 @@
   .employers-table td:first-child, .employers-table td:last-child { grid-column: 1 / -1; }
   .employer-detail-review { align-items: flex-start; flex-direction: column; }
 }
+
+.jobs-table {
+  min-width: 960px;
+  table-layout: fixed;
+}
+.jobs-table th:nth-child(1), .jobs-table td:nth-child(1) { width: 23%; }
+.jobs-table th:nth-child(2), .jobs-table td:nth-child(2) { width: 22%; }
+.jobs-table th:nth-child(3), .jobs-table td:nth-child(3) { width: 16%; }
+.jobs-table th:nth-child(4), .jobs-table td:nth-child(4) { width: 18%; }
+.jobs-table th:nth-child(5), .jobs-table td:nth-child(5) { width: 9%; }
+.jobs-table th:nth-child(6), .jobs-table td:nth-child(6) { width: 12%; }
+
+.jobs-table tbody td {
+  vertical-align: middle;
+  padding: 14px 16px;
+}
+
+.jobs-table th.cell-status,
+.jobs-table td.cell-status,
+.jobs-table th.cell-actions,
+.jobs-table td.cell-actions {
+  text-align: center;
+}
+
+.jobs-table .status-pill {
+  display: inline-flex;
+  justify-content: center;
+  min-width: 50px;
+}
+
+.jobs-table .danger-button-sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 5px 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 6px;
+  line-height: 1.2;
+}
+
 .job-seekers-table { min-width: 850px; table-layout: fixed; }
 .job-seekers-table th:nth-child(1), .job-seekers-table td:nth-child(1) { width: 27%; }
 .job-seekers-table th:nth-child(2), .job-seekers-table td:nth-child(2) { width: 17%; }

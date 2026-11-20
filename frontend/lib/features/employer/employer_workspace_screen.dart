@@ -258,35 +258,101 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
   ) {
     final profile = widget.profile;
     final live = jobs.where((job) => job.isOpen).length;
+    final closed = jobs.where((j) => !j.isOpen).length;
+
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 14, 18, 32),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 32),
       children: [
         Text(
-          'Good to see you, ${profile.contactName.split(' ').first}',
+          'Good to see you, ${profile.contactName.trim().isNotEmpty ? profile.contactName.trim().split(' ').first : 'there'} 👋',
           style: const TextStyle(
-            fontSize: 21,
-            fontWeight: FontWeight.w800,
-            color: AppTheme.textPrimary,
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+            color: Color(0xFF0F172A),
+            letterSpacing: -0.4,
           ),
         ),
-        const SizedBox(height: 5),
+        const SizedBox(height: 4),
         const Text(
           'Manage hiring from one place.',
-          style: TextStyle(color: AppTheme.textSecondary),
+          style: TextStyle(
+            color: Color(0xFF64748B),
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
         ),
         const SizedBox(height: 18),
         if (profile.status == 'rejected') _reviewCard(profile),
         _heroCard(profile, live, applications.length),
         const SizedBox(height: 20),
-        const _SectionTitle('Hiring at a glance'),
+
+        // Hiring at a glance Section Header
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Hiring at a glance',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                color: Color(0xFF0F172A),
+                letterSpacing: -0.3,
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x06000000),
+                    blurRadius: 4,
+                    offset: Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.calendar_today_outlined,
+                    size: 13,
+                    color: AppTheme.primary,
+                  ),
+                  SizedBox(width: 5),
+                  Text(
+                    'This Month',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF334155),
+                    ),
+                  ),
+                  SizedBox(width: 3),
+                  Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 16,
+                    color: Color(0xFF64748B),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 12),
+
+        // 2x2 Metric Cards
         Row(
           children: [
             Expanded(
               child: _MetricCard(
                 label: 'Live jobs',
                 value: '$live',
-                icon: Icons.work_outline_rounded,
+                icon: Icons.business_center_rounded,
+                accentColor: AppTheme.primary,
+                iconBgColor: const Color(0xFFF0FDF4),
               ),
             ),
             const SizedBox(width: 10),
@@ -294,7 +360,9 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
               child: _MetricCard(
                 label: 'Applicants',
                 value: '${applications.length}',
-                icon: Icons.people_outline_rounded,
+                icon: Icons.people_alt_rounded,
+                accentColor: const Color(0xFF2563EB),
+                iconBgColor: const Color(0xFFEFF6FF),
               ),
             ),
           ],
@@ -309,34 +377,188 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
                     ? '${profile.postingCredits}'
                     : '0',
                 icon: Icons.local_offer_outlined,
+                accentColor: const Color(0xFF7C3AED),
+                iconBgColor: const Color(0xFFFAF5FF),
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: _MetricCard(
                 label: 'Closed jobs',
-                value: '${jobs.where((j) => !j.isOpen).length}',
+                value: '$closed',
                 icon: Icons.check_circle_outline_rounded,
+                accentColor: const Color(0xFF0D9488),
+                iconBgColor: const Color(0xFFF0FDFA),
               ),
             ),
           ],
         ),
         const SizedBox(height: 24),
-        const _SectionTitle('Recent applications'),
-        const SizedBox(height: 9),
+
+        // Recent applications Header
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Recent applications',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                color: Color(0xFF0F172A),
+                letterSpacing: -0.3,
+              ),
+            ),
+            if (applications.isNotEmpty)
+              InkWell(
+                onTap: () => setState(() => _tab = 2),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'View all',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.primary,
+                      ),
+                    ),
+                    SizedBox(width: 4),
+                    Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 14,
+                      color: AppTheme.primary,
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
         if (applications.isEmpty)
-          const _StatePanel(
-            icon: Icons.inbox_outlined,
-            title: 'No applicants yet',
-            detail: 'Applications for your published jobs will appear here.',
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x06000000),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      width: 58,
+                      height: 64,
+                      margin: const EdgeInsets.only(right: 14, bottom: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE0F2FE),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    Container(
+                      width: 58,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x0C000000),
+                            blurRadius: 8,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.person_rounded,
+                            size: 20,
+                            color: Color(0xFF0284C7),
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            width: 32,
+                            height: 3,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFCBD5E1),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Container(
+                            width: 22,
+                            height: 3,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFCBD5E1),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'No applicants yet',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Post a job to start receiving applications.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (widget.profile.isApproved)
+                  ElevatedButton.icon(
+                    onPressed: () => _openJobForm(),
+                    icon: const Icon(Icons.add, size: 16, color: Colors.white),
+                    label: const Text(
+                      'Post a job',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 10,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         for (final application in applications.take(3))
           _applicantCard(application),
-        if (applications.isNotEmpty)
-          TextButton(
-            onPressed: () => setState(() => _tab = 2),
-            child: const Text('View all applicants'),
-          ),
       ],
     );
   }
@@ -376,57 +598,111 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
     EmployerProfile profile,
     int live,
     int applicants,
-  ) => Container(
-    padding: const EdgeInsets.all(20),
-    decoration: BoxDecoration(
-      color: AppTheme.primaryDark,
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Icon(Icons.campaign_outlined, color: AppTheme.accent, size: 30),
-        const SizedBox(height: 12),
-        Text(
-          !profile.isApproved
-              ? 'Company details received'
-              : live == 0
-              ? 'Find your next great hire'
-              : 'Keep your hiring moving',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 23,
-            fontWeight: FontWeight.w800,
-          ),
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF059669), Color(0xFF047857), Color(0xFF064E3B)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        const SizedBox(height: 6),
-        Text(
-          !profile.isApproved
-              ? 'Your details are saved. Review them in the Company tab while your account awaits approval.'
-              : live == 0
-              ? 'Publish a job and reach Career360 candidates across Tamil Nadu.'
-              : '$live live jobs · $applicants applications',
-          style: const TextStyle(color: Color(0xFFCBD5E1), height: 1.35),
-        ),
-        const SizedBox(height: 17),
-        if (profile.isApproved) FilledButton.icon(
-          onPressed: () => _openJobForm(),
-          style: FilledButton.styleFrom(
-            backgroundColor: Colors.white,
-            foregroundColor: AppTheme.primaryDark,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x28059669),
+            blurRadius: 16,
+            offset: Offset(0, 6),
           ),
-          icon: const Icon(Icons.add_rounded),
-          label: const Text('Post a job'),
-        ),
-        if (profile.isApproved && !profile.hasActiveCredits)
-          TextButton(
-            onPressed: _openPlans,
-            style: TextButton.styleFrom(foregroundColor: Colors.white),
-            child: const Text('See posting plans →'),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.campaign_outlined,
+            color: Color(0xFF86EFAC),
+            size: 24,
           ),
-      ],
-    ),
-  );
+          const SizedBox(height: 10),
+          Text(
+            !profile.isApproved
+                ? 'Company details received'
+                : live == 0
+                    ? 'Find your next great hire'
+                    : 'Keep your hiring moving',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.4,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            !profile.isApproved
+                ? 'Review your details while your account awaits verification.'
+                : live == 0
+                    ? 'Publish a job and reach verified candidates across Tamil Nadu.'
+                    : '$live live job${live == 1 ? '' : 's'} · $applicants application${applicants == 1 ? '' : 's'}',
+            style: const TextStyle(
+              color: Color(0xFFE2E8F0),
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (profile.isApproved)
+            ElevatedButton.icon(
+              onPressed: () => _openJobForm(),
+              icon: Icon(
+                Icons.add,
+                size: 16,
+                color: AppTheme.primary,
+              ),
+              label: Text(
+                'Post a job',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.primary,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: AppTheme.primary,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 10,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+            ),
+          if (profile.isApproved && !profile.hasActiveCredits)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: InkWell(
+                onTap: _openPlans,
+                child: const Text(
+                  'See posting plans →',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildHeaderLogo(EmployerProfile profile) {
     final hasLogo = profile.logoUrl.trim().isNotEmpty;
@@ -645,84 +921,502 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
     );
   }
 
-  Widget _jobs(List<JobModel> jobs) => ListView(
-    padding: const EdgeInsets.fromLTRB(18, 18, 18, 32),
-    children: [
-      Row(
-        children: [
-          const Expanded(child: _SectionTitle('Your jobs')),
-          if (widget.profile.isApproved)
-            FilledButton.icon(
-              onPressed: () => _openJobForm(),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Post job'),
+  Widget _jobs(List<JobModel> jobs) {
+    final activeCount = jobs.where((j) => j.isOpen).length;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      children: [
+        // Manage Your Hiring Hero Banner
+        Container(
+          margin: const EdgeInsets.only(bottom: 20),
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFF0FDF4), Color(0xFFDCFCE7)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-        ],
-      ),
-      const SizedBox(height: 14),
-      if (jobs.isEmpty)
-        const _StatePanel(
-          icon: Icons.work_outline_rounded,
-          title: 'No jobs posted',
-          detail: 'Your first published role will appear here.',
-        ),
-      for (final job in jobs)
-        Card(
-          margin: const EdgeInsets.only(bottom: 11),
-          child: Padding(
-            padding: const EdgeInsets.all(15),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: const Color(0xFFBBF7D0).withValues(alpha: 0.7),
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x06000000),
+                blurRadius: 10,
+                offset: Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        job.title,
+                    RichText(
+                      text: TextSpan(
                         style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF0F172A),
+                          letterSpacing: -0.4,
                         ),
+                        children: [
+                          const TextSpan(text: 'Manage Your '),
+                          TextSpan(
+                            text: 'Hiring',
+                            style: TextStyle(color: AppTheme.primary),
+                          ),
+                        ],
                       ),
                     ),
-                    _StatusPill(
-                      text: job.isOpen ? 'Live' : 'Closed',
-                      positive: job.isOpen,
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Post jobs, track applications, and build your team faster.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF475569),
+                        height: 1.4,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  '${job.locationCity} · ${job.workMode} · ${job.salaryText}',
-                  style: const TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 12,
-                  ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primary.withValues(alpha: 0.15),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 9),
-                Text(
-                  '${job.vacanciesCount} opening${job.vacanciesCount == 1 ? '' : 's'}',
-                  style: const TextStyle(fontSize: 12),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Icon(
+                      Icons.business_center_rounded,
+                      size: 30,
+                      color: AppTheme.primary,
+                    ),
+                    Positioned(
+                      right: 4,
+                      bottom: 4,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.assignment_turned_in_rounded,
+                          size: 16,
+                          color: Color(0xFF22C55E),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                if (job.isOpen)
-                  Row(
-                    children: [
-                      TextButton(
-                        onPressed: () => _openJobForm(job),
-                        child: const Text('Edit'),
-                      ),
-                      TextButton(
-                        onPressed: () => _confirmClose(job),
-                        child: const Text('Close job'),
-                      ),
-                    ],
-                  ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-    ],
-  );
+
+        // Section Header Row: Title + Active Badge + Post Job Button
+        Row(
+          children: [
+            const Text(
+              'Your Jobs',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                color: Color(0xFF0F172A),
+                letterSpacing: -0.4,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FDF4),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFDCFCE7)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: activeCount > 0
+                          ? AppTheme.primary
+                          : const Color(0xFF94A3B8),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    '$activeCount Active',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: activeCount > 0
+                          ? const Color(0xFF15803D)
+                          : const Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Spacer(),
+            if (widget.profile.isApproved)
+              ElevatedButton.icon(
+                onPressed: () => _openJobForm(),
+                icon: const Icon(Icons.add, size: 16, color: Colors.white),
+                label: const Text(
+                  'Post Job',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        if (jobs.isEmpty)
+          const _StatePanel(
+            icon: Icons.work_outline_rounded,
+            title: 'No jobs posted',
+            detail: 'Your first published role will appear here.',
+          ),
+
+        for (final job in jobs) _buildJobCard(job),
+      ],
+    );
+  }
+
+  Widget _buildJobCard(JobModel job) {
+    final location = job.locationCity.trim().isNotEmpty
+        ? job.locationCity.trim()
+        : 'Tamil Nadu';
+    final salary = job.salaryText.trim().startsWith('₹')
+        ? job.salaryText.trim()
+        : '₹ ${job.salaryText.trim()}';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x06000000),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(
+                color: job.isOpen
+                    ? AppTheme.primary
+                    : const Color(0xFFCBD5E1),
+                width: 4,
+              ),
+            ),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Top Row: Category Icon + Title/Details + Live Status Badge
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFDCFCE7)),
+                    ),
+                    child: Center(
+                      child: Icon(
+                        _getCategoryIcon(job.category),
+                        color: AppTheme.primary,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          job.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF0F172A),
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.location_on_outlined,
+                              size: 14,
+                              color: Color(0xFF64748B),
+                            ),
+                            const SizedBox(width: 3),
+                            Flexible(
+                              child: Text(
+                                location,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF64748B),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 6),
+                              child: Text(
+                                '•',
+                                style: TextStyle(color: Color(0xFF94A3B8)),
+                              ),
+                            ),
+                            const Icon(
+                              Icons.apartment_rounded,
+                              size: 14,
+                              color: Color(0xFF64748B),
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              job.workMode,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF64748B),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          salary,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF334155),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: job.isOpen
+                          ? const Color(0xFFF0FDF4)
+                          : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: job.isOpen
+                            ? const Color(0xFFBBF7D0)
+                            : const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: job.isOpen
+                                ? AppTheme.primary
+                                : const Color(0xFF94A3B8),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          job.isOpen ? 'Live' : 'Closed',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: job.isOpen
+                                ? const Color(0xFF15803D)
+                                : const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(height: 1, color: const Color(0xFFF1F5F9)),
+              const SizedBox(height: 12),
+              // Bottom Row: Openings + Action Buttons (Edit / Close Job)
+              Row(
+                children: [
+                  const Icon(
+                    Icons.people_alt_outlined,
+                    size: 16,
+                    color: Color(0xFF64748B),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    '${job.vacanciesCount} opening${job.vacanciesCount == 1 ? '' : 's'}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF475569),
+                    ),
+                  ),
+                  const Spacer(),
+                  if (job.isOpen) ...[
+                    OutlinedButton.icon(
+                      onPressed: () => _openJobForm(job),
+                      icon: Icon(
+                        Icons.edit_outlined,
+                        size: 14,
+                        color: AppTheme.primary,
+                      ),
+                      label: Text(
+                        'Edit',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.primary,
+                        ),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        side: const BorderSide(color: Color(0xFFE2E8F0)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: () => _confirmClose(job),
+                      icon: const Icon(
+                        Icons.delete_outline_rounded,
+                        size: 14,
+                        color: Color(0xFF334155),
+                      ),
+                      label: const Text(
+                        'Close Job',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF334155),
+                        ),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        side: const BorderSide(color: Color(0xFFE2E8F0)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  IconData _getCategoryIcon(String category) {
+    final lower = category.toLowerCase();
+    if (lower.contains('tech') ||
+        lower.contains('software') ||
+        lower.contains('developer') ||
+        lower.contains('it')) {
+      return Icons.code_rounded;
+    }
+    if (lower.contains('market') || lower.contains('sales')) {
+      return Icons.campaign_rounded;
+    }
+    if (lower.contains('design') || lower.contains('creative')) {
+      return Icons.palette_outlined;
+    }
+    if (lower.contains('health') ||
+        lower.contains('pharma') ||
+        lower.contains('medical')) {
+      return Icons.local_hospital_outlined;
+    }
+    if (lower.contains('finance') ||
+        lower.contains('bank') ||
+        lower.contains('account')) {
+      return Icons.account_balance_rounded;
+    }
+    if (lower.contains('education') || lower.contains('teach')) {
+      return Icons.school_outlined;
+    }
+    if (lower.contains('construct') || lower.contains('real estate')) {
+      return Icons.home_work_outlined;
+    }
+    if (lower.contains('logistics') || lower.contains('delivery')) {
+      return Icons.local_shipping_outlined;
+    }
+    return Icons.business_center_rounded;
+  }
 
   Future<void> _confirmClose(JobModel job) async {
     final confirmed = await showDialog<bool>(
@@ -1982,32 +2676,70 @@ class _MetricCard extends StatelessWidget {
   final String label;
   final String value;
   final IconData icon;
+  final Color accentColor;
+  final Color iconBgColor;
+
   const _MetricCard({
     required this.label,
     required this.value,
     required this.icon,
+    this.accentColor = AppTheme.primary,
+    this.iconBgColor = const Color(0xFFF0FDF4),
   });
+
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: AppTheme.primary, size: 20),
-          const SizedBox(height: 15),
-          Text(
-            value,
-            style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w800),
-          ),
-          Text(
-            label,
-            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x06000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
           ),
         ],
       ),
-    ),
-  );
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: iconBgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Center(
+              child: Icon(icon, color: accentColor, size: 18),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF0F172A),
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _StatePanel extends StatelessWidget {

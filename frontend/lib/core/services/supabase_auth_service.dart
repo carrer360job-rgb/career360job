@@ -8,7 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'supabase_service.dart';
 
-enum PasswordRecoveryRole { candidate, employer, institution }
+enum PasswordRecoveryRole { candidate, employer }
 
 /// Complete Supabase Authentication Service
 /// Handles Email/Password, Phone OTP, Session persistence & Profile sync
@@ -198,7 +198,7 @@ class SupabaseAuthService {
       _pendingOAuthRolePreference,
     );
     final metadataRole = user.userMetadata?['role']?.toString().toUpperCase();
-    const allowedRoles = {'CANDIDATE', 'EMPLOYER', 'INSTITUTION'};
+    const allowedRoles = {'CANDIDATE', 'EMPLOYER'};
     final role = [metadataRole, pendingRole, preferredRole?.toUpperCase()]
         .whereType<String>()
         .firstWhere(allowedRoles.contains, orElse: () => 'CANDIDATE');
@@ -250,7 +250,7 @@ class SupabaseAuthService {
     String role = 'CANDIDATE',
   }) async {
     try {
-      if (!{'CANDIDATE', 'EMPLOYER', 'INSTITUTION'}.contains(role)) {
+      if (!{'CANDIDATE', 'EMPLOYER'}.contains(role)) {
         throw ArgumentError.value(role, 'role', 'Unsupported account role');
       }
       await SharedPreferencesAsync().setString(_pendingOAuthRolePreference, role);

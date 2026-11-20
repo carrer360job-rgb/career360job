@@ -21,9 +21,6 @@ import 'features/auth/role_selection_screen.dart';
 import 'features/candidate/candidate_guidelines_screen.dart';
 import 'features/employer/employer_guidelines_screen.dart';
 import 'features/employer/employer_login_screen.dart';
-import 'features/institution/institution_guidelines_screen.dart';
-import 'features/institution/institution_login_screen.dart';
-import 'features/institution/institution_workspace_screen.dart';
 import 'features/auth/candidate_login_screen.dart';
 import 'features/auth/password_recovery_completion_screen.dart';
 import 'features/candidate/candidate_onboarding_wizard_screen.dart';
@@ -139,7 +136,7 @@ class FirebaseConfigurationFailure extends StatelessWidget {
   }
 }
 
-enum AppUserRole { candidate, employer, institution, admin }
+enum AppUserRole { candidate, employer, admin }
 
 class Career360App extends StatefulWidget {
   final Stream<dynamic>? authChanges;
@@ -155,8 +152,6 @@ class _Career360AppState extends State<Career360App> {
   bool _showCandidateLogin = false;
   bool _showEmployerGuidelines = false;
   bool _showEmployerLogin = false;
-  bool _showInstitutionGuidelines = false;
-  bool _showInstitutionLogin = false;
   AppUserRole? _currentRole;
   int _sessionGeneration = 0;
 
@@ -183,11 +178,6 @@ class _Career360AppState extends State<Career360App> {
         _currentRole = role;
         _showEmployerGuidelines = true;
       });
-    } else if (role == AppUserRole.institution) {
-      setState(() {
-        _currentRole = role;
-        _showInstitutionGuidelines = true;
-      });
     }
   }
 
@@ -209,27 +199,6 @@ class _Career360AppState extends State<Career360App> {
     setState(() {
       _showEmployerLogin = false;
       _showEmployerGuidelines = true;
-    });
-  }
-
-  void _onInstitutionGuidelinesAccepted() {
-    setState(() {
-      _showInstitutionGuidelines = false;
-      _showInstitutionLogin = true;
-    });
-  }
-
-  void _onInstitutionGuidelinesBack() {
-    setState(() {
-      _showInstitutionGuidelines = false;
-      _currentRole = null;
-    });
-  }
-
-  void _onInstitutionLoginBack() {
-    setState(() {
-      _showInstitutionLogin = false;
-      _showInstitutionGuidelines = true;
     });
   }
 
@@ -260,8 +229,6 @@ class _Career360AppState extends State<Career360App> {
       _showCandidateLogin = false;
       _showEmployerGuidelines = false;
       _showEmployerLogin = false;
-      _showInstitutionGuidelines = false;
-      _showInstitutionLogin = false;
       _currentRole = null;
     });
     await SupabaseService.client.auth.signOut();
@@ -273,8 +240,6 @@ class _Career360AppState extends State<Career360App> {
       _showCandidateLogin = false;
       _showEmployerGuidelines = false;
       _showEmployerLogin = false;
-      _showInstitutionGuidelines = false;
-      _showInstitutionLogin = false;
       _currentRole = null;
     });
     await SupabaseService.client.auth.signOut();
@@ -293,8 +258,6 @@ class _Career360AppState extends State<Career360App> {
       _showCandidateLogin = true;
       _showEmployerGuidelines = false;
       _showEmployerLogin = false;
-      _showInstitutionGuidelines = false;
-      _showInstitutionLogin = false;
       _currentRole = AppUserRole.candidate;
     });
     await SupabaseAuthService.clearSuspensionNotice();
@@ -306,8 +269,6 @@ class _Career360AppState extends State<Career360App> {
       _showCandidateLogin = false;
       _showEmployerGuidelines = false;
       _showEmployerLogin = false;
-      _showInstitutionGuidelines = false;
-      _showInstitutionLogin = false;
       _currentRole = null;
     });
   }
@@ -337,19 +298,6 @@ class _Career360AppState extends State<Career360App> {
       return EmployerLoginScreen(
         key: const ValueKey('employer_login_screen'),
         onBack: _onEmployerLoginBack,
-      );
-    }
-    if (_showInstitutionGuidelines) {
-      return InstitutionGuidelinesScreen(
-        key: const ValueKey('institution_guidelines_screen'),
-        onAccepted: _onInstitutionGuidelinesAccepted,
-        onBack: _onInstitutionGuidelinesBack,
-      );
-    }
-    if (_showInstitutionLogin) {
-      return InstitutionLoginScreen(
-        key: const ValueKey('institution_login_screen'),
-        onBack: _onInstitutionLoginBack,
       );
     }
     if (_currentRole == null) {
@@ -534,10 +482,33 @@ class AccountSessionGate extends StatelessWidget {
           final storedRole = rows.isNotEmpty
               ? rows.first['role']?.toString().toLowerCase()
               : null;
+          final unsupportedStoredRole = storedRole != null &&
+              !{'candidate', 'employer', 'admin'}.contains(storedRole);
+          if (unsupportedStoredRole) {
+            return Scaffold(
+              body: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'This account type is no longer supported in the app.',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: onSignOutRequested,
+                        child: const Text('Sign out'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
           final selectedRole = storedRole == 'employer'
               ? AppUserRole.employer
-              : storedRole == 'institution'
-              ? AppUserRole.institution
               : storedRole == 'candidate'
               ? AppUserRole.candidate
               : storedRole == 'admin'
@@ -578,8 +549,6 @@ class AccountSessionGate extends StatelessWidget {
               requestedRole != selectedRole) {
             final correct = selectedRole == AppUserRole.employer
                 ? 'employer'
-                : selectedRole == AppUserRole.institution
-                ? 'institution'
                 : selectedRole == AppUserRole.admin
                 ? 'admin'
                 : 'job seeker';
@@ -651,17 +620,6 @@ class AccountSessionGate extends StatelessWidget {
               accountStatus: accountStatus,
               onSignOut: onSignOutRequested,
               onRetry: onRetry,
-            );
-          }
-          if (selectedRole == AppUserRole.institution) {
-            return InstitutionWorkspaceScreen(
-              key: ValueKey('institution_workspace_${user.uid}'),
-              userId: user.uid,
-              email: user.email ?? '',
-              metadata: Map<String, dynamic>.from(
-                SupabaseService.client.auth.currentUser?.userMetadata ?? {},
-              ),
-              onSignOut: onSignOutRequested,
             );
           }
           return CandidateSessionGate(
@@ -1536,7 +1494,6 @@ class _MainShellScreenState extends State<MainShellScreen>
   final PlatformContentService _platformContentService =
       PlatformContentService();
   List<Map<String, dynamic>> _managedCategories = const [];
-  List<Map<String, dynamic>> _managedAnnouncements = const [];
   String get _currentUid => AppAuthBridge.currentUser?.uid ?? 'guest_candidate';
 
   int _selectedTabIndex = 0;
@@ -1624,16 +1581,12 @@ class _MainShellScreenState extends State<MainShellScreen>
 
   Future<void> _loadManagedCategories() async {
     try {
-      final results = await Future.wait([
-        _platformContentService.list('category'),
-        _platformContentService.list('announcement'),
-      ]);
+      final categories = await _platformContentService.list('category');
       if (mounted) {
         setState(() {
-          if (results[0].isNotEmpty) {
-            _managedCategories = results[0];
+          if (categories.isNotEmpty) {
+            _managedCategories = categories;
           }
-          _managedAnnouncements = results[1];
         });
       }
     } catch (_) {
@@ -1676,6 +1629,152 @@ class _MainShellScreenState extends State<MainShellScreen>
     setState(() => _jobsStream = _firestoreService.streamJobs());
   }
 
+  static bool _isCategoryMatch(String jobCategory, String filterCategory) {
+    final job = jobCategory.trim().toLowerCase();
+    final filter = filterCategory.trim().toLowerCase();
+    if (filter.isEmpty || filter == 'all') return true;
+    if (job == filter) return true;
+    if (job.contains(filter) || filter.contains(job)) return true;
+
+    // IT & Software / Information Technology
+    final filterIsTech = filter.contains('it') ||
+        filter.contains('software') ||
+        filter.contains('information technology') ||
+        filter.contains('tech') ||
+        filter.contains('developer') ||
+        filter.contains('computer');
+    final jobIsTech = job.contains('it') ||
+        job.contains('software') ||
+        job.contains('information technology') ||
+        job.contains('tech') ||
+        job.contains('developer') ||
+        job.contains('computer');
+    if (filterIsTech && jobIsTech) return true;
+
+    // Manufacturing & Production
+    final filterIsMfg = filter.contains('manufactur') ||
+        filter.contains('production') ||
+        filter.contains('automobile') ||
+        filter.contains('auto') ||
+        filter.contains('textile') ||
+        filter.contains('industrial') ||
+        filter.contains('plant');
+    final jobIsMfg = job.contains('manufactur') ||
+        job.contains('production') ||
+        job.contains('automobile') ||
+        job.contains('auto') ||
+        job.contains('textile') ||
+        job.contains('industrial') ||
+        job.contains('plant');
+    if (filterIsMfg && jobIsMfg) return true;
+
+    // Sales & Marketing
+    final filterIsSales = filter.contains('sales') ||
+        filter.contains('market') ||
+        filter.contains('retail') ||
+        filter.contains('commerce') ||
+        filter.contains('advertising');
+    final jobIsSales = job.contains('sales') ||
+        job.contains('market') ||
+        job.contains('retail') ||
+        job.contains('commerce') ||
+        job.contains('advertising');
+    if (filterIsSales && jobIsSales) return true;
+
+    // Finance & Banking
+    final filterIsFinance = filter.contains('finan') ||
+        filter.contains('bank') ||
+        filter.contains('account') ||
+        filter.contains('tax') ||
+        filter.contains('audit');
+    final jobIsFinance = job.contains('finan') ||
+        job.contains('bank') ||
+        job.contains('account') ||
+        job.contains('tax') ||
+        job.contains('audit');
+    if (filterIsFinance && jobIsFinance) return true;
+
+    // Healthcare & Medical
+    final filterIsHealth = filter.contains('health') ||
+        filter.contains('medic') ||
+        filter.contains('pharma') ||
+        filter.contains('clinic') ||
+        filter.contains('hospital') ||
+        filter.contains('nurse');
+    final jobIsHealth = job.contains('health') ||
+        job.contains('medic') ||
+        job.contains('pharma') ||
+        job.contains('clinic') ||
+        job.contains('hospital') ||
+        job.contains('nurse');
+    if (filterIsHealth && jobIsHealth) return true;
+
+    // Education & EdTech
+    final filterIsEdu = filter.contains('educat') ||
+        filter.contains('teach') ||
+        filter.contains('tutor') ||
+        filter.contains('school') ||
+        filter.contains('academic');
+    final jobIsEdu = job.contains('educat') ||
+        job.contains('teach') ||
+        job.contains('tutor') ||
+        job.contains('school') ||
+        job.contains('academic');
+    if (filterIsEdu && jobIsEdu) return true;
+
+    // Customer Care / Support / BPO
+    final filterIsBpo = filter.contains('support') ||
+        filter.contains('bpo') ||
+        filter.contains('customer') ||
+        filter.contains('call center') ||
+        filter.contains('helpdesk');
+    final jobIsBpo = job.contains('support') ||
+        job.contains('bpo') ||
+        job.contains('customer') ||
+        job.contains('call center') ||
+        job.contains('helpdesk');
+    if (filterIsBpo && jobIsBpo) return true;
+
+    // Logistics & Supply Chain
+    final filterIsLogistics = filter.contains('logistic') ||
+        filter.contains('supply') ||
+        filter.contains('warehouse') ||
+        filter.contains('delivery') ||
+        filter.contains('transport');
+    final jobIsLogistics = job.contains('logistic') ||
+        job.contains('supply') ||
+        job.contains('warehouse') ||
+        job.contains('delivery') ||
+        job.contains('transport');
+    if (filterIsLogistics && jobIsLogistics) return true;
+
+    // Hospitality & Tourism
+    final filterIsHospitality = filter.contains('hospital') ||
+        filter.contains('hotel') ||
+        filter.contains('tour') ||
+        filter.contains('restaurant') ||
+        filter.contains('food');
+    final jobIsHospitality = job.contains('hospital') ||
+        job.contains('hotel') ||
+        job.contains('tour') ||
+        job.contains('restaurant') ||
+        job.contains('food');
+    if (filterIsHospitality && jobIsHospitality) return true;
+
+    // Construction & Real Estate
+    final filterIsConstruction = filter.contains('construct') ||
+        filter.contains('real estate') ||
+        filter.contains('civil') ||
+        filter.contains('architect');
+    final jobIsConstruction = job.contains('construct') ||
+        job.contains('real estate') ||
+        job.contains('civil') ||
+        job.contains('architect');
+    if (filterIsConstruction && jobIsConstruction) return true;
+
+    return false;
+  }
+
   List<JobModel> _filterCandidateJobs(List<JobModel> allJobs) {
     final query = _searchQuery.trim().toLowerCase();
     return allJobs.where((job) {
@@ -1686,7 +1785,7 @@ class _MainShellScreenState extends State<MainShellScreen>
         return false;
       }
       if (_selectedCategory != null &&
-          !job.category.toLowerCase().contains(_selectedCategory!.toLowerCase())) {
+          !_isCategoryMatch(job.category, _selectedCategory!)) {
         return false;
       }
       if (query.isEmpty) return true;
@@ -2496,50 +2595,56 @@ class _MainShellScreenState extends State<MainShellScreen>
                         color: Color(0xFF334155),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: _selectedLocation,
-                      icon: const Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        color: Color(0xFF64748B),
-                      ),
-                      dropdownColor: Colors.white,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Color(0xFF0F172A),
-                        fontWeight: FontWeight.w500,
-                      ),
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: const Color(0xFFF8FAFC),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 12,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: AppTheme.primary,
-                            width: 1.5,
-                          ),
-                        ),
-                      ),
-                      items: AppConstants.jobLocations.map((loc) {
-                        return DropdownMenuItem(value: loc, child: Text(loc));
-                      }).toList(),
-                      onChanged: (val) {
-                        if (val != null) {
-                          setState(() => _selectedLocation = val);
-                          setModalState(() {});
+                    const SizedBox(height: 10),
+                    Builder(
+                      builder: (context) {
+                        final locations = List<String>.from(AppConstants.jobLocations);
+                        if (!locations.contains(_selectedLocation)) {
+                          locations.insert(1, _selectedLocation);
                         }
+                        return Wrap(
+                          spacing: 8,
+                          runSpacing: 10,
+                          children: locations.map((loc) {
+                            final isSelected = _selectedLocation == loc;
+                            return ChoiceChip(
+                              label: Text(loc),
+                              selected: isSelected,
+                              selectedColor: AppTheme.primary,
+                              backgroundColor: const Color(0xFFF8FAFC),
+                              showCheckmark: isSelected,
+                              checkmarkColor: Colors.white,
+                              side: BorderSide(
+                                color: isSelected
+                                    ? Colors.transparent
+                                    : const Color(0xFFE2E8F0),
+                                width: 1,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              labelPadding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 1,
+                              ),
+                              labelStyle: TextStyle(
+                                color: isSelected
+                                    ? Colors.white
+                                    : const Color(0xFF334155),
+                                fontWeight: isSelected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                fontSize: 13,
+                              ),
+                              onSelected: (selected) {
+                                setState(() {
+                                  _selectedLocation = loc;
+                                });
+                                setModalState(() {});
+                              },
+                            );
+                          }).toList(),
+                        );
                       },
                     ),
                     const SizedBox(height: 18),
@@ -2559,11 +2664,15 @@ class _MainShellScreenState extends State<MainShellScreen>
                           [
                             'All',
                             'IT & Software',
-                            'Marketing',
-                            'Finance',
-                            'Design',
-                            'Healthcare',
-                            'Education',
+                            'Manufacturing',
+                            'Sales & Marketing',
+                            'Finance & Banking',
+                            'Healthcare & Medical',
+                            'Education & EdTech',
+                            'Customer Support',
+                            'Logistics & Operations',
+                            'Hospitality & Tourism',
+                            'Construction & Real Estate',
                           ].map((cat) {
                             final isSelected =
                                 (_selectedCategory == cat) ||
@@ -2765,8 +2874,6 @@ class _MainShellScreenState extends State<MainShellScreen>
         return 'Candidate';
       case AppUserRole.employer:
         return 'Recruiter ATS';
-      case AppUserRole.institution:
-        return 'Institution';
       case AppUserRole.admin:
         return 'Admin';
     }
@@ -2905,8 +3012,6 @@ class _MainShellScreenState extends State<MainShellScreen>
         return 'JOB SEEKER WORKSPACE';
       case AppUserRole.employer:
         return 'RECRUITER ATS DESK';
-      case AppUserRole.institution:
-        return 'INSTITUTION PLACEMENT DESK';
       case AppUserRole.admin:
         return 'ADMIN CONTROL PANEL';
     }
@@ -2955,24 +3060,6 @@ class _MainShellScreenState extends State<MainShellScreen>
             'shortLabel': 'Applicants',
           },
         ];
-      case AppUserRole.institution:
-        return [
-          {
-            'icon': Icons.school_outlined,
-            'label': 'Campus Placements',
-            'shortLabel': 'Placements',
-          },
-          {
-            'icon': Icons.people_alt_outlined,
-            'label': 'Student Roster',
-            'shortLabel': 'Students',
-          },
-          {
-            'icon': Icons.business_outlined,
-            'label': 'Recruiter Drives',
-            'shortLabel': 'Drives',
-          },
-        ];
       case AppUserRole.admin:
         return [
           {
@@ -3003,7 +3090,6 @@ class _MainShellScreenState extends State<MainShellScreen>
         return _buildCandidateProfileScreen();
 
       case AppUserRole.employer:
-      case AppUserRole.institution:
         if (_selectedTabIndex == 0) return _buildEmployerOverview();
         if (_selectedTabIndex == 1) return _buildEmployerPostJob();
         return _buildEmployerApplicants();
@@ -3165,6 +3251,27 @@ class _MainShellScreenState extends State<MainShellScreen>
                   const SizedBox(height: 12),
                   _buildPreferencesPrompt(),
                 ],
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Browse categories',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _showFilterModal,
+                      child: const Text('See all'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _buildCategoryGrid(),
                 const SizedBox(height: 20),
                 Row(
                   children: [
@@ -3238,33 +3345,6 @@ class _MainShellScreenState extends State<MainShellScreen>
                   _buildHomeEmptyState(hasActiveFilters: hasActiveFilters)
                 else
                   ...jobs.take(3).map(_buildReferenceJobCard),
-                if (_managedAnnouncements.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  ..._managedAnnouncements
-                      .take(2)
-                      .map(_buildManagedAnnouncement),
-                ],
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Browse categories',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: AppTheme.textPrimary,
-                        ),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: _openCandidateSearch,
-                      child: const Text('See all'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                _buildCategoryGrid(),
               ],
             );
           },
@@ -3413,76 +3493,93 @@ class _MainShellScreenState extends State<MainShellScreen>
     );
   }
 
-  Widget _buildManagedAnnouncement(Map<String, dynamic> item) => Container(
-    width: double.infinity,
-    margin: const EdgeInsets.only(bottom: 8),
-    padding: const EdgeInsets.all(13),
-    decoration: BoxDecoration(
-      color: AppTheme.primaryLight,
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: AppTheme.border),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Icon(Icons.campaign_outlined, color: AppTheme.primary, size: 20),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                item['title'] as String? ?? 'Career360 update',
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              if ((item['content'] as String? ?? '').isNotEmpty) ...[
-                const SizedBox(height: 3),
-                Text(
-                  item['content'] as String,
-                  style: const TextStyle(fontSize: 12, height: 1.35),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
+  static IconData _getCategoryIconForTitle(String name) {
+    final lower = name.toLowerCase();
+    if (lower.contains('tech') ||
+        lower.contains('software') ||
+        lower.contains('it')) {
+      return Icons.code_rounded;
+    }
+    if (lower.contains('manufactur') ||
+        lower.contains('production') ||
+        lower.contains('auto')) {
+      return Icons.precision_manufacturing_outlined;
+    }
+    if (lower.contains('market') ||
+        lower.contains('sales') ||
+        lower.contains('retail')) {
+      return Icons.campaign_outlined;
+    }
+    if (lower.contains('finance') ||
+        lower.contains('bank') ||
+        lower.contains('account')) {
+      return Icons.account_balance_rounded;
+    }
+    if (lower.contains('health') ||
+        lower.contains('medic') ||
+        lower.contains('pharma')) {
+      return Icons.favorite_outline;
+    }
+    if (lower.contains('educat') ||
+        lower.contains('teach') ||
+        lower.contains('school')) {
+      return Icons.school_outlined;
+    }
+    if (lower.contains('support') ||
+        lower.contains('bpo') ||
+        lower.contains('customer')) {
+      return Icons.headset_mic_outlined;
+    }
+    if (lower.contains('logistic') ||
+        lower.contains('supply') ||
+        lower.contains('warehouse')) {
+      return Icons.local_shipping_outlined;
+    }
+    if (lower.contains('hospital') ||
+        lower.contains('hotel') ||
+        lower.contains('tour')) {
+      return Icons.restaurant_outlined;
+    }
+    if (lower.contains('construct') || lower.contains('real estate')) {
+      return Icons.home_work_outlined;
+    }
+    return Icons.work_outline_rounded;
+  }
 
   Widget _buildCategoryGrid() {
     final defaults = [
       {
         'name': 'IT & Software',
-        'icon': Icons.code,
+        'icon': Icons.code_rounded,
         'color': const Color(0xFFEFF8FF),
         'iconColor': AppTheme.primary,
       },
       {
-        'name': 'Marketing',
-        'icon': Icons.campaign_outlined,
+        'name': 'Manufacturing',
+        'icon': Icons.precision_manufacturing_outlined,
         'color': const Color(0xFFFFF7ED),
         'iconColor': const Color(0xFFEA580C),
       },
       {
-        'name': 'Finance',
-        'icon': Icons.bar_chart_rounded,
+        'name': 'Sales & Marketing',
+        'icon': Icons.campaign_outlined,
         'color': const Color(0xFFF0FDF4),
         'iconColor': const Color(0xFF16A34A),
       },
       {
-        'name': 'Design',
-        'icon': Icons.palette_outlined,
+        'name': 'Finance & Banking',
+        'icon': Icons.account_balance_rounded,
         'color': const Color(0xFFFAF5FF),
         'iconColor': const Color(0xFF9333EA),
       },
       {
-        'name': 'Healthcare',
+        'name': 'Healthcare & Medical',
         'icon': Icons.favorite_outline,
         'color': const Color(0xFFFEF2F2),
         'iconColor': const Color(0xFFDC2626),
       },
       {
-        'name': 'Education',
+        'name': 'Education & EdTech',
         'icon': Icons.school_outlined,
         'color': const Color(0xFFFFFBEB),
         'iconColor': const Color(0xFFD97706),
@@ -3491,10 +3588,11 @@ class _MainShellScreenState extends State<MainShellScreen>
     final categories = _managedCategories.isEmpty
         ? defaults
         : _managedCategories.map((item) {
+            final title = (item['title'] as String?) ?? 'Category';
             final index = (_managedCategories.indexOf(item)) % defaults.length;
             return <String, dynamic>{
-              'name': (item['title'] as String?) ?? 'Category',
-              'icon': defaults[index]['icon'],
+              'name': title,
+              'icon': _getCategoryIconForTitle(title),
               'color': defaults[index]['color'],
               'iconColor': defaults[index]['iconColor'],
             };
