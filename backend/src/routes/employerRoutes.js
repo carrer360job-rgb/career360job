@@ -34,7 +34,8 @@ function verified(req, res, next) {
 }
 
 export function hasTrustedApproval(profile) {
-  return profile?.is_verified === true && Boolean(profile.reviewed_by) && Boolean(profile.reviewed_at);
+  return profile?.review_state === 'approved' && profile?.is_verified === true &&
+    Boolean(profile.reviewed_by) && Boolean(profile.reviewed_at);
 }
 
 async function approvedEmployer(uid) {

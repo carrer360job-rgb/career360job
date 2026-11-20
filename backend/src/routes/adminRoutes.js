@@ -78,7 +78,7 @@ router.get('/employers', async (req, res) => {
     // Supabase is the source of truth for employer profiles. Fetch in pages so
     // the admin directory does not depend on Firebase credentials in Vercel.
     const { data: rows, error } = await supabaseAdmin.from('employers')
-      .select('user_id,company_name,contact_name,designation,email,phone,whatsapp_phone,industry,company_size,state,district,address,postal_code,posting_credits,active_plan,is_verified,created_at,reviewed_by,reviewed_at,rejection_reason')
+      .select('user_id,company_name,contact_name,designation,email,phone,whatsapp_phone,industry,company_size,state,district,address,postal_code,posting_credits,active_plan,is_verified,review_state,created_at,reviewed_by,reviewed_at,rejection_reason')
       .order('created_at', { ascending: false }).range(offset, offset + 49);
     if (error) throw Object.assign(new Error('Employer directory is unavailable.'), { status: 503 });
     const userIds = (rows || []).map((row) => row.user_id).filter(Boolean);
@@ -89,8 +89,10 @@ router.get('/employers', async (req, res) => {
     const profileStatus = new Map((profiles || []).map((profile) => [profile.id, profile.status]));
     let employers = (rows || []).map((row) => {
       const accountStatus = profileStatus.get(row.user_id);
-      const status = accountStatus === 'SUSPENDED' || accountStatus === 'BLOCKED'
-        ? 'rejected' : row.is_verified ? 'approved' : 'pending';
+      const status = row.review_state === 'approved' && accountStatus === 'ACTIVE'
+        ? 'approved' : row.review_state === 'suspended'
+        ? 'suspended' : row.review_state === 'rejected'
+        ? 'rejected' : 'pending';
       return { uid: row.user_id, companyName: row.company_name || '', contactName: row.contact_name || '',
         designation: row.designation || '', email: row.email || '', phone: row.phone || '',
         whatsappPhone: row.whatsapp_phone || row.phone || '', industry: row.industry || '',
@@ -100,7 +102,8 @@ router.get('/employers', async (req, res) => {
         rejectionReason: row.rejection_reason || null, reviewedBy: row.reviewed_by || null,
         reviewedAt: row.reviewed_at || null, createdAt: row.created_at || null };
     });
-    if (statusFilter !== 'all') employers = employers.filter((employer) => employer.status === statusFilter);
+    if (statusFilter !== 'all') employers = employers.filter((employer) =>
+      statusFilter === 'rejected' ? ['rejected', 'suspended'].includes(employer.status) : employer.status === statusFilter);
     if (search) employers = employers.filter((employer) => [employer.companyName, employer.contactName,
       employer.email, employer.phone, employer.district].some((field) => field.toLowerCase().includes(search)));
     res.set('Cache-Control', 'no-store');
