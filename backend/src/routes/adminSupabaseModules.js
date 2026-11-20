@@ -165,29 +165,37 @@ router.post('/users/:uid/status', async (req, res) => {
     const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 300) : '';
     if (!uuid.test(uid) || uid === req.user.uid) return res.status(400).json({ error: { message: 'Invalid account or your own admin account.' } });
     if (typeof disabled !== 'boolean' || (disabled && reason.length < 5)) return res.status(400).json({ error: { message: 'Provide a reason when suspending an account.' } });
-    const { data: profile, error: lookupError } = await supabaseAdmin.from('profiles').select('id,role').eq('id', uid).maybeSingle();
+    const { data: profile, error: lookupError } = await supabaseAdmin.from('profiles').select('id,role,status').eq('id', uid).maybeSingle();
     if (lookupError) throw unavailable('Account status is temporarily unavailable.');
     if (!profile) return res.status(404).json({ error: { message: 'Account not found.' } });
-    if (profile.role === 'ADMIN') return res.status(403).json({ error: { message: 'Admin accounts cannot be changed here.' } });
+    if (profile.role !== 'CANDIDATE') return res.status(403).json({ error: { message: 'Only job seeker accounts can be changed here.' } });
     if (disabled) {
+      const { data: updated, error: profileError } = await supabaseAdmin.from('profiles').update({
+        status: 'SUSPENDED', updated_at: new Date().toISOString(),
+      }).eq('id', uid).select('id').maybeSingle();
+      if (profileError || !updated) throw unavailable('Could not suspend this account in the database.');
       const { error: banError } = await supabaseAdmin.auth.admin.updateUserById(uid, { ban_duration: '876000h' });
-      if (banError) throw unavailable('Could not suspend this account.');
-    }
-    const { error: profileError } = await supabaseAdmin.from('profiles').update({
-      status: disabled ? 'SUSPENDED' : 'ACTIVE', updated_at: new Date().toISOString(),
-    }).eq('id', uid);
-    if (profileError) throw unavailable('Could not update this account.');
-    if (disabled && profile.role === 'EMPLOYER') {
-      const { data: employer } = await supabaseAdmin.from('employers').select('id').eq('user_id', uid).maybeSingle();
-      if (employer?.id) await supabaseAdmin.from('jobs').update({ status: 'CLOSED', updated_at: new Date().toISOString() })
-        .eq('employer_id', employer.id).eq('status', 'PUBLISHED');
-    }
-    if (!disabled) {
+      if (banError) {
+        const { error: rollbackError } = await supabaseAdmin.from('profiles').update({
+          status: profile.status, updated_at: new Date().toISOString(),
+        }).eq('id', uid);
+        if (rollbackError) console.error('[Admin account status rollback]', rollbackError);
+        throw unavailable('Could not block this account from signing in. Refresh the account status before retrying.');
+      }
+    } else {
       const { error: unbanError } = await supabaseAdmin.auth.admin.updateUserById(uid, { ban_duration: 'none' });
       if (unbanError) throw unavailable('Could not restore sign-in for this account.');
+      const { data: updated, error: profileError } = await supabaseAdmin.from('profiles').update({
+        status: 'ACTIVE', updated_at: new Date().toISOString(),
+      }).eq('id', uid).select('id').maybeSingle();
+      if (profileError || !updated) {
+        const { error: rebanError } = await supabaseAdmin.auth.admin.updateUserById(uid, { ban_duration: '876000h' });
+        if (rebanError) console.error('[Admin account restore rollback]', rebanError);
+        throw unavailable('Could not restore this account in the database. Refresh the account status before retrying.');
+      }
     }
     await audit(req.user.uid, disabled ? 'user_suspended' : 'user_activated', 'user', uid, reason || null);
-    res.json({ uid, disabled });
+    res.json({ uid, disabled, status: disabled ? 'SUSPENDED' : 'ACTIVE' });
   } catch (error) { fail(res, error); }
 });
 
