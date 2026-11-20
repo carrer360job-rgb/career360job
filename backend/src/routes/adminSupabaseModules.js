@@ -113,6 +113,51 @@ router.get('/job-seekers', async (req, res) => {
   } catch (error) { fail(res, error); }
 });
 
+router.get('/job-seekers/:uid', async (req, res) => {
+  try {
+    const uid = req.params.uid;
+    if (!uuid.test(uid)) return res.status(400).json({ error: { message: 'Invalid job seeker ID.' } });
+    const [authResult, profileResult, candidateResult] = await Promise.all([
+      supabaseAdmin.auth.admin.getUserById(uid),
+      supabaseAdmin.from('profiles').select('id,role,status,email,phone').eq('id', uid).maybeSingle(),
+      supabaseAdmin.from('candidate_profiles').select(
+        'full_name,district,personal_details,education,preferred_job_titles,experience,profile_photo_url,onboarding_step,onboarding_completed_at,created_at,updated_at'
+      ).eq('user_id', uid).maybeSingle(),
+    ]);
+    if (authResult.error || profileResult.error || candidateResult.error) {
+      throw unavailable('Job seeker details are temporarily unavailable.');
+    }
+    const user = authResult.data?.user;
+    const profile = profileResult.data;
+    if (!user || !profile || profile.role !== 'CANDIDATE') {
+      return res.status(404).json({ error: { message: 'Job seeker account not found.' } });
+    }
+    const candidate = candidateResult.data || {};
+    res.set('Cache-Control', 'no-store').json({ jobSeeker: {
+      uid,
+      email: profile.email || user.email || '',
+      phone: profile.phone || '',
+      emailVerified: Boolean(user.email_confirmed_at),
+      createdAt: user.created_at || null,
+      lastSignInAt: user.last_sign_in_at || null,
+      disabled: ['SUSPENDED', 'BLOCKED'].includes(profile.status) || Boolean(user.banned_until && new Date(user.banned_until) > new Date()),
+      profile: {
+        fullName: candidate.full_name || '',
+        district: candidate.district || '',
+        personalDetails: candidate.personal_details || {},
+        education: candidate.education || {},
+        preferredJobTitles: candidate.preferred_job_titles || [],
+        experience: candidate.experience || {},
+        profilePhotoUrl: candidate.profile_photo_url || null,
+        onboardingStep: candidate.onboarding_step ?? 0,
+        onboardingCompletedAt: candidate.onboarding_completed_at || null,
+        createdAt: candidate.created_at || null,
+        updatedAt: candidate.updated_at || null,
+      },
+    } });
+  } catch (error) { fail(res, error); }
+});
+
 router.post('/users/:uid/status', async (req, res) => {
   try {
     const uid = req.params.uid;
