@@ -3,7 +3,6 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/services/employer_api_service.dart';
 import '../../core/services/candidate_photo_service.dart';
@@ -14,6 +13,7 @@ import '../../core/theme/app_theme.dart';
 import '../../data/models/employer_profile.dart';
 import '../../data/models/job_model.dart';
 import '../notifications/notification_center_screen.dart';
+import 'employer_applicant_screen.dart';
 import 'employer_job_form_screen.dart';
 import 'employer_registration_screen.dart';
 import 'employer_plan_screen.dart';
@@ -44,6 +44,15 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
   Future<Map<String, dynamic>>? _entitlementFuture;
   int _tab = 0;
   bool _isUploadingLogo = false;
+  String _applicantSearchQuery = '';
+  String _applicantFilter = 'All';
+  final TextEditingController _applicantSearchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _applicantSearchController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -1452,100 +1461,520 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
     }
   }
 
-  Widget _applicants(List<Map<String, dynamic>> applications) => ListView(
-    padding: const EdgeInsets.fromLTRB(18, 20, 18, 32),
-    children: [
-      const _SectionTitle('Applicants'),
-      const SizedBox(height: 4),
-      const Text(
-        'Review candidates and move them through hiring.',
-        style: TextStyle(color: AppTheme.textSecondary),
-      ),
-      if (_entitlementFuture != null) FutureBuilder<Map<String, dynamic>>(
-        future: _entitlementFuture,
-        builder: (context, snapshot) {
-          final entitlement = snapshot.data?['entitlement'];
-          if (entitlement is! Map) return const SizedBox.shrink();
-          final limit = entitlement['profileUnlockLimit'] as int? ?? 0;
-          final used = entitlement['unlocksUsed'] as int? ?? 0;
-          return Padding(padding: const EdgeInsets.only(top: 10),
-            child: Text('${limit - used} of $limit profile unlocks left in this plan',
-              style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w600)));
-        },
-      ),
-      const SizedBox(height: 16),
-      if (applications.isEmpty)
-        const _StatePanel(
-          icon: Icons.people_outline_rounded,
-          title: 'No applications yet',
-          detail: 'Applicants will appear as people apply to your jobs.',
-        ),
-      for (final application in applications) _applicantCard(application),
-    ],
-  );
+  Widget _applicants(List<Map<String, dynamic>> applications) {
+    final query = _applicantSearchQuery;
+    final filtered = applications.where((app) {
+      final name = (app['candidateName'] ?? '').toString().toLowerCase();
+      final job = (app['jobTitle'] ?? '').toString().toLowerCase();
+      final district = (app['district'] ?? app['locationCity'] ?? '').toString().toLowerCase();
 
-  Widget _applicantCard(Map<String, dynamic> application) => Card(
-    margin: const EdgeInsets.only(bottom: 10),
-    child: InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: () async {
-        await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => EmployerApplicantScreen(application: application, profile: widget.profile),
-        ),
-        );
-        if (mounted && widget.profile.isApproved) {
-          setState(() {
-            _entitlementFuture = _api.entitlement();
-            _applicationsStream = _service.watchApplications(widget.profile.uid);
-          });
+      if (query.isNotEmpty) {
+        if (!name.contains(query) && !job.contains(query) && !district.contains(query)) {
+          return false;
         }
-      },
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
+      }
+
+      if (_applicantFilter == 'Unlocked') {
+        return app['unlocked'] == true;
+      } else if (_applicantFilter == 'New / Locked') {
+        return app['unlocked'] != true;
+      } else if (_applicantFilter == 'Shortlisted') {
+        return '${app['status']}'.toLowerCase().contains('shortlist');
+      } else if (_applicantFilter == 'Hired') {
+        return '${app['status']}'.toLowerCase().contains('hire');
+      }
+      return true;
+    }).toList();
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 20, 18, 32),
+      children: [
+        // Section Header with inline Unlocks Balance Pill
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              backgroundColor: AppTheme.primaryLight,
-              child: Text(
-                _initial(application['candidateName']),
-                style: const TextStyle(
-                  color: AppTheme.primary,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            const SizedBox(width: 11),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    '${application['candidateName'] ?? 'Applicant'}',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  Row(
+                    children: [
+                      const _SectionTitle('Applicants'),
+                      if (applications.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${applications.length}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF475569),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                  Text(
-                    '${application['jobTitle'] ?? 'Job'}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Review candidates and move them through hiring.',
+                    style: TextStyle(
+                      fontSize: 13,
                       color: AppTheme.textSecondary,
                     ),
                   ),
                 ],
               ),
             ),
-            const Icon(
-              Icons.chevron_right_rounded,
-              color: AppTheme.textSecondary,
-            ),
+            const SizedBox(width: 8),
+            if (_entitlementFuture != null)
+              FutureBuilder<Map<String, dynamic>>(
+                future: _entitlementFuture,
+                builder: (context, snapshot) {
+                  final entitlement = snapshot.data?['entitlement'];
+                  if (entitlement is! Map) return const SizedBox.shrink();
+                  final limit = entitlement['profileUnlockLimit'] as int? ?? 0;
+                  final used = entitlement['unlocksUsed'] as int? ?? 0;
+                  final remaining = (limit - used).clamp(0, limit);
+                  final isLow = remaining < 10;
+
+                  return InkWell(
+                    onTap: _openPlans,
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isLow ? const Color(0xFFFFFBEB) : const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isLow ? const Color(0xFFFDE68A) : const Color(0xFFBBF7D0),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.bolt_rounded,
+                            size: 15,
+                            color: isLow ? const Color(0xFFD97706) : AppTheme.primary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '$remaining left',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: isLow ? const Color(0xFFB45309) : const Color(0xFF15803D),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
           ],
         ),
+        const SizedBox(height: 16),
+
+        // Search Bar
+        Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: TextField(
+            controller: _applicantSearchController,
+            onChanged: (val) => setState(() => _applicantSearchQuery = val.trim().toLowerCase()),
+            decoration: InputDecoration(
+              hintText: 'Search candidate, role, or city...',
+              hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+              prefixIcon: const Icon(Icons.search_rounded, size: 20, color: Color(0xFF64748B)),
+              suffixIcon: _applicantSearchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear_rounded, size: 18),
+                      onPressed: () {
+                        _applicantSearchController.clear();
+                        setState(() => _applicantSearchQuery = '');
+                      },
+                    )
+                  : null,
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+        ),
+
+        // Filter Chips
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Row(
+            children: [
+              _applicantFilterChip('All', applications.length),
+              const SizedBox(width: 8),
+              _applicantFilterChip('Unlocked', applications.where((a) => a['unlocked'] == true).length),
+              const SizedBox(width: 8),
+              _applicantFilterChip('New / Locked', applications.where((a) => a['unlocked'] != true).length),
+              const SizedBox(width: 8),
+              _applicantFilterChip('Shortlisted', applications.where((a) => '${a['status']}'.toLowerCase().contains('shortlist')).length),
+              const SizedBox(width: 8),
+              _applicantFilterChip('Hired', applications.where((a) => '${a['status']}'.toLowerCase().contains('hire')).length),
+            ],
+          ),
+        ),
+
+        if (applications.isEmpty)
+          const _StatePanel(
+            icon: Icons.people_outline_rounded,
+            title: 'No applications yet',
+            detail: 'Applicants will appear as people apply to your jobs.',
+          )
+        else if (filtered.isEmpty)
+          const _StatePanel(
+            icon: Icons.search_off_rounded,
+            title: 'No matching applicants',
+            detail: 'Try clearing your search query or filter selection.',
+          )
+        else
+          for (final application in filtered)
+            _applicantCard(application),
+      ],
+    );
+  }
+
+  Widget _applicantFilterChip(String label, int count) {
+    final isSelected = _applicantFilter == label;
+    return ChoiceChip(
+      label: Text(
+        '$label ($count)',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+          color: isSelected ? Colors.white : const Color(0xFF475569),
+        ),
       ),
-    ),
-  );
+      selected: isSelected,
+      selectedColor: AppTheme.primary,
+      backgroundColor: Colors.white,
+      side: BorderSide(
+        color: isSelected ? AppTheme.primary : const Color(0xFFE2E8F0),
+      ),
+      onSelected: (_) => setState(() => _applicantFilter = label),
+    );
+  }
+
+  Widget _applicantCard(Map<String, dynamic> application) {
+    final isUnlocked = application['unlocked'] == true;
+    final name = '${application['candidateName'] ?? 'Applicant'}';
+    final jobTitle = '${application['jobTitle'] ?? 'Job'}';
+    final status = '${application['status'] ?? 'Applied'}';
+    final location = (application['district'] ?? application['locationCity'] ?? '').toString().trim();
+    final education = (application['education'] ?? '').toString().trim();
+    final hasResume = application['hasResume'] == true ||
+        (application['resumeUrl'] != null && '${application['resumeUrl']}'.isNotEmpty);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isUnlocked ? const Color(0xFFBBF7D0) : const Color(0xFFE2E8F0),
+          width: isUnlocked ? 1.5 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _openApplicant(application),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Top Row: Avatar, Name, Job, Unlock Badge
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: isUnlocked ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        _initial(name),
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: isUnlocked ? AppTheme.primary : const Color(0xFF334155),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            style: const TextStyle(
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            jobTitle,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF64748B),
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (isUnlocked)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDCFCE7),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF86EFAC)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.lock_open_rounded, size: 12, color: AppTheme.success),
+                            SizedBox(width: 4),
+                            Text(
+                              'Unlocked ✓',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.success,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.lock_outline_rounded, size: 12, color: Color(0xFF64748B)),
+                            SizedBox(width: 4),
+                            Text(
+                              '1 Unlock',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+
+                // Middle Badges
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _statusBadge(status),
+                    if (location.isNotEmpty)
+                      _miniPill(Icons.location_on_outlined, location),
+                    if (education.isNotEmpty)
+                      _miniPill(Icons.school_outlined, education),
+                    if (hasResume)
+                      _miniPill(
+                        Icons.description_outlined,
+                        'Resume',
+                        fg: const Color(0xFF2563EB),
+                        bg: const Color(0xFFEFF6FF),
+                      ),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+                const Divider(color: Color(0xFFF1F5F9), height: 1),
+                const SizedBox(height: 10),
+
+                // Card Footer: Relative applied time & CTA
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.schedule_rounded,
+                          size: 13,
+                          color: Color(0xFF94A3B8),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _formatAppliedTime(application['createdAt'] ?? application['created_at']),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF94A3B8),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Text(
+                          isUnlocked ? 'View Profile' : 'Unlock & View',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: isUnlocked ? AppTheme.primary : const Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(width: 3),
+                        Icon(
+                          Icons.arrow_forward_rounded,
+                          size: 14,
+                          color: isUnlocked ? AppTheme.primary : const Color(0xFF0F172A),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openApplicant(Map<String, dynamic> application) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EmployerApplicantScreen(application: application, profile: widget.profile),
+      ),
+    );
+    if (mounted && widget.profile.isApproved) {
+      setState(() {
+        _entitlementFuture = _api.entitlement();
+        _applicationsStream = _service.watchApplications(widget.profile.uid);
+      });
+    }
+  }
+
+  String _formatAppliedTime(dynamic rawDate) {
+    if (rawDate == null) return 'Applied recently';
+    DateTime? dt;
+    if (rawDate is DateTime) dt = rawDate;
+    if (rawDate is String) dt = DateTime.tryParse(rawDate);
+    if (dt == null) return 'Applied recently';
+    final age = DateTime.now().difference(dt);
+    if (age.isNegative || age.inMinutes < 60) return 'Applied recently';
+    if (age.inHours < 24) return 'Applied ${age.inHours}h ago';
+    if (age.inDays == 1) return 'Applied yesterday';
+    if (age.inDays < 7) return 'Applied ${age.inDays}d ago';
+    return 'Applied ${dt.day}/${dt.month}/${dt.year}';
+  }
+
+  Widget _statusBadge(String status) {
+    final s = status.toLowerCase();
+    Color bg = const Color(0xFFEFF6FF);
+    Color fg = const Color(0xFF1D4ED8);
+
+    if (s.contains('shortlist')) {
+      bg = const Color(0xFFECFDF5);
+      fg = const Color(0xFF047857);
+    } else if (s.contains('hire')) {
+      bg = const Color(0xFFDCFCE7);
+      fg = const Color(0xFF15803D);
+    } else if (s.contains('reject')) {
+      bg = const Color(0xFFFFF1F2);
+      fg = const Color(0xFFBE123C);
+    } else if (s.contains('review')) {
+      bg = const Color(0xFFFAF5FF);
+      fg = const Color(0xFF7E22CE);
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        status.toUpperCase(),
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+          color: fg,
+          letterSpacing: 0.3,
+        ),
+      ),
+    );
+  }
+
+  Widget _miniPill(IconData icon, String label, {Color? fg, Color? bg}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg ?? const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: fg ?? const Color(0xFF64748B)),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: fg ?? const Color(0xFF475569),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   String _initial(Object? name) {
     final text = (name ?? 'A').toString().trim();
@@ -2404,195 +2833,6 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class EmployerApplicantScreen extends StatefulWidget {
-  final Map<String, dynamic> application;
-  final EmployerProfile profile;
-  const EmployerApplicantScreen({super.key, required this.application, required this.profile});
-  @override
-  State<EmployerApplicantScreen> createState() =>
-      _EmployerApplicantScreenState();
-}
-
-class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
-  final _api = EmployerApiService();
-  bool _busy = false;
-  bool _unlocked = false;
-  bool _loadingProfile = true;
-  String? _profileError;
-  Map<String, dynamic>? _profile;
-  late String _status = '${widget.application['status'] ?? 'Applied'}';
-
-  @override
-  void initState() {
-    super.initState();
-    _loadProfile();
-  }
-
-  Future<void> _loadProfile() async {
-    if (mounted) setState(() { _loadingProfile = true; _profileError = null; });
-    try {
-      final profile = await _api.viewApplicant('${widget.application['id']}');
-      if (mounted) setState(() { _profile = profile; _unlocked = true; });
-    } catch (error) {
-      if (mounted) setState(() { _unlocked = false; _profileError = error.toString().replaceFirst('Bad state: ', ''); });
-    } finally {
-      if (mounted) setState(() => _loadingProfile = false);
-    }
-  }
-
-  Future<void> _openResume() async {
-    try {
-      final profile = await _api.viewApplicant('${widget.application['id']}');
-      if (mounted) setState(() => _profile = profile);
-      final uri = Uri.tryParse('${profile['resumeUrl'] ?? ''}');
-      if (uri == null || !uri.hasScheme || !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-        throw StateError('Could not open the resume. Try again.');
-      }
-    } catch (error) { if (mounted) _show(error); }
-  }
-
-  Future<void> _changeStatus(String status) async {
-    setState(() => _busy = true);
-    try {
-      await _api.updateApplication('${widget.application['id']}', status);
-      if (mounted) setState(() => _status = status);
-    } catch (error) {
-      _show(error);
-    } finally {
-      if (mounted) {
-        setState(() => _busy = false);
-      }
-    }
-  }
-
-  void _show(Object error) => ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(error.toString().replaceFirst('Bad state: ', ''))),
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    final a = widget.application;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Applicant details')),
-      body: ListView(
-        padding: const EdgeInsets.all(18),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_unlocked && _profile?['profilePhotoUrl'] is String &&
-                      (_profile!['profilePhotoUrl'] as String).isNotEmpty) ...[
-                    CircleAvatar(radius: 26,
-                      backgroundImage: NetworkImage(_profile!['profilePhotoUrl'] as String)),
-                    const SizedBox(height: 8),
-                  ],
-                  Text(
-                    '${a['candidateName'] ?? 'Applicant'}',
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    'Applied for ${a['jobTitle'] ?? 'job'}',
-                    style: const TextStyle(color: AppTheme.textSecondary),
-                  ),
-                  const SizedBox(height: 12),
-                  _StatusPill(text: _status, positive: _status != 'Rejected'),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          if (_loadingProfile) const Padding(
-            padding: EdgeInsets.only(bottom: 14),
-            child: LinearProgressIndicator(),
-          ),
-          if (_profileError != null) Padding(
-            padding: const EdgeInsets.only(bottom: 14),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Text(_profileError!),
-              const SizedBox(height: 10),
-              if (_profileError!.contains('plan') || _profileError!.contains('unlocks'))
-                OutlinedButton(onPressed: () async {
-                  await Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => EmployerPlanScreen(profile: widget.profile)));
-                  if (mounted) _loadProfile();
-                }, child: const Text('View hiring plans')),
-              TextButton(onPressed: _loadProfile, child: const Text('Try again')),
-            ]),
-          ),
-          Card(
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.email_outlined),
-                  title: const Text('Email'),
-                  subtitle: Text(_unlocked ? '${_profile?['email'] ?? 'Not provided'}' : 'Unavailable'),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.call_outlined),
-                  title: const Text('Phone'),
-                  subtitle: Text(_unlocked ? '${_profile?['phone'] ?? 'Not provided'}' : 'Unavailable'),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.school_outlined),
-                  title: const Text('Qualification'),
-                  subtitle: Text('${a['education'] ?? 'Not provided'}'),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.business_center_outlined),
-                  title: const Text('Experience'),
-                  subtitle: Text('${a['experienceYears']?.toString().isNotEmpty == true ? a['experienceYears'] : 'Not provided'}'),
-                ),
-                ListTile(leading: const Icon(Icons.schedule_outlined), title: const Text('Notice period'),
-                  subtitle: Text('${a['noticePeriod']?.toString().isNotEmpty == true ? a['noticePeriod'] : 'Not provided'}')),
-                ListTile(leading: const Icon(Icons.bolt_outlined), title: const Text('Skills'),
-                  subtitle: Text(a['skills'] is List && (a['skills'] as List).isNotEmpty
-                    ? (a['skills'] as List).join(', ') : 'Not provided')),
-                ListTile(leading: const Icon(Icons.chat_bubble_outline), title: const Text('Note to recruiter'),
-                  subtitle: Text('${a['coverNote']?.toString().isNotEmpty == true ? a['coverNote'] : 'Not provided'}')),
-                if (a['hasResume'] == true) ListTile(
-                  leading: const Icon(Icons.description_outlined), title: const Text('Resume'),
-                  subtitle: Text(_unlocked ? '${_profile?['resumeFileName'] ?? 'Attached resume'}' : 'Available when applicant details load'),
-                  trailing: _unlocked && _profile?['resumeUrl'] is String ? const Icon(Icons.open_in_new) : null,
-                  onTap: _unlocked && _profile?['resumeUrl'] is String ? _openResume : null,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          const SizedBox(height: 20),
-          const _SectionTitle('Move application'),
-          const SizedBox(height: 10),
-          for (final status in [
-            'Shortlisted',
-            'Interview',
-            'Hired',
-            'Rejected',
-          ])
-            Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                title: Text(status),
-                trailing: _status == status
-                    ? const Icon(Icons.check_circle, color: AppTheme.success)
-                    : const Icon(Icons.chevron_right),
-                onTap: _busy || _status == status
-                    ? null
-                    : () => _changeStatus(status),
-              ),
-            ),
         ],
       ),
     );

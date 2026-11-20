@@ -426,6 +426,8 @@ employerRouter.post('/applications/:applicationId/view', verifySensitiveToken, v
       .eq('id', candidate.user_id).maybeSingle());
     const education = candidate.education || {};
     const experience = candidate.experience || {};
+    const job = checked(await supabaseAdmin.from('jobs').select('title')
+      .eq('id', application.job_id).maybeSingle());
     let resumeUrl = null;
     if (application.resume_url) {
       const signed = checked(await supabaseAdmin.storage.from('resumes')
@@ -452,10 +454,30 @@ employerRouter.post('/applications/:applicationId/view', verifySensitiveToken, v
       experienceYears: application.experience_level || experience.experienceYears || '',
       noticePeriod: application.notice_period || '', skills: application.skills || [],
       coverNote: application.cover_note || '',
-      resumeFileName: application.resume_file_name || '', resumeUrl,
+      resumeFileName: application.resume_file_name || application.resume_url?.split('/').pop() || '', resumeUrl,
       experienceMonths: experience.experienceMonths || '',
       preferredJobTitles: candidate.preferred_job_titles || [],
       profilePhotoUrl: candidate.profile_photo_url || null,
+      application: {
+        jobTitle: job?.title || 'Job', status: application.status || 'SUBMITTED',
+        appliedAt: application.created_at || null,
+        name: application.applicant_name || '', email: application.applicant_email || '',
+        phone: application.applicant_phone || '', district: application.applicant_district || '',
+        qualification: application.education_details || '',
+        experienceLevel: application.experience_level || '',
+        noticePeriod: application.notice_period || '', skills: application.skills || [],
+        coverNote: application.cover_note || '',
+      },
+      candidateProfile: {
+        educationLevel: education.educationLevel || '', qualification: education.qualification || '',
+        collegeOrSchool: education.collegeOrSchool || '', graduationYear: education.graduationYear || '',
+        hasExperience: experience.hasExperience === true,
+        experienceYears: experience.experienceYears || '', experienceMonths: experience.experienceMonths || '',
+        lastCompany: experience.lastCompany || '', lastJobTitle: experience.lastJobTitle || '',
+        noticePeriod: experience.noticePeriod || '',
+        preferredJobTitles: candidate.preferred_job_titles || [],
+        district: candidate.district || '',
+      },
     } });
   } catch (error) { return handleError(res, error); }
 });
