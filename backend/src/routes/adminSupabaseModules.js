@@ -74,6 +74,36 @@ router.get('/jobs', async (req, res) => {
   } catch (error) { fail(res, error); }
 });
 
+router.get('/jobs/:id', async (req, res) => {
+  try {
+    if (!uuid.test(req.params.id)) return res.status(400).json({ error: { message: 'Invalid job ID.' } });
+    const { data: row, error } = await supabaseAdmin.from('jobs').select(
+      'id,employer_id,company_name,title,description,category,district,job_type,work_mode,min_salary,max_salary,salary_type,salary_text,vacancies,contact_name,contact_phone,contact_whatsapp,contact_email,status,created_at,updated_at,expires_at,review_notes,reviewed_at,reviewed_by,plan_name,plan_tier,plan_order_id,reach,is_featured'
+    ).eq('id', req.params.id).maybeSingle();
+    if (error) throw unavailable('Job details are temporarily unavailable.');
+    if (!row) return res.status(404).json({ error: { message: 'Job not found.' } });
+    const { data: employer, error: employerError } = await supabaseAdmin.from('employers')
+      .select('user_id,company_name,contact_name,industry,district,is_verified,review_state')
+      .eq('id', row.employer_id).maybeSingle();
+    if (employerError) throw unavailable('Company details are temporarily unavailable.');
+    res.set('Cache-Control', 'no-store').json({ job: {
+      id: row.id, employerId: row.employer_id, employerUid: employer?.user_id || null,
+      title: row.title, companyName: employer?.company_name || row.company_name || '',
+      companyIndustry: employer?.industry || '', companyDistrict: employer?.district || '',
+      employerReviewState: employer?.review_state || '', isVerified: employer?.is_verified === true,
+      description: row.description || '', category: row.category || '', locationCity: row.district || '',
+      workMode: row.work_mode || row.job_type || '', salaryText: row.salary_text || moneyRange(row),
+      vacanciesCount: row.vacancies || 1, contactName: row.contact_name || employer?.contact_name || '',
+      phone: row.contact_phone || '', whatsappNumber: row.contact_whatsapp || '', email: row.contact_email || '',
+      status: { PUBLISHED: 'active', CLOSED: 'closed', PENDING_REVIEW: 'pending', REJECTED: 'rejected' }[row.status] || row.status?.toLowerCase() || 'closed',
+      postedAt: row.created_at || null, updatedAt: row.updated_at || null, expiresAt: row.expires_at || null,
+      reviewedAt: row.reviewed_at || null, reviewedBy: row.reviewed_by || null,
+      reviewNotes: row.review_notes || '', planName: row.plan_name || '', planTier: row.plan_tier || '',
+      planOrderId: row.plan_order_id || null, reach: row.reach || '', isFeatured: row.is_featured === true,
+    } });
+  } catch (error) { fail(res, error); }
+});
+
 router.post('/jobs/:id/review', async (req, res) => {
   try {
     if (!uuid.test(req.params.id)) return res.status(400).json({ error: { message: 'Invalid job ID.' } });

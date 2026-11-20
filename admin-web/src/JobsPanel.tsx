@@ -1,6 +1,13 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { listJobs, closeJob, reviewJob, type JobRecord } from './api';
+import { listJobs, getJob, closeJob, reviewJob, type JobRecord, type JobDetails } from './api';
 import { auth } from './supabase';
+
+const date = (value: string | null) => value ? new Date(value).toLocaleString() : 'Not available';
+const value = (entry: string | number | null | undefined) => entry === null || entry === undefined || entry === '' ? 'Not provided' : String(entry);
+function DetailField({ label, entry }: { label: string; entry: string | number | null | undefined }) {
+  return <div className="job-seeker-detail-field"><span>{label}</span><strong>{value(entry)}</strong></div>;
+}
+const statusLabel = (status: string) => status === 'active' ? 'Live' : status === 'pending' ? 'Needs review' : status === 'rejected' ? 'Rejected' : 'Closed';
 
 export default function JobsPanel() {
   const [jobs, setJobs] = useState<JobRecord[]>([]);
@@ -14,6 +21,24 @@ export default function JobsPanel() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [details, setDetails] = useState<JobDetails | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState('');
+  const [detailsRefresh, setDetailsRefresh] = useState(0);
+
+  useEffect(() => {
+    if (!selectedJobId) { setDetails(null); setDetailsError(''); return; }
+    let active = true;
+    setDetails(null); setDetailsLoading(true); setDetailsError('');
+    void (async () => {
+      if (!auth?.currentUser) throw new Error('Sign in again to continue.');
+      return getJob(await auth.currentUser.getIdToken(), selectedJobId);
+    })().then(({ job }) => { if (active) setDetails(job); })
+      .catch((error) => { if (active) setDetailsError((error as Error).message); })
+      .finally(() => { if (active) setDetailsLoading(false); });
+    return () => { active = false; };
+  }, [selectedJobId, detailsRefresh]);
 
   const load = useCallback(async (background = false) => {
     const currentRequest = ++requestId.current;
@@ -50,6 +75,7 @@ export default function JobsPanel() {
       await closeJob(token, jobId);
       setNotice(`Job "${title}" has been closed.`);
       await load(true);
+      if (selectedJobId === jobId) setDetailsRefresh((current) => current + 1);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -67,9 +93,58 @@ export default function JobsPanel() {
       await reviewJob(token, job.id, decision, notes || '');
       setNotice(`Job "${job.title}" ${decision === 'approved' ? 'is now live' : 'was rejected'}.`);
       await load(true);
+      if (selectedJobId === job.id) setDetailsRefresh((current) => current + 1);
     } catch (err) { setError((err as Error).message); }
     finally { setBusyJobId(null); }
   };
+
+  if (selectedJobId) return (
+    <section className="job-seeker-detail-page job-detail-page" aria-busy={detailsLoading}>
+      <div className="job-seeker-detail-toolbar">
+        <button type="button" className="text-button" onClick={() => setSelectedJobId(null)}>← Back to jobs</button>
+        <button type="button" className="text-button" disabled={detailsLoading} onClick={() => setDetailsRefresh((current) => current + 1)}>{detailsLoading ? 'Refreshing…' : 'Refresh details'}</button>
+      </div>
+      {detailsError && <div className="banner error" role="alert">{detailsError}</div>}
+      {notice && <div className="banner success" role="status">{notice}</div>}
+      {detailsLoading && <div className="panel-loading">Loading job details…</div>}
+      {!detailsLoading && !details && <button type="button" className="secondary-button" onClick={() => setDetailsRefresh((current) => current + 1)}>Try again</button>}
+      {details && <>
+        <header className="job-seeker-profile-header">
+          <div className="job-seeker-profile-title"><p className="section-eyebrow">JOB POSTING</p><h2>{details.title}</h2><p>{details.companyName} · {details.locationCity || 'Location not provided'}</p></div>
+          <span className={`status-pill pill-${details.status}`}>{statusLabel(details.status)}</span>
+        </header>
+        <div className="employer-detail-review job-seeker-detail-section">
+          <div><h3>Review decision</h3><p>{details.status === 'pending' ? 'Read the full posting before making a decision.' : `This posting is ${statusLabel(details.status).toLowerCase()}.`}</p>
+            {details.reviewNotes && <p className="employer-review-reason"><strong>Reason:</strong> {details.reviewNotes}</p>}</div>
+          <div className="employer-action-buttons">
+            {details.status === 'pending' && <><button type="button" className="row-action" disabled={busyJobId === details.id} onClick={() => void handleReview(details, 'approved')}>Approve job</button><button type="button" className="row-action danger-action" disabled={busyJobId === details.id} onClick={() => void handleReview(details, 'rejected')}>Reject job</button></>}
+            {details.status === 'active' && <button type="button" className="row-action danger-action" disabled={busyJobId === details.id} onClick={() => void handleClose(details.id, details.title)}>Take down</button>}
+          </div>
+        </div>
+        <div className="job-seeker-account-meta">
+          <DetailField label="Submitted" entry={date(details.postedAt)} /><DetailField label="Reviewed" entry={date(details.reviewedAt)} />
+          <DetailField label="Updated" entry={date(details.updatedAt)} /><DetailField label="Expires" entry={date(details.expiresAt)} />
+        </div>
+        <div className="job-seeker-detail-grid">
+          <section className="job-seeker-detail-section"><h3>Job description</h3><p className="job-detail-description">{details.description || 'No description provided.'}</p></section>
+          <section className="job-seeker-detail-section"><h3>Role and location</h3><div className="job-seeker-fields">
+            <DetailField label="Category" entry={details.category} /><DetailField label="Work mode" entry={details.workMode} />
+            <DetailField label="District" entry={details.locationCity} /><DetailField label="Openings" entry={details.vacanciesCount} />
+            <DetailField label="Salary" entry={details.salaryText} /><DetailField label="Visibility" entry={details.reach} />
+          </div></section>
+          <section className="job-seeker-detail-section"><h3>Company and plan</h3><div className="job-seeker-fields">
+            <DetailField label="Company" entry={details.companyName} /><DetailField label="Industry" entry={details.companyIndustry} />
+            <DetailField label="Company district" entry={details.companyDistrict} /><DetailField label="Employer approval" entry={details.employerReviewState} />
+            <DetailField label="Plan" entry={details.planName} /><DetailField label="Plan tier" entry={details.planTier} />
+          </div></section>
+          <section className="job-seeker-detail-section"><h3>Recruiter contact</h3><div className="job-seeker-fields">
+            <DetailField label="Contact name" entry={details.contactName} /><DetailField label="Phone" entry={details.phone} />
+            <DetailField label="WhatsApp" entry={details.whatsappNumber} /><DetailField label="Email" entry={details.email} />
+          </div></section>
+        </div>
+      </>}
+    </section>
+  );
 
   return (
     <div className="jobs-panel">
@@ -116,8 +191,8 @@ export default function JobsPanel() {
                 <th>Job Title & Company</th>
                 <th>Category & Work Mode</th>
                 <th>Location & Salary</th>
-                <th>Direct Recruiter Contact</th>
                 <th>Status</th>
+                <th>Details</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -137,12 +212,9 @@ export default function JobsPanel() {
                     <span className="skeleton-bone" style={{ width: '38%', height: '12px' }} />
                   </td>
                   <td>
-                    <span className="skeleton-bone" style={{ width: '50%', height: '15px', marginBottom: '6px' }} />
-                    <span className="skeleton-bone" style={{ width: '42%', height: '12px' }} />
-                  </td>
-                  <td>
                     <span className="skeleton-bone" style={{ width: '48px', height: '22px', borderRadius: '4px' }} />
                   </td>
+                  <td><span className="skeleton-bone" style={{ width: '80px', height: '30px', borderRadius: '6px' }} /></td>
                   <td>
                     <span className="skeleton-bone" style={{ width: '80px', height: '30px', borderRadius: '6px' }} />
                   </td>
@@ -163,8 +235,8 @@ export default function JobsPanel() {
                 <th>Job Title & Company</th>
                 <th>Category & Work Mode</th>
                 <th>Location & Salary</th>
-                <th>Direct Recruiter Contact</th>
                 <th className="cell-status">Status</th>
+                <th>Details</th>
                 <th className="cell-actions">Actions</th>
               </tr>
             </thead>
@@ -176,8 +248,6 @@ export default function JobsPanel() {
                     <td>
                       <div className="table-title">{job.title}</div>
                       <div className="table-subtitle">{job.companyName}</div>
-                      {job.status === 'pending' && <details><summary>Review details</summary><p>{job.description}</p><p>Contact: {job.email}</p></details>}
-                      {job.status === 'rejected' && <div className="table-subtitle">Reason: {job.reviewNotes}</div>}
                     </td>
                     <td>
                       <div>{job.category}</div>
@@ -187,20 +257,12 @@ export default function JobsPanel() {
                       <div>{job.locationCity}</div>
                       <div className="table-subtitle">{job.salaryText}</div>
                     </td>
-                    <td>
-                      <div>{job.contactName || 'Recruiter'}</div>
-                      <div className="table-subtitle">
-                        {job.phone && <a href={`tel:${job.phone}`}>{job.phone}</a>}
-                        {job.whatsappNumber && (
-                          <span> · <a href={`https://wa.me/91${job.whatsappNumber}`} target="_blank" rel="noreferrer">WA</a></span>
-                        )}
-                      </div>
-                    </td>
                     <td className="cell-status">
                       <span className={`status-pill pill-${job.status}`}>
                         {job.status === 'active' ? 'Live' : job.status === 'pending' ? 'Needs review' : job.status === 'rejected' ? 'Rejected' : 'Closed'}
                       </span>
                     </td>
+                    <td><button type="button" className="row-action employer-view-button" onClick={() => { setNotice(''); setError(''); setSelectedJobId(job.id); }}>View details</button></td>
                     <td className="cell-actions">
                       {job.status === 'pending' ? (
                         <div style={{display:'flex',gap:8}}><button disabled={isBusy} onClick={() => void handleReview(job, 'approved')}>Approve</button><button disabled={isBusy} onClick={() => void handleReview(job, 'rejected')}>Reject</button></div>

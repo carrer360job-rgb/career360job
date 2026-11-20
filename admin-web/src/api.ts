@@ -137,6 +137,22 @@ export type JobRecord = {
   expiresAt: string | null;
 };
 
+export type JobDetails = JobRecord & {
+  employerId: string;
+  employerUid: string | null;
+  companyIndustry: string;
+  companyDistrict: string;
+  employerReviewState: string;
+  updatedAt: string | null;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+  planName: string;
+  planTier: string;
+  planOrderId: string | null;
+  reach: string;
+  isFeatured: boolean;
+};
+
 export const getStats = (token: string) => adminRequest<PlatformStats>(token, '/stats');
 
 export const listEmployers = (token: string, status = 'all', search = '', cursor?: string) =>
@@ -165,6 +181,9 @@ export const listJobs = (token: string, status = 'all', search = '', cursor?: st
     token,
     `/jobs?status=${encodeURIComponent(status)}&search=${encodeURIComponent(search)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`
   );
+
+export const getJob = (token: string, jobId: string) =>
+  adminRequest<{ job: JobDetails }>(token, `/jobs/${encodeURIComponent(jobId)}`);
 
 export const closeJob = (token: string, jobId: string) =>
   adminRequest<{ status: string }>(token, `/jobs/${encodeURIComponent(jobId)}/close`, 'POST');
