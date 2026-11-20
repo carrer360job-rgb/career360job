@@ -28,4 +28,15 @@ void main() {
     expect(job.email, 'hr@example.com');
     expect(job.isVerified, isTrue);
   });
+
+  test('closed and expired listings cannot appear as open jobs', () {
+    final listing = {
+      'id': 'job-2',
+      'title': 'Engineer',
+      'status': 'PUBLISHED',
+      'expires_at': DateTime.now().subtract(const Duration(minutes: 1)).toIso8601String(),
+    };
+    expect(JobModel.fromMap(listing).isOpen, isFalse);
+    expect(JobModel.fromMap({...listing, 'status': 'CLOSED', 'expires_at': null}).isOpen, isFalse);
+  });
 }

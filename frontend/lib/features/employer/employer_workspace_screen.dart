@@ -112,37 +112,79 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
     final labels = ['Overview', 'Jobs', 'Applicants', 'Company'];
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        titleSpacing: 16,
+        toolbarHeight: 68,
+        elevation: 0,
+        scrolledUnderElevation: 1,
+        shadowColor: const Color(0x14000000),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(
+            height: 1,
+            color: const Color(0xFFF1F5F9),
+          ),
+        ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Career360',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+            _buildHeaderLogo(widget.profile),
+            Container(
+              height: 24,
+              width: 1,
+              margin: const EdgeInsets.symmetric(horizontal: 10),
+              color: const Color(0xFFE2E8F0),
             ),
-            Text(
-              widget.profile.companyName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppTheme.textSecondary,
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Career360',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 17,
+                      letterSpacing: -0.4,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          widget.profile.companyName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF64748B),
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                      ),
+                      if (widget.profile.isApproved || widget.profile.isVerified) ...[
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.verified_rounded,
+                          size: 13,
+                          color: AppTheme.primary,
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
               ),
             ),
           ],
         ),
         actions: [
           _planHeaderPill(widget.profile),
-          IconButton(
-            tooltip: 'Notifications',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => NotificationCenterScreen(uid: uid),
-              ),
-            ),
-            icon: const Icon(Icons.notifications_none_rounded),
-          ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 10),
+          _buildNotificationButton(uid),
+          const SizedBox(width: 16),
         ],
       ),
       body: SafeArea(
@@ -386,6 +428,108 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
     ),
   );
 
+  Widget _buildHeaderLogo(EmployerProfile profile) {
+    final hasLogo = profile.logoUrl.trim().isNotEmpty;
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: hasLogo ? Colors.white : AppTheme.primary,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: hasLogo
+              ? const Color(0xFFE2E8F0)
+              : AppTheme.primary.withValues(alpha: 0.2),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.primary.withValues(alpha: 0.16),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(9),
+        child: hasLogo
+            ? Image.network(
+                profile.logoUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => Container(
+                  color: AppTheme.primaryLight,
+                  child: const Icon(
+                    Icons.business_center_rounded,
+                    size: 20,
+                    color: AppTheme.primary,
+                  ),
+                ),
+              )
+            : const Center(
+                child: Icon(
+                  Icons.business_center_rounded,
+                  size: 20,
+                  color: Colors.white,
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _buildNotificationButton(String uid) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => NotificationCenterScreen(uid: uid),
+          ),
+        ),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0A000000),
+                blurRadius: 4,
+                offset: Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              const Icon(
+                Icons.notifications_none_rounded,
+                size: 20,
+                color: Color(0xFF334155),
+              ),
+              Positioned(
+                top: 7,
+                right: 7,
+                child: Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _planHeaderPill(EmployerProfile profile) {
     final hasCredits = profile.hasActiveCredits;
     final isElite = profile.isElitePlan;
@@ -393,37 +537,73 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
 
     final String label;
     final IconData icon;
+    final Gradient? gradient;
     final Color bg;
     final Color fg;
     final Color border;
+    final List<BoxShadow> shadow;
 
-    if (isElite) {
+    if (!hasCredits) {
+      label = 'Upgrade Pro';
+      icon = Icons.workspace_premium_rounded;
+      gradient = null;
+      bg = AppTheme.primary;
+      fg = Colors.white;
+      border = Colors.transparent;
+      shadow = [
+        BoxShadow(
+          color: AppTheme.primary.withValues(alpha: 0.28),
+          blurRadius: 8,
+          offset: const Offset(0, 2),
+        ),
+      ];
+    } else if (isElite) {
       label = 'Elite · ${profile.postingCredits}';
       icon = Icons.workspace_premium_rounded;
-      bg = const Color(0xFFF5F3FF);
-      fg = const Color(0xFF7C3AED);
-      border = const Color(0xFFDDD6FE);
+      gradient = const LinearGradient(
+        colors: [Color(0xFF8B5CF6), Color(0xFF6D28D9)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      );
+      fg = Colors.white;
+      bg = Colors.transparent;
+      border = Colors.transparent;
+      shadow = const [
+        BoxShadow(
+          color: Color(0x287C3AED),
+          blurRadius: 6,
+          offset: Offset(0, 2),
+        ),
+      ];
     } else if (isFeatured) {
       label = 'Premium · ${profile.postingCredits}';
       icon = Icons.star_rounded;
-      bg = const Color(0xFFFFFBEB);
-      fg = const Color(0xFFD97706);
-      border = const Color(0xFFFED7AA);
-    } else if (hasCredits) {
+      gradient = const LinearGradient(
+        colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      );
+      fg = Colors.white;
+      bg = Colors.transparent;
+      border = Colors.transparent;
+      shadow = const [
+        BoxShadow(
+          color: Color(0x28D97706),
+          blurRadius: 6,
+          offset: Offset(0, 2),
+        ),
+      ];
+    } else {
       final name = profile.activePlanName.isNotEmpty
           ? profile.activePlanName.split(' ').first
           : 'Plan';
       label = '$name · ${profile.postingCredits}';
       icon = Icons.bolt_rounded;
+      gradient = null;
       bg = AppTheme.primaryLight;
       fg = AppTheme.primary;
       border = AppTheme.primaryLightBorder;
-    } else {
-      label = 'Upgrade ↗';
-      icon = Icons.bolt_rounded;
-      bg = const Color(0xFFF8FAFC);
-      fg = const Color(0xFF1E293B);
-      border = const Color(0xFFCBD5E1);
+      shadow = const [];
     }
 
     return Center(
@@ -433,11 +613,15 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
           onTap: _openPlans,
           borderRadius: BorderRadius.circular(20),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
             decoration: BoxDecoration(
-              color: bg,
+              color: gradient == null ? bg : null,
+              gradient: gradient,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: border, width: 1),
+              border: border != Colors.transparent
+                  ? Border.all(color: border, width: 1)
+                  : null,
+              boxShadow: shadow,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -1198,122 +1382,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
         const SizedBox(height: 20),
         const _SectionTitle('Subscription & Billing'),
         const SizedBox(height: 10),
-        Card(
-          child: Column(
-            children: [
-              ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 6,
-                ),
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: profile.isElitePlan
-                        ? const Color(0xFFF5F3FF)
-                        : profile.isFeaturedPlan
-                        ? const Color(0xFFFFFBEB)
-                        : AppTheme.primaryLight,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    profile.isElitePlan
-                        ? Icons.workspace_premium_rounded
-                        : profile.isFeaturedPlan
-                        ? Icons.star_rounded
-                        : Icons.card_membership_rounded,
-                    color: profile.isElitePlan
-                        ? const Color(0xFF7C3AED)
-                        : profile.isFeaturedPlan
-                        ? const Color(0xFFD97706)
-                        : AppTheme.primary,
-                  ),
-                ),
-                title: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        profile.activePlanName.isEmpty
-                            ? 'No active plan'
-                            : profile.activePlanName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: profile.isElitePlan
-                            ? const Color(0xFF7C3AED)
-                            : profile.isFeaturedPlan
-                            ? const Color(0xFFF59E0B)
-                            : AppTheme.primaryLight,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        profile.planBadgeText,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: (profile.isElitePlan || profile.isFeaturedPlan)
-                              ? Colors.white
-                              : AppTheme.primary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                subtitle: FutureBuilder<Map<String, dynamic>>(
-                  future: _entitlementFuture,
-                  builder: (context, snapshot) {
-                    final entitlement = snapshot.data?['entitlement'];
-                    final total = entitlement is Map ? entitlement['totalPosts'] : null;
-                    final used = entitlement is Map ? entitlement['usedPosts'] : null;
-                    final expiry = profile.creditsExpireAt;
-                    final summary = total is int && used is int
-                        ? '$used of $total posts used · ${total - used} remaining'
-                        : '${profile.postingCredits} posts remaining';
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        expiry == null ? summary : '$summary · Ends ${expiry.day}/${expiry.month}/${expiry.year}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    );
-                  },
-                ),
-                trailing: TextButton(
-                  onPressed: _openPlans,
-                  child: const Text('Plans'),
-                ),
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.receipt_long_outlined),
-                title: const Text('Payment history'),
-                subtitle: const Text(
-                  'View orders, tax and payment status',
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        EmployerPaymentHistoryScreen(uid: profile.uid),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+        _buildBillingSection(profile),
         const SizedBox(height: 26),
         TextButton.icon(
           onPressed: widget.onSignOut,
@@ -1325,6 +1394,318 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildBillingSection(EmployerProfile profile) {
+    final hasCredits = profile.hasActiveCredits;
+    final isElite = profile.isElitePlan;
+    final isFeatured = profile.isFeaturedPlan;
+
+    final IconData tierIcon;
+    final Color tierIconColor;
+    final Color tierIconBg;
+
+    if (isElite) {
+      tierIcon = Icons.workspace_premium_rounded;
+      tierIconColor = const Color(0xFF7C3AED);
+      tierIconBg = const Color(0xFFF5F3FF);
+    } else if (isFeatured) {
+      tierIcon = Icons.star_rounded;
+      tierIconColor = const Color(0xFFD97706);
+      tierIconBg = const Color(0xFFFFFBEB);
+    } else {
+      tierIcon = Icons.card_membership_rounded;
+      tierIconColor = AppTheme.primary;
+      tierIconBg = AppTheme.primaryLight;
+    }
+
+    final String planTitle = profile.activePlanName.isNotEmpty
+        ? profile.activePlanName
+        : 'No Active Plan';
+    final String tierSubtitle = hasCredits
+        ? 'Active Subscription Tier'
+        : 'Free Account Tier';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x06000000),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: tierIconBg,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(tierIcon, color: tierIconColor, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            planTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF0F172A),
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            tierSubtitle,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: hasCredits
+                            ? const Color(0xFFF0FDF4)
+                            : const Color(0xFFFEF2F2),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: hasCredits
+                              ? const Color(0xFFBBF7D0)
+                              : const Color(0xFFFECACA),
+                        ),
+                      ),
+                      child: Text(
+                        hasCredits ? profile.planBadgeText : 'NO POSTS LEFT',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: hasCredits
+                              ? const Color(0xFF15803D)
+                              : const Color(0xFFDC2626),
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFF1F5F9)),
+                  ),
+                  child: FutureBuilder<Map<String, dynamic>>(
+                    future: _entitlementFuture,
+                    builder: (context, snapshot) {
+                      final entitlement = snapshot.data?['entitlement'];
+                      final total = entitlement is Map ? entitlement['totalPosts'] : null;
+                      final used = entitlement is Map ? entitlement['usedPosts'] : null;
+                      final expiry = profile.creditsExpireAt;
+
+                      final String quotaText;
+                      if (total is int && used is int) {
+                        quotaText = '$used of $total posts used · ${total - used} remaining';
+                      } else {
+                        quotaText = '${profile.postingCredits} posts remaining';
+                      }
+
+                      final String validityText = expiry != null
+                          ? 'Valid until ${expiry.day}/${expiry.month}/${expiry.year}'
+                          : 'No expiration date';
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.bolt_rounded,
+                                size: 16,
+                                color: Color(0xFF64748B),
+                              ),
+                              const SizedBox(width: 6),
+                              const Text(
+                                'Posting Quota: ',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF64748B),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  quotaText,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF0F172A),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.calendar_today_outlined,
+                                size: 14,
+                                color: Color(0xFF64748B),
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Validity: ',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF64748B),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  validityText,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF334155),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: ElevatedButton.icon(
+                    onPressed: _openPlans,
+                    icon: const Icon(Icons.workspace_premium_rounded, size: 18),
+                    label: Text(
+                      hasCredits ? 'Upgrade / Manage Plan' : 'Explore Plans & Buy Credits',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.1,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(height: 1, color: const Color(0xFFF1F5F9)),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => EmployerPaymentHistoryScreen(uid: profile.uid),
+                ),
+              ),
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: const Icon(
+                        Icons.receipt_long_outlined,
+                        size: 20,
+                        color: Color(0xFF334155),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Payment History & Invoices',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'View past orders, receipts and tax status',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: Color(0xFF94A3B8),
+                      size: 20,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

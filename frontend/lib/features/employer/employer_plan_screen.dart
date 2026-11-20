@@ -19,7 +19,7 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
   late Future<Map<String, dynamic>> _planRequest;
   bool _busy = false;
   String? _expectedOrderId;
-  int _expandedIndex = 0; // Default open first plan
+  String? _processingPlanId;
 
   @override
   void initState() {
@@ -37,12 +37,15 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
   }
 
   Future<void> _buyPaidPlan(Map<String, dynamic> plan, bool ready) async {
+    if (_busy) return;
     if (!widget.profile.isApproved) {
       _message('Company approval is required before buying a plan.');
       return;
     }
     if (!ready) {
-      _message('Online payment is unavailable right now. Please try again later.');
+      _message(
+        'Online payment is unavailable right now. Please try again later.',
+      );
       return;
     }
     if (widget.profile.creditsExpireAt?.isAfter(DateTime.now()) == true) {
@@ -54,16 +57,28 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
             'The new plan starts after payment. Unused posts and the remaining time on your current plan will not carry over.',
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Keep current plan')),
-            TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Continue to payment')),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Keep current plan'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Continue to payment'),
+            ),
           ],
         ),
       );
       if (replace != true || !mounted) return;
     }
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _processingPlanId = plan['id'] as String?;
+    });
     try {
-      final order = await _api.createOrder(plan['id'] as String, plan['version'] as int);
+      final order = await _api.createOrder(
+        plan['id'] as String,
+        plan['version'] as int,
+      );
       if (!mounted) return;
       final id = order['orderId'];
       final key = order['keyId'];
@@ -83,11 +98,16 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
           'email': widget.profile.email,
           if (widget.profile.phone.isNotEmpty) 'contact': widget.profile.phone,
         },
-        'theme': {'color': '#155EEF'},
+        'theme': {'color': '#16A34A'},
       });
     } catch (error) {
       _message(error.toString().replaceFirst('Bad state: ', ''));
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _processingPlanId = null;
+        });
+      }
     }
   }
 
@@ -95,9 +115,17 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
     final id = response.orderId;
     final paymentId = response.paymentId;
     final signature = response.signature;
-    if (id == null || id != _expectedOrderId || paymentId == null || signature == null) {
+    if (id == null ||
+        id != _expectedOrderId ||
+        paymentId == null ||
+        signature == null) {
       _message('Payment is being confirmed. Check your dashboard shortly.');
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _processingPlanId = null;
+        });
+      }
       return;
     }
     try {
@@ -106,9 +134,18 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.verified_rounded, color: AppTheme.success, size: 54),
-          title: const Text('Subscription active', style: TextStyle(fontWeight: FontWeight.bold)),
-          content: const Text('Your job post quota is ready. You can now publish jobs and manage applicants.'),
+          icon: const Icon(
+            Icons.verified_rounded,
+            color: AppTheme.success,
+            size: 54,
+          ),
+          title: const Text(
+            'Subscription active',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: const Text(
+            'Your job post quota is ready. You can now publish jobs and manage applicants.',
+          ),
           actions: [
             FilledButton(
               onPressed: () {
@@ -121,9 +158,16 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
         ),
       );
     } catch (error) {
-      _message('Payment verification note: ${error.toString().replaceFirst('Bad state: ', '')}');
+      _message(
+        'Payment verification note: ${error.toString().replaceFirst('Bad state: ', '')}',
+      );
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _processingPlanId = null;
+        });
+      }
     }
   }
 
@@ -131,100 +175,282 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
     final orderId = _expectedOrderId;
     _expectedOrderId = null;
     if (orderId != null) {
-      _api.markPaymentFailed(orderId, response.code?.toString() ?? 'payment_not_completed')
+      _api
+          .markPaymentFailed(
+            orderId,
+            response.code?.toString() ?? 'payment_not_completed',
+          )
           .catchError((_) {});
     }
     _message(response.message ?? 'Payment was not completed.');
-    if (mounted) setState(() => _busy = false);
+    if (mounted) {
+      setState(() {
+        _busy = false;
+        _processingPlanId = null;
+      });
+    }
   }
 
   void _onExternalWallet(ExternalWalletResponse response) {
-    _message('Continue in ${response.walletName ?? 'your wallet'} to complete payment.');
+    _message(
+      'Continue in ${response.walletName ?? 'your wallet'} to complete payment.',
+    );
   }
 
   void _message(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _showFeaturesModal(Map<String, dynamic> plan) {
-    final features = (plan['features'] as List?)?.cast<String>() ?? [];
-    showModalBottomSheet<void>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+  String _money(num paise) {
+    final amount = (paise / 100).toStringAsFixed(2);
+    final parts = amount.split('.');
+    final digits = parts.first;
+    final buffer = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(',');
+      buffer.write(digits[i]);
+    }
+    return '₹${buffer.toString()}${parts.last == '00' ? '' : '.${parts.last}'}';
+  }
+
+  Widget _metric(String label) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    decoration: BoxDecoration(
+      color: AppTheme.primaryLight,
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Text(
+      label,
+      style: const TextStyle(
+        color: AppTheme.primaryDark,
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
       ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
+    ),
+  );
+
+  Widget _planCard(Map<String, dynamic> plan, bool ready, bool recommended) {
+    final id = plan['id'] as String? ?? '';
+    final totalPaise = (plan['amountPaise'] as num?) ?? 0;
+    final basePaise = (plan['basePaise'] as num?) ?? totalPaise;
+    final taxPaise = (plan['taxPaise'] as num?) ?? 0;
+    final taxMode = plan['taxMode'] as String? ?? 'inclusive';
+    final rate = ((plan['taxRateBps'] as num?) ?? 0) / 100;
+    final jobs = (plan['jobCredits'] as num?)?.toInt() ?? 0;
+    final unlocks = (plan['profileUnlockLimit'] as num?)?.toInt() ?? 0;
+    final duration = (plan['creditValidityDays'] as num?)?.toInt() ?? 0;
+    final reach = plan['reach'] == 'statewide' ? 'Tamil Nadu' : 'District';
+    final name = (plan['name'] as String? ?? 'Hiring plan').trim();
+    final features =
+        (plan['features'] as List?)
+            ?.whereType<String>()
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toList() ??
+        <String>[];
+    final current =
+        widget.profile.activePlan == id &&
+        widget.profile.creditsExpireAt?.isAfter(DateTime.now()) == true;
+    final active =
+        widget.profile.creditsExpireAt?.isAfter(DateTime.now()) == true &&
+        widget.profile.planTier.isNotEmpty &&
+        widget.profile.planTier != 'free';
+    final processing = _busy && _processingPlanId == id;
+    final isFree = totalPaise <= 0 || plan['tier'] == 'free';
+    final canBuy =
+        !_busy && !isFree && ready && id.isNotEmpty && plan['version'] is int;
+    final listedPrice = taxMode == 'exclusive' ? basePaise : totalPaise;
+    final taxLine = taxPaise <= 0
+        ? 'No GST • $duration days'
+        : taxMode == 'exclusive'
+        ? '+ ${rate.toStringAsFixed(0)}% GST (${_money(taxPaise)}) • ${_money(totalPaise)} total • $duration days'
+        : 'Includes ${rate.toStringAsFixed(0)}% GST (${_money(taxPaise)}) • $duration days';
+    final details = <String>[
+      '$jobs job ${jobs == 1 ? 'post' : 'posts'} during this plan',
+      'Each job may stay live for up to ${plan['listingDays'] ?? duration} days (ends with plan)',
+      '$unlocks candidate profile ${unlocks == 1 ? 'unlock' : 'unlocks'}',
+      reach == 'District'
+          ? 'One district per job'
+          : 'Visibility across Tamil Nadu',
+      ...features.where(
+        (feature) => !RegExp(
+          r'^\d+ (job posts?|profile unlocks?)$',
+          caseSensitive: false,
+        ).hasMatch(feature),
+      ),
+    ];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: recommended ? AppTheme.primary : AppTheme.border,
+          width: recommended ? 1.5 : 1,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0B172B40),
+            blurRadius: 16,
+            offset: Offset(0, 5),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (recommended)
+            Container(
+              width: double.infinity,
+              color: AppTheme.primaryDark,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+              child: const Text(
+                'RECOMMENDED',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.1,
                 ),
               ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      plan['name'] ?? 'Plan Features',
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 19, 18, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name.toUpperCase(),
+                  style: const TextStyle(
+                    color: AppTheme.primaryDark,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    letterSpacing: 0.8,
                   ),
-                  Text(
-                    plan['priceDisplay'] ?? '',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: AppTheme.primary,
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  _money(listedPrice),
+                  style: const TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 32,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  taxLine,
+                  style: const TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+                if (current) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryLight,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '✓ CURRENTLY ACTIVE • ${widget.profile.daysRemaining} days remaining',
+                      style: const TextStyle(
+                        color: AppTheme.primaryDark,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 ],
-              ),
-              if (plan['gstDisplay'] != null && (plan['gstDisplay'] as String).trim().isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(
-                  plan['gstDisplay'],
-                  style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-                ),
-              ],
-              const Divider(height: 24),
-              ...features.map((f) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                const SizedBox(height: 17),
+                Wrap(
+                  spacing: 7,
+                  runSpacing: 7,
                   children: [
-                    const Icon(Icons.check_circle_rounded, color: AppTheme.success, size: 20),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        f,
-                        style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary, height: 1.3),
-                      ),
-                    ),
+                    _metric('$jobs Job Posts'),
+                    _metric('$unlocks Unlocks'),
+                    _metric(reach),
                   ],
                 ),
-              )),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Close'),
+                const SizedBox(height: 17),
+                const Divider(height: 1, color: AppTheme.border),
+                const SizedBox(height: 17),
+                ...details.map(
+                  (detail) => Padding(
+                    padding: const EdgeInsets.only(bottom: 11),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.check_circle_rounded,
+                          color: AppTheme.success,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            detail,
+                            style: const TextStyle(
+                              color: AppTheme.textPrimary,
+                              fontSize: 13,
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: FilledButton(
+                    onPressed: canBuy ? () => _buyPaidPlan(plan, ready) : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: recommended
+                          ? AppTheme.primary
+                          : AppTheme.primaryDark,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: AppTheme.border,
+                      disabledForegroundColor: AppTheme.textSecondary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: Text(
+                      processing
+                          ? 'Preparing checkout…'
+                          : !ready
+                          ? 'Checkout unavailable'
+                          : isFree
+                          ? 'Unavailable'
+                          : current
+                          ? 'Renew for ${_money(totalPaise)} →'
+                          : active
+                          ? 'Change plan for ${_money(totalPaise)} →'
+                          : 'Subscribe for ${_money(totalPaise)} →',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -232,345 +458,100 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        title: const Text(
-          'Choose your plan',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
-        ),
-      ),
+      backgroundColor: AppTheme.background,
+      appBar: AppBar(title: const Text('Choose your hiring plan')),
       body: FutureBuilder<Map<String, dynamic>>(
         future: _planRequest,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return Center(child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                const Text('Could not load plans. Check your connection and try again.'),
-                const SizedBox(height: 12),
-                OutlinedButton(onPressed: () => setState(() => _planRequest = _api.plans()),
-                  child: const Text('Retry')),
-              ]),
-            ));
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Could not load plans. Check your connection and try again.',
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton(
+                      onPressed: () =>
+                          setState(() => _planRequest = _api.plans()),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            );
           }
           final data = snapshot.data ?? const <String, dynamic>{};
           final plansRaw = data['plans'];
-          final List<Map<String, dynamic>> plans = plansRaw is List
-              ? plansRaw.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList()
-              : [];
-          if (plans.isEmpty) return const Center(child: Text('Plans are being prepared. Please check back soon.'));
-          final ready = data['checkoutReady'] != false;
-
-          return ListView.builder(
-            padding: const EdgeInsets.fromLTRB(14, 16, 14, 32),
-            itemCount: plans.length,
-            itemBuilder: (context, index) {
-              final plan = plans[index];
-              final isExpanded = _expandedIndex == index;
-              final isFree = (plan['amountPaise'] as num? ?? 0) <= 0 ||
-                  plan['tier'] == 'free';
-              final planNumber = index + 1;
-              final isCurrent = widget.profile.activePlan == plan['id'] &&
-                  widget.profile.creditsExpireAt?.isAfter(DateTime.now()) == true;
-              final paidTermActive = widget.profile.planTier.isNotEmpty &&
-                  widget.profile.planTier != 'free' &&
-                  widget.profile.creditsExpireAt?.isAfter(DateTime.now()) == true;
-
-              return Card(
-                elevation: isExpanded ? 2 : 0,
-                margin: const EdgeInsets.only(bottom: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  side: BorderSide(
-                    color: isExpanded ? AppTheme.primaryLightBorder : const Color(0xFFE2E8F0),
-                    width: isExpanded ? 1.5 : 1,
-                  ),
+          final plans = plansRaw is List
+              ? plansRaw
+                    .whereType<Map>()
+                    .map((entry) => entry.cast<String, dynamic>())
+                    .toList()
+              : <Map<String, dynamic>>[];
+          if (plans.isEmpty) {
+            return const Center(
+              child: Text('Plans are being prepared. Please check back soon.'),
+            );
+          }
+          final ready = data['checkoutReady'] == true;
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
+            children: [
+              const Text(
+                'Compare plans',
+                style: TextStyle(
+                  color: AppTheme.textPrimary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
                 ),
-                color: Colors.white,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: () {
-                    setState(() {
-                      _expandedIndex = isExpanded ? -1 : index;
-                    });
-                  },
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Header Row
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: isExpanded ? AppTheme.primaryLight : Colors.white,
-                          borderRadius: BorderRadius.vertical(
-                            top: const Radius.circular(9),
-                            bottom: Radius.circular(isExpanded ? 0 : 9),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            // Number Circle Badge
-                            Container(
-                              width: 28,
-                              height: 28,
-                              decoration: const BoxDecoration(
-                                color: AppTheme.primary,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  '$planNumber',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            // Plan Name
-                            Expanded(
-                              child: Text(
-                                plan['name'] ?? '',
-                                style: const TextStyle(
-                                  color: AppTheme.textPrimary,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 16,
-                                ),
-                              ),
-                            ),
-                            if (isCurrent)
-                              Container(
-                                margin: const EdgeInsets.only(right: 8),
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.primaryLight,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: AppTheme.primaryLightBorder),
-                                ),
-                                child: const Text(
-                                  'ACTIVE PLAN',
-                                  style: TextStyle(
-                                    color: AppTheme.primaryDark,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 10,
-                                  ),
-                                ),
-                              ),
-                            Icon(
-                              isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                              color: AppTheme.primary,
-                              size: 24,
-                            ),
-                          ],
-                        ),
+              ),
+              const SizedBox(height: 5),
+              const Text(
+                'See the full price, posting allowance and candidate access before you pay.',
+                style: TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 13,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 22),
+              ...plans.map(
+                (plan) => _planCard(plan, ready, plan['id'] == 'quarterly'),
+              ),
+              const SizedBox(height: 3),
+              const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.lock_outline_rounded,
+                    size: 15,
+                    color: AppTheme.textSecondary,
+                  ),
+                  SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      'Secure checkout via Razorpay',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 12,
                       ),
-
-                      // Expanded Body
-                      if (isExpanded) ...[
-                        const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Price and Subtitle
-                              Text(
-                                '${plan['priceDisplay']}',
-                                style: const TextStyle(
-                                  fontSize: 26,
-                                  fontWeight: FontWeight.w900,
-                                  color: Color(0xFF0F172A),
-                                ),
-                              ),
-                              if (plan['gstDisplay'] != null && (plan['gstDisplay'] as String).trim().isNotEmpty) ...[
-                                const SizedBox(height: 3),
-                                Text(
-                                  '${plan['gstDisplay']}',
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    color: Color(0xFF64748B),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                              const SizedBox(height: 18),
-
-                              // Tree Specification breakdown (matching Nithra design)
-                              _buildSpecTree(plan),
-
-                              const SizedBox(height: 20),
-
-                              // Plan details and checkout actions.
-                              Row(
-                                children: [
-                                  // Yellow "See Features" Button
-                                  Expanded(
-                                    child: ElevatedButton(
-                                      onPressed: () => _showFeaturesModal(plan),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFFF59E0B),
-                                        foregroundColor: const Color(0xFF0F172A),
-                                        elevation: 0,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        padding: const EdgeInsets.symmetric(vertical: 12),
-                                      ),
-                                      child: const Text(
-                                        'See Features',
-                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-
-                                  // Emerald Action Button
-                                  Expanded(
-                                    child: ElevatedButton(
-                                      onPressed: _busy || isFree
-                                          ? null
-                                          : () => _buyPaidPlan(plan, ready),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: AppTheme.primary,
-                                        foregroundColor: Colors.white,
-                                        elevation: 0,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        padding: const EdgeInsets.symmetric(vertical: 12),
-                                      ),
-                                      child: Text(
-                                        _busy
-                                            ? 'Processing...'
-                                            : isFree
-                                                    ? 'Unavailable'
-                                                    : paidTermActive
-                                                        ? isCurrent ? 'Renew plan' : 'Change plan'
-                                                        : 'Pay now',
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
-                ),
-              );
-            },
+                ],
+              ),
+            ],
           );
         },
       ),
     );
   }
-
-  /// Builds the custom tree widget matching Nithra app's layout
-  Widget _buildSpecTree(Map<String, dynamic> plan) {
-    final jobs = plan['jobCredits'] ?? 1;
-    final locations = plan['locationsCovered'] ?? '1 / per job';
-    final listingDays = plan['listingDays'] ?? 15;
-    final planValidity = plan['creditValidityDays'] ?? 15;
-    final unlocks = plan['profileUnlockLimit'] ?? 0;
-
-    final items = [
-      'Job Count : $jobs',
-      'Location Count : $locations',
-      'Job listing: up to $listingDays days (ends with plan)',
-      'Plan Validity : $planValidity days',
-      'Applicant profiles : $unlocks unlocks',
-    ];
-
-    return Padding(
-      padding: const EdgeInsets.only(left: 12),
-      child: Column(
-        children: List.generate(items.length, (idx) {
-          final isLast = idx == items.length - 1;
-          return IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Tree branch graphics
-                SizedBox(
-                  width: 24,
-                  child: CustomPaint(
-                    painter: _TreeBranchPainter(isLast: isLast),
-                  ),
-                ),
-                // Number block
-                Container(
-                  width: 22,
-                  height: 22,
-                  margin: const EdgeInsets.only(bottom: 12, right: 10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF64748B),
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                  child: Center(
-                    child: Text(
-                      '${idx + 1}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-                // Text label
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      items[idx],
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1E293B),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }),
-      ),
-    );
-  }
-}
-
-/// Custom painter for the vertical tree hierarchy line
-class _TreeBranchPainter extends CustomPainter {
-  final bool isLast;
-  _TreeBranchPainter({required this.isLast});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFFCBD5E1)
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-
-    const startX = 6.0;
-    const branchY = 11.0;
-
-    // Horizontal branch pointing to the square box
-    canvas.drawLine(const Offset(startX, branchY), Offset(size.width, branchY), paint);
-
-    // Vertical line connecting from top
-    canvas.drawLine(const Offset(startX, 0), Offset(startX, isLast ? branchY : size.height), paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _TreeBranchPainter oldDelegate) =>
-      oldDelegate.isLast != isLast;
 }

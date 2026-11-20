@@ -7,7 +7,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'core/theme/app_theme.dart';
-import 'core/config/sample_jobs_config.dart';
 import 'core/constants/app_constants.dart';
 import 'core/responsive/responsive_layout.dart';
 import 'core/services/candidate_photo_service.dart';
@@ -18,7 +17,6 @@ import 'core/services/push_notification_service.dart';
 import 'core/widgets/bouncy_button.dart';
 import 'data/models/job_model.dart';
 import 'data/models/employer_profile.dart';
-import 'data/sample_jobs.dart';
 import 'features/auth/role_selection_screen.dart';
 import 'features/candidate/candidate_guidelines_screen.dart';
 import 'features/employer/employer_guidelines_screen.dart';
@@ -29,7 +27,6 @@ import 'features/institution/institution_workspace_screen.dart';
 import 'features/auth/candidate_login_screen.dart';
 import 'features/auth/password_recovery_completion_screen.dart';
 import 'features/candidate/candidate_onboarding_wizard_screen.dart';
-import 'features/candidate/sample_job_details_screen.dart';
 import 'features/employer/employer_registration_screen.dart';
 import 'features/employer/employer_workspace_screen.dart';
 import 'features/legal/privacy_policy_screen.dart';
@@ -486,16 +483,17 @@ class AccountSessionGate extends StatelessWidget {
 
   Stream<List<Map<String, dynamic>>> _streamAccountProfile(String uid) async* {
     try {
-      final row = await SupabaseService.client
-          .from('profiles')
-          .select()
-          .eq('id', uid)
-          .maybeSingle();
-      if (row != null) {
-        yield [row];
-      } else {
+      if (user.emailVerified != true) {
         yield [];
+        return;
       }
+      if (SupabaseService.client.auth.currentUser?.id != uid) {
+        throw StateError('Sign in again to load your account.');
+      }
+      final row = await SupabaseAuthService().ensureAccountProfile(
+        preferredRole: requestedRole?.name,
+      );
+      yield [row];
     } catch (e) {
       debugPrint('[Account role fetch notice] $e');
       rethrow;
@@ -1530,8 +1528,10 @@ class MainShellScreen extends StatefulWidget {
   State<MainShellScreen> createState() => _MainShellScreenState();
 }
 
-class _MainShellScreenState extends State<MainShellScreen> {
+class _MainShellScreenState extends State<MainShellScreen>
+    with WidgetsBindingObserver {
   final SupabaseService _firestoreService = SupabaseService();
+  late Stream<List<JobModel>> _jobsStream;
   final CandidatePhotoService _candidatePhotoService = CandidatePhotoService();
   final PlatformContentService _platformContentService =
       PlatformContentService();
@@ -1545,11 +1545,13 @@ class _MainShellScreenState extends State<MainShellScreen> {
   String _searchQuery = '';
   final Set<String> _savedJobIds = {};
   final Set<String> _appliedJobIds = {};
-  final Set<String> _sampleSavedJobIds = {};
+  bool _savedJobsReady = false;
+  bool _savedJobsLoadFailed = false;
 
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _feedScrollController = ScrollController();
   Timer? _searchDebounce;
+  Timer? _jobsRefreshTimer;
 
   // Employer Post Job Controllers
   final TextEditingController _postTitleController = TextEditingController();
@@ -1570,21 +1572,19 @@ class _MainShellScreenState extends State<MainShellScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _jobsStream = _firestoreService.streamJobs();
+    _jobsRefreshTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _refreshJobs(),
+    );
     unawaited(_loadManagedCategories());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         unawaited(PushNotificationService.instance.registerAfterPortalEntry());
       }
     });
-    _savedSub = _firestoreService.streamSavedJobIds(_currentUid).listen((ids) {
-      if (mounted) {
-        setState(
-          () => _savedJobIds
-            ..clear()
-            ..addAll(ids),
-        );
-      }
-    });
+    _subscribeSavedJobs();
     _appliedSub = _firestoreService.streamAppliedJobIds(_currentUid).listen((
       ids,
     ) {
@@ -1596,6 +1596,30 @@ class _MainShellScreenState extends State<MainShellScreen> {
         );
       }
     });
+  }
+
+  void _subscribeSavedJobs() {
+    unawaited(_savedSub?.cancel());
+    setState(() {
+      _savedJobsReady = false;
+      _savedJobsLoadFailed = false;
+    });
+    _savedSub = _firestoreService.streamSavedJobIds(_currentUid).listen(
+      (ids) {
+        if (!mounted) return;
+        setState(() {
+          _savedJobsReady = true;
+          _savedJobsLoadFailed = false;
+          _savedJobIds
+            ..clear()
+            ..addAll(ids);
+        });
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('[Saved jobs] $error');
+        if (mounted) setState(() => _savedJobsLoadFailed = true);
+      },
+    );
   }
 
   Future<void> _loadManagedCategories() async {
@@ -1619,7 +1643,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchDebounce?.cancel();
+    _jobsRefreshTimer?.cancel();
     _savedSub?.cancel();
     _appliedSub?.cancel();
     _searchController.dispose();
@@ -1632,12 +1658,44 @@ class _MainShellScreenState extends State<MainShellScreen> {
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshJobs();
+  }
+
   void _onSearchChanged(String value) {
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 250), () {
       if (!mounted) return;
       setState(() => _searchQuery = value.trim());
     });
+  }
+
+  void _refreshJobs() {
+    if (!mounted) return;
+    setState(() => _jobsStream = _firestoreService.streamJobs());
+  }
+
+  List<JobModel> _filterCandidateJobs(List<JobModel> allJobs) {
+    final query = _searchQuery.trim().toLowerCase();
+    return allJobs.where((job) {
+      if (!job.isOpen) return false;
+      if (_selectedLocation != 'All Locations' &&
+          !job.isStatewide &&
+          !job.locationCity.toLowerCase().contains(_selectedLocation.toLowerCase())) {
+        return false;
+      }
+      if (_selectedCategory != null &&
+          !job.category.toLowerCase().contains(_selectedCategory!.toLowerCase())) {
+        return false;
+      }
+      if (query.isEmpty) return true;
+      return job.title.toLowerCase().contains(query) ||
+          job.companyName.toLowerCase().contains(query) ||
+          job.locationCity.toLowerCase().contains(query) ||
+          job.category.toLowerCase().contains(query) ||
+          job.description.toLowerCase().contains(query);
+    }).toList();
   }
 
   void _openCandidateSearch() {
@@ -1649,26 +1707,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
   }
 
   Future<void> _toggleSaveJob(String id) async {
-    if (showSampleJobs && SampleJobs.containsId(id)) {
-      final wasSaved = _sampleSavedJobIds.contains(id);
-      setState(() {
-        if (wasSaved) {
-          _sampleSavedJobIds.remove(id);
-        } else {
-          _sampleSavedJobIds.add(id);
-        }
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            wasSaved
-                ? 'Preview bookmark removed.'
-                : 'Preview bookmarked for this session only.',
-          ),
-        ),
-      );
-      return;
-    }
     final isSaved = _savedJobIds.contains(id);
     setState(() {
       if (isSaved) {
@@ -1763,48 +1801,14 @@ class _MainShellScreenState extends State<MainShellScreen> {
   }
 
   void _applyToJob(JobModel job) async {
-    if (job.isDemo) {
-      showModalBottomSheet(
-        context: context,
-        showDragHandle: true,
-        builder: (sheetContext) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.visibility_outlined,
-                  size: 42,
-                  color: AppTheme.primary,
-                ),
-                const SizedBox(height: 14),
-                const Text(
-                  'Application preview',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'This is a sample job for the client showcase. No application was sent or saved.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppTheme.textSecondary, height: 1.4),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () => Navigator.pop(sheetContext),
-                    child: const Text('Continue browsing'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+    if (_appliedJobIds.contains(job.id)) return;
+    if (!job.isOpen) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This job is no longer accepting applications.')),
       );
+      _refreshJobs();
       return;
     }
-    if (_appliedJobIds.contains(job.id)) return;
     setState(() {
       _appliedJobIds.add(job.id);
     });
@@ -1899,19 +1903,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
   }
 
   void _showJobDetails(JobModel job) {
-    if (job.isDemo) {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => SampleJobDetailsScreen(
-            job: job,
-            isSaved: _sampleSavedJobIds.contains(job.id),
-            onToggleSaved: () => _toggleSaveJob(job.id),
-            onPreviewApply: () => _applyToJob(job),
-          ),
-        ),
-      );
-      return;
-    }
     final isApplied = _appliedJobIds.contains(job.id);
     final isSaved = _savedJobIds.contains(job.id);
 
@@ -2034,26 +2025,22 @@ class _MainShellScreenState extends State<MainShellScreen> {
                       height: 1.5,
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Key Requirements & Responsibilities',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  _buildRequirementBullet(
-                    'Minimum 2+ years of verified industry experience in relevant technology stack.',
-                  ),
-                  _buildRequirementBullet(
-                    'Strong communication skills, ability to collaborate across distributed teams.',
-                  ),
-                  _buildRequirementBullet(
-                    'Bachelor’s degree or proven equivalent project portfolio demonstration.',
-                  ),
-                  _buildRequirementBullet(
-                    'Demonstrated ownership of production-grade deliverable solutions.',
-                  ),
+                  if (job.requirements.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    const Text('Requirements', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    ...job.requirements.map(_buildRequirementBullet),
+                  ],
+                  if (job.responsibilities.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    const Text('Responsibilities', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    ...job.responsibilities.map(_buildRequirementBullet),
+                  ],
+                  if ((job.phone ?? '').isNotEmpty ||
+                      (job.whatsappNumber ?? '').isNotEmpty ||
+                      (job.email ?? '').isNotEmpty) ...[
                   const SizedBox(height: 24),
-                  // Direct Recruiter Connect Section
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
@@ -2081,30 +2068,11 @@ class _MainShellScreenState extends State<MainShellScreen> {
                                 color: Color(0xFF14532D),
                               ),
                             ),
-                            const Spacer(),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFDCFCE7),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Text(
-                                'Instant Connect',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF15803D),
-                                ),
-                              ),
-                            ),
                           ],
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Contact ${job.contactName?.isNotEmpty == true ? job.contactName : "Recruiter"} directly via Call, WhatsApp, or Email for immediate interview screening.',
+                          'Contact ${job.contactName?.isNotEmpty == true ? job.contactName : "the recruiter"} using the available options below.',
                           style: const TextStyle(
                             fontSize: 13,
                             color: Color(0xFF166534),
@@ -2192,6 +2160,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                       ],
                     ),
                   ),
+                  ],
                   const SizedBox(height: 16),
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -2233,7 +2202,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: isApplied
+                      onPressed: isApplied || !job.isOpen
                           ? null
                           : () {
                               Navigator.pop(ctx);
@@ -2246,7 +2215,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 16),
                       ),
                       child: Text(
-                        isApplied ? 'Already Applied' : 'Apply for this Job ➔',
+                        isApplied ? 'Already Applied' : job.isOpen ? 'Apply for this Job ➔' : 'Applications Closed',
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -2451,124 +2420,221 @@ class _MainShellScreenState extends State<MainShellScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Filter Jobs',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+        return SafeArea(
+          top: false,
+          bottom: true,
+          child: StatefulBuilder(
+            builder: (context, setModalState) {
+              return Padding(
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  12,
+                  20,
+                  16 + MediaQuery.of(ctx).viewInsets.bottom,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 38,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE2E8F0),
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
-                      TextButton(
-                        onPressed: () {
-                          setState(() {
-                            _selectedLocation = 'All Locations';
-                            _selectedCategory = null;
-                            _searchQuery = '';
-                            _searchController.clear();
-                          });
-                          Navigator.pop(ctx);
-                        },
-                        child: const Text('Reset All'),
-                      ),
-                    ],
-                  ),
-                  const Divider(),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Preferred Location',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    initialValue: _selectedLocation,
-                    decoration: InputDecoration(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
                     ),
-                    items: AppConstants.jobLocations.map((loc) {
-                      return DropdownMenuItem(value: loc, child: Text(loc));
-                    }).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() => _selectedLocation = val);
-                        setModalState(() {});
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Job Category',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children:
-                        [
-                          'All',
-                          'IT & Software',
-                          'Marketing',
-                          'Finance',
-                          'Design',
-                          'Healthcare',
-                          'Education',
-                        ].map((cat) {
-                          final isSelected =
-                              (_selectedCategory == cat) ||
-                              (_selectedCategory == null && cat == 'All');
-                          return ChoiceChip(
-                            label: Text(cat),
-                            selected: isSelected,
-                            selectedColor: AppTheme.primary,
-                            labelStyle: TextStyle(
-                              color: isSelected
-                                  ? Colors.white
-                                  : AppTheme.textPrimary,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Filter Jobs',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF0F172A),
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _selectedLocation = 'All Locations';
+                              _selectedCategory = null;
+                              _searchQuery = '';
+                              _searchController.clear();
+                            });
+                            Navigator.pop(ctx);
+                          },
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF64748B),
+                            textStyle: const TextStyle(
                               fontWeight: FontWeight.w600,
+                              fontSize: 13,
                             ),
-                            onSelected: (selected) {
-                              setState(() {
-                                _selectedCategory = cat == 'All' ? null : cat;
-                              });
-                              setModalState(() {});
-                            },
-                          );
-                        }).toList(),
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('Apply Filters'),
+                          ),
+                          child: const Text('Reset All'),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-              ),
-            );
-          },
+                    const SizedBox(height: 12),
+                    Container(height: 1, color: const Color(0xFFF1F5F9)),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Preferred Location',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: Color(0xFF334155),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedLocation,
+                      icon: const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: Color(0xFF64748B),
+                      ),
+                      dropdownColor: Colors.white,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF0F172A),
+                        fontWeight: FontWeight.w500,
+                      ),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: AppTheme.primary,
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                      items: AppConstants.jobLocations.map((loc) {
+                        return DropdownMenuItem(value: loc, child: Text(loc));
+                      }).toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() => _selectedLocation = val);
+                          setModalState(() {});
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Job Category',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: Color(0xFF334155),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 10,
+                      children:
+                          [
+                            'All',
+                            'IT & Software',
+                            'Marketing',
+                            'Finance',
+                            'Design',
+                            'Healthcare',
+                            'Education',
+                          ].map((cat) {
+                            final isSelected =
+                                (_selectedCategory == cat) ||
+                                (_selectedCategory == null && cat == 'All');
+                            return ChoiceChip(
+                              label: Text(cat),
+                              selected: isSelected,
+                              selectedColor: AppTheme.primary,
+                              backgroundColor: const Color(0xFFF8FAFC),
+                              showCheckmark: isSelected,
+                              checkmarkColor: Colors.white,
+                              side: BorderSide(
+                                color: isSelected
+                                    ? Colors.transparent
+                                    : const Color(0xFFE2E8F0),
+                                width: 1,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              labelPadding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 1,
+                              ),
+                              labelStyle: TextStyle(
+                                color: isSelected
+                                    ? Colors.white
+                                    : const Color(0xFF334155),
+                                fontWeight: isSelected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                fontSize: 13,
+                              ),
+                              onSelected: (selected) {
+                                setState(() {
+                                  _selectedCategory = cat == 'All' ? null : cat;
+                                });
+                                setModalState(() {});
+                              },
+                            );
+                          }).toList(),
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: const Text(
+                          'Apply Filters',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              );
+            },
+          ),
         );
       },
     );
@@ -2950,13 +3016,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
   // --- CANDIDATE HOME FEED ---
   Widget _buildCandidateHomeFeed() {
     return StreamBuilder<List<JobModel>>(
-      stream: _firestoreService.streamJobs(
-        category: _selectedCategory,
-        locationCity: _selectedLocation,
-        searchQuery: _searchQuery,
-      ),
+      stream: _jobsStream,
       builder: (context, snapshot) {
-        final jobs = snapshot.data ?? [];
+        final jobs = _filterCandidateJobs(snapshot.data ?? []);
         final isLoading =
             snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData;
@@ -2977,13 +3039,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 _selectedCategory != null ||
                 _selectedLocation != 'All Locations' ||
                 _searchQuery.trim().isNotEmpty;
-            final sampleJobs = showSampleJobs
-                ? SampleJobs.matching(
-                    category: _selectedCategory,
-                    location: _selectedLocation,
-                    query: _searchQuery,
-                  )
-                : <JobModel>[];
 
             return ListView(
               controller: _feedScrollController,
@@ -3109,36 +3164,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 if (needsPreferences) ...[
                   const SizedBox(height: 12),
                   _buildPreferencesPrompt(),
-                ],
-                if (showSampleJobs && sampleJobs.isNotEmpty) ...[
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Sample jobs',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                            color: AppTheme.textPrimary,
-                          ),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: _openCandidateSearch,
-                        child: const Text('See all'),
-                      ),
-                    ],
-                  ),
-                  const Text(
-                    'Fictional listings for preview. Applications are not sent.',
-                    style: TextStyle(
-                      color: AppTheme.textSecondary,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  ...sampleJobs.take(3).map(_buildReferenceJobCard),
                 ],
                 const SizedBox(height: 20),
                 Row(
@@ -3321,7 +3346,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
           ),
           const SizedBox(height: 10),
           OutlinedButton.icon(
-            onPressed: () => setState(() {}),
+            onPressed: _refreshJobs,
             icon: const Icon(Icons.refresh, size: 18),
             label: const Text('Retry'),
           ),
@@ -3565,10 +3590,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
   }
 
   Widget _buildReferenceJobCard(JobModel job) {
-    final isSaved = job.isDemo
-        ? _sampleSavedJobIds.contains(job.id)
-        : _savedJobIds.contains(job.id);
-    final isApplied = !job.isDemo && _appliedJobIds.contains(job.id);
+    final isSaved = _savedJobIds.contains(job.id);
+    final isApplied = _appliedJobIds.contains(job.id);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -3723,18 +3746,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
                               ],
                             ],
                           ),
-                          if (job.isDemo) ...[
-                            const SizedBox(height: 5),
-                            const Text(
-                              'SAMPLE · PREVIEW ONLY',
-                              style: TextStyle(
-                                color: AppTheme.primary,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.3,
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                     ),
@@ -3843,11 +3854,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            isApplied
-                                ? 'Applied ✓'
-                                : job.isDemo
-                                ? 'Preview'
-                                : 'Apply Now',
+                            isApplied ? 'Applied ✓' : 'Apply Now',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
@@ -3922,20 +3929,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
   // --- CANDIDATE SEARCH SCREEN ---
   Widget _buildCandidateSearchScreen() {
     return StreamBuilder<List<JobModel>>(
-      stream: _firestoreService.streamJobs(
-        category: _selectedCategory,
-        locationCity: _selectedLocation,
-        searchQuery: _searchQuery,
-      ),
+      stream: _jobsStream,
       builder: (context, snapshot) {
-        final jobs = snapshot.data ?? [];
-        final sampleJobs = showSampleJobs
-            ? SampleJobs.matching(
-                category: _selectedCategory,
-                location: _selectedLocation,
-                query: _searchQuery,
-              )
-            : <JobModel>[];
+        final jobs = _filterCandidateJobs(snapshot.data ?? []);
         final isLoading =
             snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData;
@@ -3952,11 +3948,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
               ),
             ),
             const SizedBox(height: 6),
-            Text(
-              showSampleJobs
-                  ? 'Browse live opportunities and fictional preview listings.'
-                  : 'Browse live job opportunities.',
-              style: const TextStyle(
+            const Text(
+              'Browse live job opportunities.',
+              style: TextStyle(
                 fontSize: 13,
                 color: AppTheme.textSecondary,
               ),
@@ -4000,31 +3994,15 @@ class _MainShellScreenState extends State<MainShellScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            if (sampleJobs.isNotEmpty) ...[
-              Text(
-                'Sample jobs · ${sampleJobs.length}',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Preview only. Applying will not send your details.',
-                style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-              ),
-              const SizedBox(height: 12),
-              ...sampleJobs.map(_buildReferenceJobCard),
-              const SizedBox(height: 8),
-            ],
             if (snapshot.hasError)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Text(
-                  'Live jobs are unavailable right now. Please try again later.',
-                  style: TextStyle(color: AppTheme.textSecondary),
-                ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Column(children: [
+                  const Text('Live jobs are unavailable right now. Check your connection and try again.',
+                    style: TextStyle(color: AppTheme.textSecondary)),
+                  const SizedBox(height: 8),
+                  OutlinedButton(onPressed: _refreshJobs, child: const Text('Retry')),
+                ]),
               )
             else if (isLoading)
               const Center(
@@ -4033,7 +4011,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                   child: CircularProgressIndicator(),
                 ),
               )
-            else if (jobs.isEmpty && sampleJobs.isEmpty)
+            else if (jobs.isEmpty)
               Container(
                 padding: const EdgeInsets.all(32),
                 alignment: Alignment.center,
@@ -4089,16 +4067,28 @@ class _MainShellScreenState extends State<MainShellScreen> {
   // --- CANDIDATE SAVED SCREEN ---
   Widget _buildCandidateSavedScreen() {
     return StreamBuilder<List<JobModel>>(
-      stream: _firestoreService.streamJobs(),
+      stream: _jobsStream,
       builder: (context, snapshot) {
         final allJobs = snapshot.data ?? [];
-        final savedJobs = <JobModel>[
-          ...allJobs.where((job) => _savedJobIds.contains(job.id)),
-          if (showSampleJobs)
-            ...SampleJobs.all.where(
-              (job) => _sampleSavedJobIds.contains(job.id),
-            ),
-        ];
+        final savedJobs = allJobs.where((job) => _savedJobIds.contains(job.id)).toList();
+
+        if (snapshot.hasError || _savedJobsLoadFailed) {
+          return Center(child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Text('Could not load saved jobs. Check your connection and try again.'),
+              const SizedBox(height: 12),
+              OutlinedButton(onPressed: () {
+                _refreshJobs();
+                if (_savedJobsLoadFailed) _subscribeSavedJobs();
+              }, child: const Text('Retry')),
+            ]),
+          ));
+        }
+        if ((snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) ||
+            !_savedJobsReady) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
         if (savedJobs.isEmpty) {
           return Center(
@@ -4113,17 +4103,17 @@ class _MainShellScreenState extends State<MainShellScreen> {
                     color: AppTheme.textSecondary,
                   ),
                   const SizedBox(height: 16),
-                  const Text(
-                    'No Saved Jobs Yet',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  Text(
+                    _savedJobIds.isEmpty ? 'No Saved Jobs Yet' : 'No saved jobs available',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    showSampleJobs
-                        ? 'Bookmark jobs while browsing. Sample bookmarks last only for this session.'
-                        : 'Bookmark opportunities while browsing to review them later.',
+                    _savedJobIds.isEmpty
+                        ? 'Bookmark opportunities while browsing to review them later.'
+                        : 'The jobs you bookmarked have closed or expired.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 13,
                       color: AppTheme.textSecondary,
                     ),

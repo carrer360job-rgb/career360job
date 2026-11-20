@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../data/models/job_model.dart';
-import '../../data/sample_jobs.dart';
 
 class SupabaseService {
   static final SupabaseService _instance = SupabaseService._internal();
@@ -333,7 +332,7 @@ class SupabaseService {
     String? category,
     String? locationCity,
     String? searchQuery,
-  }) async* {
+  }) {
     List<JobModel> filterJobs(List<JobModel> jobs) {
       return jobs.where((job) {
         if (!job.isOpen) return false;
@@ -363,42 +362,9 @@ class SupabaseService {
       }).toList();
     }
 
-    try {
-      final rows = await client
-          .from('jobs')
-          .select()
-          .order('created_at', ascending: false);
-      final liveJobs = (rows as List)
-          .map((r) => JobModel.fromMap(r as Map<String, dynamic>))
-          .toList();
-      final filtered = filterJobs(liveJobs);
-      if (filtered.isNotEmpty || kReleaseMode) {
-        yield filtered;
-      } else {
-        yield filterJobs(SampleJobs.all);
-      }
-    } catch (error) {
-      if (kReleaseMode) rethrow;
-      debugPrint('[Jobs preview] $error');
-      yield filterJobs(SampleJobs.all);
-    }
-
-    try {
-      yield* client
-          .from('jobs')
-          .stream(primaryKey: ['id'])
-          .map((rows) {
-            final liveJobs = rows.map((row) => JobModel.fromMap(row)).toList();
-            final filtered = filterJobs(liveJobs);
-            if (filtered.isNotEmpty || kReleaseMode) {
-              return filtered;
-            }
-            return filterJobs(SampleJobs.all);
-          });
-    } catch (error) {
-      if (kReleaseMode) rethrow;
-      debugPrint('[Jobs Realtime Notice]: $error');
-    }
+    return client.from('jobs').stream(primaryKey: ['id'])
+        .order('created_at', ascending: false)
+        .map((rows) => filterJobs(rows.map(JobModel.fromMap).toList()));
   }
 
   Future<bool> applyToJob({
@@ -407,9 +373,9 @@ class SupabaseService {
     required String candidateUid,
     required Map<String, dynamic> candidateProfile,
   }) async {
-    if (job.isDemo) return false;
     try {
       if (client.auth.currentUser?.id != candidateUid) return false;
+      if (!job.isOpen) return false;
       final candidate = await client
           .from('candidate_profiles')
           .select('id,full_name,district')
@@ -417,10 +383,15 @@ class SupabaseService {
           .maybeSingle();
       final listing = await client
           .from('jobs')
-          .select('employer_id,status')
+          .select('employer_id,status,expires_at')
           .eq('id', jobId)
           .maybeSingle();
-      if (candidate == null || listing?['status'] != 'PUBLISHED') return false;
+      final expiresAt = DateTime.tryParse(listing?['expires_at']?.toString() ?? '');
+      if (candidate == null ||
+          listing?['status'] != 'PUBLISHED' ||
+          (expiresAt != null && !expiresAt.isAfter(DateTime.now()))) {
+        return false;
+      }
       await client.from('job_applications').insert({
         'job_id': jobId,
         'employer_id': listing!['employer_id'],

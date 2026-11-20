@@ -80,6 +80,10 @@ class EmployerProfile {
 
   String get planBadgeText {
     if (activePlan.isEmpty) return 'NO PLAN';
+    if (creditsExpireAt != null && !creditsExpireAt!.isAfter(DateTime.now())) {
+      return 'EXPIRED';
+    }
+    if (postingCredits <= 0) return 'NO POSTS LEFT';
     if (planTier == 'monthly') return 'MONTHLY';
     if (planTier == 'quarterly') return 'QUARTERLY';
     if (planTier == 'yearly') return 'YEARLY';
@@ -91,8 +95,8 @@ class EmployerProfile {
 
   int get daysRemaining {
     if (creditsExpireAt == null) return 0;
-    final diff = creditsExpireAt!.difference(DateTime.now()).inDays;
-    return diff > 0 ? diff : 0;
+    final remaining = creditsExpireAt!.difference(DateTime.now()).inMilliseconds;
+    return remaining > 0 ? (remaining / Duration.millisecondsPerDay).ceil() : 0;
   }
 
   factory EmployerProfile.fromMap(Map<String, dynamic> data, String uid) {

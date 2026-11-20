@@ -840,6 +840,11 @@ class _EmployerRegistrationScreenState
             FilteringTextInputFormatter.digitsOnly,
             LengthLimitingTextInputFormatter(10),
           ],
+          onChanged: (val) {
+            if (_sameAsCallingNumber) {
+              setState(() => _whatsappPhoneController.text = val);
+            }
+          },
           validator: (v) => RegExp(r'^\d{10}$').hasMatch((v ?? '').trim())
               ? null
               : 'Enter a valid 10-digit mobile number',
@@ -1284,6 +1289,7 @@ class _EmployerRegistrationScreenState
     bool readOnly = false,
     Color? fillColor,
     VoidCallback? onTap,
+    ValueChanged<String>? onChanged,
     String? Function(String?)? validator,
   }) {
     return TextFormField(
@@ -1293,6 +1299,7 @@ class _EmployerRegistrationScreenState
       maxLines: maxLines,
       readOnly: readOnly,
       onTap: onTap,
+      onChanged: onChanged,
       validator: validator,
       style: const TextStyle(
         fontSize: 14,

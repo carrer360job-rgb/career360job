@@ -25,8 +25,6 @@ class JobModel {
   bool get isOpen => status == 'active' &&
       (expiresAt == null || expiresAt!.isAfter(DateTime.now()));
 
-  /// Local preview content only. Firestore documents are always real jobs.
-  final bool isDemo;
   final List<String> requirements;
   final List<String> responsibilities;
 
@@ -53,7 +51,6 @@ class JobModel {
     this.isStatewide = false,
     this.planTier = '',
     this.planName = '',
-    this.isDemo = false,
     this.requirements = const [],
     this.responsibilities = const [],
   });
@@ -129,9 +126,6 @@ class JobModel {
   }
 
   Map<String, dynamic> toMap() {
-    if (isDemo) {
-      throw StateError('Sample jobs cannot be written to database.');
-    }
     return {
       'title': title,
       'district': locationCity,

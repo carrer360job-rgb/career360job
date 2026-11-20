@@ -394,7 +394,7 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
     if (_isLoading || _isGoogleLoading) return;
     setState(() => _isGoogleLoading = true);
     try {
-      await _supabaseAuth.signInWithGoogle();
+      await _supabaseAuth.signInWithGoogle(role: 'INSTITUTION');
       if (mounted) setState(() => _isGoogleLoading = false);
     } catch (e) {
       if (mounted) {

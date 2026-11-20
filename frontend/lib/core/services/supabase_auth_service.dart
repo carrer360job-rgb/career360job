@@ -17,6 +17,7 @@ class SupabaseAuthService {
   static const _recoveryPreference = 'password_recovery_verified';
   static const _recoveryRolePreference = 'password_recovery_role';
   static const _suspensionNoticePreference = 'account_suspended_notice';
+  static const _pendingOAuthRolePreference = 'pending_oauth_role';
   static final ValueNotifier<bool> recoveryVerified = ValueNotifier(false);
   static final ValueNotifier<bool> suspensionNotice = ValueNotifier(false);
   static bool recoveryInProgress = false;
@@ -90,6 +91,7 @@ class SupabaseAuthService {
     required String password,
   }) async {
     try {
+      await SharedPreferencesAsync().remove(_pendingOAuthRolePreference);
       final response = await _client.auth.signInWithPassword(
         email: email.trim(),
         password: password,
@@ -166,13 +168,57 @@ class SupabaseAuthService {
         user.emailConfirmedAt == null) {
       throw StateError('The email code could not be verified. Try again.');
     }
-    await _client.from('profiles').upsert({
-      'id': user.id,
-      'email': user.email,
-      'role': role,
-      'updated_at': DateTime.now().toIso8601String(),
-    });
+    await ensureAccountProfile(preferredRole: role);
     return response;
+  }
+
+  /// Creates a missing account row once a verified user has signed in.
+  /// Existing rows, including suspended accounts, are never modified.
+  Future<Map<String, dynamic>> ensureAccountProfile({
+    String? preferredRole,
+  }) async {
+    final user = _client.auth.currentUser;
+    if (user == null || user.emailConfirmedAt == null) {
+      throw StateError('Verify your email before entering the portal.');
+    }
+
+    Future<Map<String, dynamic>?> readProfile() => _client
+        .from('profiles')
+        .select()
+        .eq('id', user.id)
+        .maybeSingle();
+
+    final existing = await readProfile();
+    if (existing != null) {
+      await SharedPreferencesAsync().remove(_pendingOAuthRolePreference);
+      return existing;
+    }
+
+    final pendingRole = await SharedPreferencesAsync().getString(
+      _pendingOAuthRolePreference,
+    );
+    final metadataRole = user.userMetadata?['role']?.toString().toUpperCase();
+    const allowedRoles = {'CANDIDATE', 'EMPLOYER', 'INSTITUTION'};
+    final role = [metadataRole, pendingRole, preferredRole?.toUpperCase()]
+        .whereType<String>()
+        .firstWhere(allowedRoles.contains, orElse: () => 'CANDIDATE');
+
+    try {
+      await _client.from('profiles').insert({
+        'id': user.id,
+        'email': user.email?.trim().toLowerCase(),
+        'role': role,
+      });
+    } on PostgrestException catch (error) {
+      // Another auth callback may have created the row at the same time.
+      if (error.code != '23505') rethrow;
+    }
+    final profile = await readProfile();
+    if (profile == null) {
+      throw StateError('Could not load your account. Please try again.');
+    }
+    await SharedPreferencesAsync().remove(_pendingOAuthRolePreference);
+    return profile;
   }
 
   Future<void> resendSignupOtp(String email) async {
@@ -199,8 +245,15 @@ class SupabaseAuthService {
   }
 
   /// Sign In with Google OAuth (Browser redirect flow)
-  Future<bool> signInWithGoogle({String? redirectTo}) async {
+  Future<bool> signInWithGoogle({
+    String? redirectTo,
+    String role = 'CANDIDATE',
+  }) async {
     try {
+      if (!{'CANDIDATE', 'EMPLOYER', 'INSTITUTION'}.contains(role)) {
+        throw ArgumentError.value(role, 'role', 'Unsupported account role');
+      }
+      await SharedPreferencesAsync().setString(_pendingOAuthRolePreference, role);
       final redirect =
           redirectTo ??
           (kIsWeb ? null : 'io.supabase.career360://login-callback/');
@@ -208,11 +261,16 @@ class SupabaseAuthService {
         OAuthProvider.google,
         redirectTo: redirect,
       );
+      if (!success) {
+        await SharedPreferencesAsync().remove(_pendingOAuthRolePreference);
+      }
       return success;
     } on AuthException catch (e) {
+      await SharedPreferencesAsync().remove(_pendingOAuthRolePreference);
       debugPrint('[SupabaseAuthService] Google OAuth error: ${e.message}');
       rethrow;
     } catch (e) {
+      await SharedPreferencesAsync().remove(_pendingOAuthRolePreference);
       debugPrint('[SupabaseAuthService] Google sign-in failure: $e');
       rethrow;
     }
@@ -280,6 +338,7 @@ class SupabaseAuthService {
   Future<void> signOut() async {
     try {
       await _client.auth.signOut();
+      await SharedPreferencesAsync().remove(_pendingOAuthRolePreference);
     } catch (e) {
       debugPrint('[SupabaseAuthService] Sign-out error: $e');
     }
