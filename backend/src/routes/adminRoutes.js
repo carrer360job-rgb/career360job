@@ -33,6 +33,13 @@ async function countRows(table, filter) {
   return count ?? 0;
 }
 
+function employerStatus(reviewState, accountStatus) {
+  if (reviewState === 'rejected') return 'rejected';
+  if (reviewState === 'suspended' || ['SUSPENDED', 'BLOCKED'].includes(accountStatus)) return 'suspended';
+  if (reviewState === 'approved' && accountStatus === 'ACTIVE') return 'approved';
+  return 'pending';
+}
+
 // 1. Platform Statistics Dashboard
 router.get('/stats', async (req, res) => {
   try {
@@ -75,39 +82,94 @@ router.get('/employers', async (req, res) => {
     if (!Number.isSafeInteger(offset) || offset < 0) {
       return res.status(400).json({ error: { message: 'Invalid employer page cursor.' } });
     }
-    // Supabase is the source of truth for employer profiles. Fetch in pages so
-    // the admin directory does not depend on Firebase credentials in Vercel.
-    const { data: rows, error } = await supabaseAdmin.from('employers')
-      .select('user_id,company_name,contact_name,designation,email,phone,whatsapp_phone,industry,company_size,state,district,address,postal_code,posting_credits,active_plan,is_verified,review_state,created_at,reviewed_by,reviewed_at,rejection_reason')
-      .order('created_at', { ascending: false }).range(offset, offset + 49);
-    if (error) throw Object.assign(new Error('Employer directory is unavailable.'), { status: 503 });
-    const userIds = (rows || []).map((row) => row.user_id).filter(Boolean);
-    const { data: profiles, error: profilesError } = userIds.length
-      ? await supabaseAdmin.from('profiles').select('id,status').in('id', userIds)
-      : { data: [], error: null };
-    if (profilesError) throw Object.assign(new Error('Employer account status is unavailable.'), { status: 503 });
-    const profileStatus = new Map((profiles || []).map((profile) => [profile.id, profile.status]));
-    let employers = (rows || []).map((row) => {
-      const accountStatus = profileStatus.get(row.user_id);
-      const status = row.review_state === 'approved' && accountStatus === 'ACTIVE'
-        ? 'approved' : row.review_state === 'suspended'
-        ? 'suspended' : row.review_state === 'rejected'
-        ? 'rejected' : 'pending';
-      return { uid: row.user_id, companyName: row.company_name || '', contactName: row.contact_name || '',
+    // Scan until a full page of matching companies is found. Filtering after
+    // only the first database page hides matches on later pages.
+    const employers = [];
+    let scanOffset = offset;
+    let hasMore = true;
+    while (employers.length < 50 && hasMore) {
+      const batchSize = 50 - employers.length;
+      const { data: rows, error } = await supabaseAdmin.from('employers')
+        .select('user_id,company_name,contact_name,designation,email,phone,whatsapp_phone,industry,company_size,state,district,address,postal_code,posting_credits,active_plan,is_verified,review_state,created_at,reviewed_by,reviewed_at,rejection_reason')
+        .order('created_at', { ascending: false }).order('user_id', { ascending: false })
+        .range(scanOffset, scanOffset + batchSize - 1);
+      if (error) throw Object.assign(new Error('Employer directory is unavailable.'), { status: 503 });
+      const pageRows = rows || [];
+      scanOffset += pageRows.length;
+      hasMore = pageRows.length === batchSize;
+      if (!pageRows.length) break;
+      const userIds = pageRows.map((row) => row.user_id).filter(Boolean);
+      const { data: profiles, error: profilesError } = userIds.length
+        ? await supabaseAdmin.from('profiles').select('id,status').in('id', userIds)
+        : { data: [], error: null };
+      if (profilesError) throw Object.assign(new Error('Employer account status is unavailable.'), { status: 503 });
+      const profileStatus = new Map((profiles || []).map((profile) => [profile.id, profile.status]));
+      const candidates = pageRows.map((row) => ({
+        uid: row.user_id, companyName: row.company_name || '', contactName: row.contact_name || '',
         designation: row.designation || '', email: row.email || '', phone: row.phone || '',
         whatsappPhone: row.whatsapp_phone || row.phone || '', industry: row.industry || '',
         companySize: row.company_size || '', state: row.state || '', district: row.district || '',
         address: row.address || '', postalCode: row.postal_code || '', registrationNumber: '',
-        status, postingCredits: row.posting_credits || 0, activePlan: row.active_plan || '',
+        status: employerStatus(row.review_state, profileStatus.get(row.user_id)),
+        postingCredits: row.posting_credits || 0, activePlan: row.active_plan || '',
         rejectionReason: row.rejection_reason || null, reviewedBy: row.reviewed_by || null,
-        reviewedAt: row.reviewed_at || null, createdAt: row.created_at || null };
-    });
-    if (statusFilter !== 'all') employers = employers.filter((employer) =>
-      statusFilter === 'rejected' ? ['rejected', 'suspended'].includes(employer.status) : employer.status === statusFilter);
-    if (search) employers = employers.filter((employer) => [employer.companyName, employer.contactName,
-      employer.email, employer.phone, employer.district].some((field) => field.toLowerCase().includes(search)));
+        reviewedAt: row.reviewed_at || null, createdAt: row.created_at || null,
+      }));
+      employers.push(...candidates.filter((employer) =>
+        (statusFilter === 'all' || (statusFilter === 'rejected'
+          ? ['rejected', 'suspended'].includes(employer.status) : employer.status === statusFilter)) &&
+        (!search || [employer.companyName, employer.contactName, employer.email,
+          employer.phone, employer.district].some((field) => field.toLowerCase().includes(search)))));
+    }
     res.set('Cache-Control', 'no-store');
-    res.json({ employers, nextCursor: (rows || []).length === 50 ? String(offset + 50) : null });
+    res.json({ employers, nextCursor: hasMore ? String(scanOffset) : null });
+  } catch (error) {
+    fail(res, error);
+  }
+});
+
+router.get('/employers/:uid', async (req, res) => {
+  try {
+    const { uid } = req.params;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uid)) {
+      return res.status(400).json({ error: { message: 'Invalid employer ID.' } });
+    }
+    const [companyResult, profileResult, identityResult] = await Promise.all([
+      supabaseAdmin.from('employers').select('*').eq('user_id', uid).maybeSingle(),
+      supabaseAdmin.from('profiles').select('id,role,status,email,phone,created_at').eq('id', uid).maybeSingle(),
+      supabaseAdmin.auth.admin.getUserById(uid),
+    ]);
+    if (companyResult.error || profileResult.error || identityResult.error) {
+      throw Object.assign(new Error('Employer profile is unavailable.'), { status: 503 });
+    }
+    const company = companyResult.data;
+    const profile = profileResult.data;
+    const identity = identityResult.data?.user;
+    if (!company || !profile || profile.role !== 'EMPLOYER' || !identity) {
+      return res.status(404).json({ error: { message: 'Employer account not found.' } });
+    }
+    const status = employerStatus(company.review_state, profile.status);
+    res.set('Cache-Control', 'no-store');
+    res.json({ employer: {
+      uid, companyName: company.company_name || '', logoUrl: company.logo_url || '',
+      contactName: company.contact_name || '', designation: company.designation || '',
+      email: company.email || profile.email || '', phone: company.phone || profile.phone || '',
+      whatsappPhone: company.whatsapp_phone || '', whatsappSameAsPhone: company.whatsapp_same_as_phone === true,
+      industry: company.industry || '', companySize: company.company_size || '',
+      website: company.website || '', description: company.description || '',
+      address: company.address || '', city: company.city || '', state: company.state || '',
+      district: company.district || '', postalCode: company.postal_code || '',
+      registrationNumber: company.registration_number || '', status,
+      accountStatus: profile.status || '', emailVerified: Boolean(identity.email_confirmed_at),
+      lastSignInAt: identity.last_sign_in_at || null,
+      postingCredits: company.posting_credits || 0, activePlan: company.active_plan || '',
+      activePlanName: company.active_plan_name || '', planTier: company.plan_tier || '',
+      planReach: company.plan_reach || '', listingDays: company.listing_days || 0,
+      creditsExpireAt: company.credits_expire_at || null,
+      rejectionReason: company.rejection_reason || null, reviewedBy: company.reviewed_by || null,
+      reviewedAt: company.reviewed_at || null, createdAt: company.created_at || profile.created_at || null,
+      updatedAt: company.updated_at || null,
+    } });
   } catch (error) {
     fail(res, error);
   }
