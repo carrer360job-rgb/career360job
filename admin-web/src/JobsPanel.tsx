@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { listJobs, closeJob, type JobRecord } from './api';
+import { listJobs, closeJob, reviewJob, type JobRecord } from './api';
 import { auth } from './supabase';
 
 export default function JobsPanel() {
   const [jobs, setJobs] = useState<JobRecord[]>([]);
-  const [statusFilter, setStatusFilter] = useState<'active' | 'closed' | 'all'>('active');
+  const [statusFilter, setStatusFilter] = useState<'pending' | 'active' | 'closed' | 'rejected' | 'all'>('pending');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -57,6 +57,20 @@ export default function JobsPanel() {
     }
   };
 
+  const handleReview = async (job: JobRecord, decision: 'approved' | 'rejected') => {
+    const notes = decision === 'rejected' ? window.prompt(`Reason for rejecting "${job.title}"?`) : '';
+    if (notes === null || (decision === 'rejected' && notes.trim().length < 5)) return;
+    if (!auth?.currentUser) return;
+    setBusyJobId(job.id); setError(''); setNotice('');
+    try {
+      const token = await auth.currentUser.getIdToken();
+      await reviewJob(token, job.id, decision, notes || '');
+      setNotice(`Job "${job.title}" ${decision === 'approved' ? 'is now live' : 'was rejected'}.`);
+      await load(true);
+    } catch (err) { setError((err as Error).message); }
+    finally { setBusyJobId(null); }
+  };
+
   return (
     <div className="jobs-panel">
       {notice && <div className="banner success">{notice}</div>}
@@ -65,13 +79,13 @@ export default function JobsPanel() {
       <div className="panel-controls">
         <button type="button" className="text-button panel-refresh" disabled={loading || loadingMore || refreshing} onClick={() => void load(true)}>{refreshing ? 'Refreshing…' : 'Refresh'}</button>
         <div className="filter-tabs">
-          {(['active', 'closed', 'all'] as const).map((filter) => (
+          {(['pending', 'active', 'closed', 'rejected', 'all'] as const).map((filter) => (
             <button
               key={filter}
               className={`filter-tab ${statusFilter === filter ? 'active' : ''}`}
               onClick={() => setStatusFilter(filter)}
             >
-              {filter === 'active'
+              {filter === 'pending' ? 'Needs review' : filter === 'rejected' ? 'Rejected' : filter === 'active'
                 ? 'Active Live Jobs'
                 : filter === 'closed'
                 ? 'Closed Jobs'
@@ -162,6 +176,8 @@ export default function JobsPanel() {
                     <td>
                       <div className="table-title">{job.title}</div>
                       <div className="table-subtitle">{job.companyName}</div>
+                      {job.status === 'pending' && <details><summary>Review details</summary><p>{job.description}</p><p>Contact: {job.email}</p></details>}
+                      {job.status === 'rejected' && <div className="table-subtitle">Reason: {job.reviewNotes}</div>}
                     </td>
                     <td>
                       <div>{job.category}</div>
@@ -182,11 +198,13 @@ export default function JobsPanel() {
                     </td>
                     <td className="cell-status">
                       <span className={`status-pill pill-${job.status}`}>
-                        {job.status === 'active' ? 'Live' : 'Closed'}
+                        {job.status === 'active' ? 'Live' : job.status === 'pending' ? 'Needs review' : job.status === 'rejected' ? 'Rejected' : 'Closed'}
                       </span>
                     </td>
                     <td className="cell-actions">
-                      {job.status === 'active' ? (
+                      {job.status === 'pending' ? (
+                        <div style={{display:'flex',gap:8}}><button disabled={isBusy} onClick={() => void handleReview(job, 'approved')}>Approve</button><button disabled={isBusy} onClick={() => void handleReview(job, 'rejected')}>Reject</button></div>
+                      ) : job.status === 'active' ? (
                         <button
                           className="danger-button-sm"
                           disabled={isBusy}

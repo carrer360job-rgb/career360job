@@ -43,11 +43,11 @@ function moneyRange(row) {
 router.get('/jobs', async (req, res) => {
   try {
     const offset = pageOffset(req.query.cursor);
-    const status = ['active', 'closed'].includes(req.query.status) ? req.query.status : 'all';
+    const status = ['active', 'closed', 'pending', 'rejected'].includes(req.query.status) ? req.query.status : 'all';
     const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
-    let query = supabaseAdmin.from('jobs').select('id,employer_id,title,category,district,job_type,min_salary,max_salary,salary_type,vacancies,contact_phone,contact_whatsapp,contact_email,status,created_at,expires_at')
+    let query = supabaseAdmin.from('jobs').select('id,employer_id,title,description,category,district,job_type,min_salary,max_salary,salary_type,vacancies,contact_phone,contact_whatsapp,contact_email,status,created_at,expires_at,review_notes')
       .order('created_at', { ascending: false });
-    if (status !== 'all') query = query.eq('status', status === 'active' ? 'PUBLISHED' : 'CLOSED');
+    if (status !== 'all') query = query.eq('status', {active:'PUBLISHED',closed:'CLOSED',pending:'PENDING_REVIEW',rejected:'REJECTED'}[status]);
     const { data: rows, error } = await query.range(offset, offset + 49);
     if (error) throw unavailable('Job listings are temporarily unavailable.');
     const employerIds = [...new Set((rows || []).map((row) => row.employer_id).filter(Boolean))];
@@ -58,17 +58,36 @@ router.get('/jobs', async (req, res) => {
     const companyById = new Map((employers || []).map((row) => [row.id, row]));
     let jobs = (rows || []).map((row) => {
       const employer = companyById.get(row.employer_id) || {};
-      return { id: row.id, title: row.title, companyName: employer.company_name || '',
+        return { id: row.id, title: row.title, description: row.description || '', reviewNotes: row.review_notes || '', companyName: employer.company_name || '',
         category: row.category || '', locationCity: row.district || '', workMode: row.job_type || '',
         salaryText: moneyRange(row), vacanciesCount: row.vacancies || 1,
         phone: row.contact_phone || '', whatsappNumber: row.contact_whatsapp || '',
         email: row.contact_email || '', contactName: employer.contact_name || '',
-        status: row.status === 'PUBLISHED' ? 'active' : 'closed', isVerified: employer.is_verified === true,
+          status: {PUBLISHED:'active',CLOSED:'closed',PENDING_REVIEW:'pending',REJECTED:'rejected'}[row.status] || 'closed', isVerified: employer.is_verified === true,
         postedAt: row.created_at || null, expiresAt: row.expires_at || null };
     });
+
+
     if (search) jobs = jobs.filter((job) => [job.title, job.companyName, job.locationCity, job.contactName]
       .some((value) => value.toLowerCase().includes(search)));
     res.set('Cache-Control', 'no-store').json({ jobs, nextCursor: (rows || []).length === 50 ? String(offset + 50) : null });
+  } catch (error) { fail(res, error); }
+});
+
+router.post('/jobs/:id/review', async (req, res) => {
+  try {
+    if (!uuid.test(req.params.id)) return res.status(400).json({ error: { message: 'Invalid job ID.' } });
+    const decision = req.body?.decision;
+    const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim().slice(0, 1000) : '';
+    if (!['approved', 'rejected'].includes(decision) || (decision === 'rejected' && notes.length < 5)) {
+      return res.status(400).json({ error: { message: 'Select a decision and provide a rejection reason.' } });
+    }
+    const { data, error } = await supabaseAdmin.rpc('review_employer_job', {
+      p_job_id: req.params.id, p_reviewer: req.user.uid, p_decision: decision, p_notes: notes,
+    });
+    if (error) return res.status(409).json({ error: { message: error.message } });
+    await audit(req.user.uid, decision === 'approved' ? 'job_approved' : 'job_rejected', 'job', req.params.id, notes || null);
+    res.json({ status: data });
   } catch (error) { fail(res, error); }
 });
 

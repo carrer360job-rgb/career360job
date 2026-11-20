@@ -16,6 +16,7 @@ class JobModel {
   final String? whatsappNumber;
   final String? contactName;
   final String status;
+  final String reviewNotes;
   final DateTime? expiresAt;
   final bool isFeatured;
   final bool isStatewide;
@@ -46,6 +47,7 @@ class JobModel {
     this.whatsappNumber,
     this.contactName,
     this.status = 'active',
+    this.reviewNotes = '',
     this.expiresAt,
     this.isFeatured = false,
     this.isStatewide = false,
@@ -112,6 +114,7 @@ class JobModel {
       contactName: (data['contactName'] is String ? data['contactName'] as String : null) ??
           (data['contact_name'] is String ? data['contact_name'] as String : null),
       status: rawStatus == 'published' ? 'active' : rawStatus,
+      reviewNotes: data['review_notes']?.toString() ?? '',
       expiresAt: expires,
       isFeatured: data['isFeatured'] == true || data['is_featured'] == true || data['planTier'] == 'featured' || data['planTier'] == 'elite',
       isStatewide: isStatewideJob,

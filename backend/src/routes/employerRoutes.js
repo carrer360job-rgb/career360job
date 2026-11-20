@@ -251,10 +251,10 @@ employerRouter.post('/jobs', verifySupabaseToken, verified, async (req, res) => 
   try {
     await approvedEmployer(req.user.uid);
     const fields = jobFields(req.body);
-    const jobId = checked(await supabaseAdmin.rpc('publish_employer_job', {
+    const jobId = checked(await supabaseAdmin.rpc('submit_employer_job', {
       p_user_id: req.user.uid, p_job: fields,
-    }), 'Job could not be published. Check your plan and try again.');
-    return res.status(201).json({ jobId });
+    }), 'Job could not be submitted. Check your plan and try again.');
+    return res.status(201).json({ jobId, status: 'pending_review' });
   } catch (error) { return handleError(res, error); }
 });
 
@@ -288,7 +288,7 @@ async function ownedJob(uid, jobId) {
 employerRouter.patch('/jobs/:jobId', verifySupabaseToken, verified, async (req, res) => {
   try {
     const job = await ownedJob(req.user.uid, req.params.jobId);
-    if (job.status !== 'PUBLISHED') throw fail('Only active jobs can be edited.', 409);
+    if (job.status !== 'PENDING_REVIEW') throw fail('Only jobs awaiting review can be edited. Submit a new job for changed details.', 409);
     const fields = jobFields(req.body);
     if (fields.district === 'All Tamil Nadu' && job.reach !== 'statewide') {
       throw fail('Choose a district for this plan.', 400);
@@ -301,7 +301,7 @@ employerRouter.patch('/jobs/:jobId', verifySupabaseToken, verified, async (req, 
       contact_phone: fields.phone || undefined,
       contact_whatsapp: fields.whatsappNumber,
       contact_email: fields.email, updated_at: new Date().toISOString(),
-    }).eq('id', job.id).eq('status', 'PUBLISHED'));
+    }).eq('id', job.id).eq('status', 'PENDING_REVIEW'));
     return res.json({ jobId: job.id });
   } catch (error) { return handleError(res, error); }
 });

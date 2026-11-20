@@ -192,7 +192,7 @@ class _EmployerJobFormScreenState extends State<EmployerJobFormScreen> {
       'planName': widget.profile.activePlanName,
     };
     try {
-      if (widget.existingJob == null) {
+      if (widget.existingJob == null || widget.existingJob!.status == 'rejected') {
         await _api.publishJob(fields);
       } else {
         await _api.editJob(widget.existingJob!.id, fields);
@@ -202,7 +202,7 @@ class _EmployerJobFormScreenState extends State<EmployerJobFormScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            widget.existingJob == null ? 'Job published successfully.' : 'Job updated successfully.',
+            widget.existingJob == null || widget.existingJob!.status == 'rejected' ? 'Job submitted for admin review.' : 'Job updated. Admin review is pending.',
           ),
         ),
       );

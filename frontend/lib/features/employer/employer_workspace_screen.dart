@@ -258,7 +258,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
   ) {
     final profile = widget.profile;
     final live = jobs.where((job) => job.isOpen).length;
-    final closed = jobs.where((j) => !j.isOpen).length;
+    final closed = jobs.where((j) => j.status == 'closed').length;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 32),
@@ -1108,7 +1108,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
         ),
         const SizedBox(height: 16),
 
-        if (jobs.isEmpty)
+      if (jobs.isEmpty)
           const _StatePanel(
             icon: Icons.work_outline_rounded,
             title: 'No jobs posted',
@@ -1283,7 +1283,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
                         ),
                         const SizedBox(width: 5),
                         Text(
-                          job.isOpen ? 'Live' : 'Closed',
+                          job.isOpen ? 'Live' : job.status == 'pending_review' ? 'Needs review' : job.status == 'rejected' ? 'Rejected' : 'Closed',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w800,
@@ -1300,6 +1300,10 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
               const SizedBox(height: 12),
               Container(height: 1, color: const Color(0xFFF1F5F9)),
               const SizedBox(height: 12),
+              if (job.status == 'rejected' && job.reviewNotes.isNotEmpty) ...[
+                Text('Admin feedback: ${job.reviewNotes}', style: const TextStyle(color: Color(0xFFB91C1C), fontSize: 12)),
+                const SizedBox(height: 12),
+              ],
               // Bottom Row: Openings + Action Buttons (Edit / Close Job)
               Row(
                 children: [
@@ -1318,7 +1322,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
                     ),
                   ),
                   const Spacer(),
-                  if (job.isOpen) ...[
+                  if (job.status == 'pending_review' || job.status == 'rejected') ...[
                     OutlinedButton.icon(
                       onPressed: () => _openJobForm(job),
                       icon: Icon(
@@ -1327,7 +1331,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
                         color: AppTheme.primary,
                       ),
                       label: Text(
-                        'Edit',
+                        job.status == 'rejected' ? 'Revise & resubmit' : 'Edit',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -1345,7 +1349,8 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                  ],
+                  if (job.isOpen) ...[
                     OutlinedButton.icon(
                       onPressed: () => _confirmClose(job),
                       icon: const Icon(

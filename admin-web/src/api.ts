@@ -119,6 +119,8 @@ export type EmployerDetails = EmployerRecord & {
 export type JobRecord = {
   id: string;
   title: string;
+  description: string;
+  reviewNotes: string;
   companyName: string;
   category: string;
   locationCity: string;
@@ -129,7 +131,7 @@ export type JobRecord = {
   whatsappNumber: string;
   email: string;
   contactName: string;
-  status: 'active' | 'closed';
+  status: 'active' | 'closed' | 'pending' | 'rejected';
   isVerified: boolean;
   postedAt: string | null;
   expiresAt: string | null;
@@ -166,6 +168,9 @@ export const listJobs = (token: string, status = 'all', search = '', cursor?: st
 
 export const closeJob = (token: string, jobId: string) =>
   adminRequest<{ status: string }>(token, `/jobs/${encodeURIComponent(jobId)}/close`, 'POST');
+
+export const reviewJob = (token: string, jobId: string, decision: 'approved' | 'rejected', notes = '') =>
+  adminRequest<{ status: string }>(token, `/jobs/${encodeURIComponent(jobId)}/review`, 'POST', { decision, notes });
 
 export type JobSeekerRecord = { uid: string; email: string; displayName: string;
   disabled: boolean; emailVerified: boolean; createdAt: string | null; lastSignInAt: string | null };
