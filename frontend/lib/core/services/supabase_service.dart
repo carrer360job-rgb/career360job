@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:math';
+
+import 'package:file_picker/file_picker.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -372,6 +375,7 @@ class SupabaseService {
     required JobModel job,
     required String candidateUid,
     required Map<String, dynamic> candidateProfile,
+    PlatformFile? resumeFile,
   }) async {
     try {
       if (client.auth.currentUser?.id != candidateUid) return false;
@@ -392,6 +396,26 @@ class SupabaseService {
           (expiresAt != null && !expiresAt.isAfter(DateTime.now()))) {
         return false;
       }
+      final existing = await client.from('job_applications').select('id')
+          .eq('job_id', jobId).eq('candidate_id', candidate['id']).maybeSingle();
+      if (existing != null) throw StateError('You have already applied to this job.');
+      String? resumePath;
+      if (resumeFile != null) {
+        final extension = resumeFile.extension?.toLowerCase();
+        if (!['pdf', 'doc', 'docx'].contains(extension)) throw StateError('Choose a PDF, DOC, or DOCX resume.');
+        final size = await resumeFile.length();
+        if (size == null || size < 1 || size > 5 * 1024 * 1024) throw StateError('Resume must be under 5 MB.');
+        final bytes = await resumeFile.readAsBytes();
+        if (bytes.length != size) throw StateError('Could not read the selected resume.');
+        final random = Random.secure();
+        final token = List.generate(16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+        resumePath = '$candidateUid/$token.$extension';
+        final contentType = {'pdf':'application/pdf', 'doc':'application/msword',
+          'docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}[extension]!;
+        await client.storage.from('resumes').uploadBinary(resumePath, bytes,
+            fileOptions: FileOptions(contentType: contentType, upsert: false));
+      }
+      try {
       await client.from('job_applications').insert({
         'job_id': jobId,
         'employer_id': listing!['employer_id'],
@@ -401,20 +425,33 @@ class SupabaseService {
             candidate['full_name'] ??
             'Applicant',
         'applicant_phone': candidateProfile['phone'] ?? '',
+        'applicant_email': candidateProfile['email'] ?? '',
         'applicant_district':
             candidateProfile['district'] ??
             candidate['district'] ??
             '',
+        'education_details': candidateProfile['qualification'] ?? '',
+        'experience_level': candidateProfile['experienceYears'] ?? '',
+        'notice_period': candidateProfile['noticePeriod'] ?? '',
+        'skills': candidateProfile['skills'] ?? <String>[],
+        'cover_note': candidateProfile['coverNote'] ?? '',
+        'resume_file_name': resumeFile?.name,
+        'resume_url': resumePath,
         'status': 'SUBMITTED',
       });
+      } catch (_) {
+        if (resumePath != null) {
+          try { await client.storage.from('resumes').remove([resumePath]); } catch (_) {}
+        }
+        rethrow;
+      }
       return true;
     } on PostgrestException catch (e) {
-      if (e.code == '23505') return true;
-      debugPrint('[SupabaseService] Error applying to job: $e');
-      return false;
+      if (e.code == '23505') throw StateError('You have already applied to this job.');
+      rethrow;
     } catch (e) {
       debugPrint('[SupabaseService] Error applying to job: $e');
-      return false;
+      rethrow;
     }
   }
 

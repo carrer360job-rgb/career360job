@@ -112,14 +112,10 @@ class EmployerApiService {
   Future<Map<String, dynamic>> applications() =>
       _request('GET', '/applications');
 
-  Future<void> unlockApplicant(String id) async {
-    await _request('POST', '/applications/${Uri.encodeComponent(id)}/unlock');
-  }
-
-  Future<Map<String, dynamic>> applicantProfile(String id) async {
+  Future<Map<String, dynamic>> viewApplicant(String id) async {
     final data = await _request(
-      'GET',
-      '/applications/${Uri.encodeComponent(id)}/profile',
+      'POST',
+      '/applications/${Uri.encodeComponent(id)}/view',
     );
     return (data['profile'] as Map).cast<String, dynamic>();
   }

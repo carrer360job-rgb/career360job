@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/services/employer_api_service.dart';
 import '../../core/services/candidate_photo_service.dart';
@@ -1491,7 +1492,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
         await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => EmployerApplicantScreen(application: application),
+          builder: (_) => EmployerApplicantScreen(application: application, profile: widget.profile),
         ),
         );
         if (mounted && widget.profile.isApproved) {
@@ -2411,7 +2412,8 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
 
 class EmployerApplicantScreen extends StatefulWidget {
   final Map<String, dynamic> application;
-  const EmployerApplicantScreen({super.key, required this.application});
+  final EmployerProfile profile;
+  const EmployerApplicantScreen({super.key, required this.application, required this.profile});
   @override
   State<EmployerApplicantScreen> createState() =>
       _EmployerApplicantScreenState();
@@ -2421,45 +2423,38 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
   final _api = EmployerApiService();
   bool _busy = false;
   bool _unlocked = false;
+  bool _loadingProfile = true;
+  String? _profileError;
   Map<String, dynamic>? _profile;
   late String _status = '${widget.application['status'] ?? 'Applied'}';
 
   @override
   void initState() {
     super.initState();
-    _unlocked = widget.application['unlocked'] == true;
-    if (_unlocked) _loadProfile();
+    _loadProfile();
   }
 
   Future<void> _loadProfile() async {
+    if (mounted) setState(() { _loadingProfile = true; _profileError = null; });
     try {
-      final profile = await _api.applicantProfile('${widget.application['id']}');
-      if (mounted) setState(() => _profile = profile);
+      final profile = await _api.viewApplicant('${widget.application['id']}');
+      if (mounted) setState(() { _profile = profile; _unlocked = true; });
     } catch (error) {
-      if (mounted) _show(error);
+      if (mounted) setState(() { _unlocked = false; _profileError = error.toString().replaceFirst('Bad state: ', ''); });
+    } finally {
+      if (mounted) setState(() => _loadingProfile = false);
     }
   }
 
-  Future<void> _unlock() async {
-    final confirm = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
-      title: const Text('Unlock applicant profile?'),
-      content: const Text('This uses one profile unlock from your current plan. The applicant’s contact details and photo will be available until the plan expires.'),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Unlock')),
-      ],
-    ));
-    if (confirm != true || !mounted) return;
-    setState(() => _busy = true);
+  Future<void> _openResume() async {
     try {
-      await _api.unlockApplicant('${widget.application['id']}');
-      final profile = await _api.applicantProfile('${widget.application['id']}');
-      if (mounted) setState(() { _unlocked = true; _profile = profile; });
-    } catch (error) {
-      if (mounted) _show(error);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+      final profile = await _api.viewApplicant('${widget.application['id']}');
+      if (mounted) setState(() => _profile = profile);
+      final uri = Uri.tryParse('${profile['resumeUrl'] ?? ''}');
+      if (uri == null || !uri.hasScheme || !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        throw StateError('Could not open the resume. Try again.');
+      }
+    } catch (error) { if (mounted) _show(error); }
   }
 
   Future<void> _changeStatus(String status) async {
@@ -2519,14 +2514,22 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
             ),
           ),
           const SizedBox(height: 14),
-          if (!_unlocked) Padding(
+          if (_loadingProfile) const Padding(
+            padding: EdgeInsets.only(bottom: 14),
+            child: LinearProgressIndicator(),
+          ),
+          if (_profileError != null) Padding(
             padding: const EdgeInsets.only(bottom: 14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              const Text('Contact details and photo are available after a profile unlock.'),
+              Text(_profileError!),
               const SizedBox(height: 10),
-              FilledButton.icon(onPressed: _busy ? null : _unlock,
-                icon: const Icon(Icons.lock_open_outlined),
-                label: const Text('Unlock profile')),
+              if (_profileError!.contains('plan') || _profileError!.contains('unlocks'))
+                OutlinedButton(onPressed: () async {
+                  await Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => EmployerPlanScreen(profile: widget.profile)));
+                  if (mounted) _loadProfile();
+                }, child: const Text('View hiring plans')),
+              TextButton(onPressed: _loadProfile, child: const Text('Try again')),
             ]),
           ),
           Card(
@@ -2535,12 +2538,12 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
                 ListTile(
                   leading: const Icon(Icons.email_outlined),
                   title: const Text('Email'),
-                  subtitle: Text(_unlocked ? '${_profile?['email'] ?? 'Loading…'}' : 'Locked'),
+                  subtitle: Text(_unlocked ? '${_profile?['email'] ?? 'Not provided'}' : 'Unavailable'),
                 ),
                 ListTile(
                   leading: const Icon(Icons.call_outlined),
                   title: const Text('Phone'),
-                  subtitle: Text(_unlocked ? '${_profile?['phone'] ?? 'Loading…'}' : 'Locked'),
+                  subtitle: Text(_unlocked ? '${_profile?['phone'] ?? 'Not provided'}' : 'Unavailable'),
                 ),
                 ListTile(
                   leading: const Icon(Icons.school_outlined),
@@ -2550,9 +2553,20 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
                 ListTile(
                   leading: const Icon(Icons.business_center_outlined),
                   title: const Text('Experience'),
-                  subtitle: Text(
-                    '${a['experienceYears'] ?? 'Not provided'} years',
-                  ),
+                  subtitle: Text('${a['experienceYears']?.toString().isNotEmpty == true ? a['experienceYears'] : 'Not provided'}'),
+                ),
+                ListTile(leading: const Icon(Icons.schedule_outlined), title: const Text('Notice period'),
+                  subtitle: Text('${a['noticePeriod']?.toString().isNotEmpty == true ? a['noticePeriod'] : 'Not provided'}')),
+                ListTile(leading: const Icon(Icons.bolt_outlined), title: const Text('Skills'),
+                  subtitle: Text(a['skills'] is List && (a['skills'] as List).isNotEmpty
+                    ? (a['skills'] as List).join(', ') : 'Not provided')),
+                ListTile(leading: const Icon(Icons.chat_bubble_outline), title: const Text('Note to recruiter'),
+                  subtitle: Text('${a['coverNote']?.toString().isNotEmpty == true ? a['coverNote'] : 'Not provided'}')),
+                if (a['hasResume'] == true) ListTile(
+                  leading: const Icon(Icons.description_outlined), title: const Text('Resume'),
+                  subtitle: Text(_unlocked ? '${_profile?['resumeFileName'] ?? 'Attached resume'}' : 'Available when applicant details load'),
+                  trailing: _unlocked && _profile?['resumeUrl'] is String ? const Icon(Icons.open_in_new) : null,
+                  onTap: _unlocked && _profile?['resumeUrl'] is String ? _openResume : null,
                 ),
               ],
             ),

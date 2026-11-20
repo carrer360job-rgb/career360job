@@ -318,7 +318,7 @@ employerRouter.post('/jobs/:jobId/close', verifySupabaseToken, verified, async (
 async function ownedApplication(uid, applicationId) {
   const employer = await approvedEmployer(uid);
   const application = checked(await supabaseAdmin.from('job_applications')
-    .select('id,job_id,candidate_id,employer_id,status,applicant_name')
+    .select('*')
     .eq('id', applicationId).eq('employer_id', employer.id).maybeSingle());
   if (!application) throw fail('Application not found.', 404);
   return { employer, application };
@@ -398,7 +398,9 @@ employerRouter.get('/applications', verifySupabaseToken, verified, async (req, r
     const applications = apps.map((app) => ({
       id: app.id, candidateName: app.applicant_name || 'Applicant',
       jobId: app.job_id, jobTitle: titles.get(app.job_id) || 'Job',
-      education: '', experienceYears: '',
+      education: app.education_details || '', experienceYears: app.experience_level || '',
+      noticePeriod: app.notice_period || '', skills: app.skills || [],
+      coverNote: app.cover_note || '', hasResume: Boolean(app.resume_url),
       status: !app.status || app.status === 'SUBMITTED' ? 'Applied' :
         app.status.charAt(0) + app.status.slice(1).toLowerCase(),
       appliedAt: app.created_at, unlocked: unlockedIds.has(app.candidate_id),
@@ -409,29 +411,14 @@ employerRouter.get('/applications', verifySupabaseToken, verified, async (req, r
   } catch (error) { return handleError(res, error); }
 });
 
-employerRouter.post('/applications/:applicationId/unlock', verifySensitiveToken, verified, async (req, res) => {
-  try {
-    await ownedApplication(req.user.uid, req.params.applicationId);
-    const result = checked(await supabaseAdmin.rpc('unlock_employer_candidate', {
-      p_user_id: req.user.uid, p_application_id: req.params.applicationId,
-    }), 'Applicant could not be unlocked. Check your plan and try again.');
-    return res.json({ status: 'unlocked', ...result });
-  } catch (error) { return handleError(res, error); }
-});
-
-employerRouter.get('/applications/:applicationId/profile', verifySensitiveToken, verified, async (req, res) => {
+employerRouter.post('/applications/:applicationId/view', verifySensitiveToken, verified, async (req, res) => {
   try {
     const { employer, application } = await ownedApplication(req.user.uid, req.params.applicationId);
     const entitlement = checked(await supabaseAdmin.from('employer_entitlements')
       .select('order_id,expires_at').eq('employer_id', employer.id).maybeSingle());
     if (!entitlement || Date.parse(entitlement.expires_at) <= Date.now()) {
-      throw fail('Unlock this applicant with an active plan first.', 402);
+      throw fail('Choose an active hiring plan to view applicant details.', 402);
     }
-    const unlock = checked(await supabaseAdmin.from('employer_candidate_unlocks')
-      .select('candidate_id').eq('employer_id', employer.id)
-      .eq('candidate_id', application.candidate_id)
-      .eq('order_id', entitlement.order_id).maybeSingle());
-    if (!unlock) throw fail('Unlock this applicant with an active plan first.', 402);
     const candidate = checked(await supabaseAdmin.from('candidate_profiles').select('*')
       .eq('id', application.candidate_id).maybeSingle());
     if (!candidate) throw fail('Applicant profile not found.', 404);
@@ -439,14 +426,33 @@ employerRouter.get('/applications/:applicationId/profile', verifySensitiveToken,
       .eq('id', candidate.user_id).maybeSingle());
     const education = candidate.education || {};
     const experience = candidate.experience || {};
+    let resumeUrl = null;
+    if (application.resume_url) {
+      const signed = checked(await supabaseAdmin.storage.from('resumes')
+        .createSignedUrl(application.resume_url, 600), 'Resume is temporarily unavailable.');
+      resumeUrl = signed.signedUrl;
+    }
+    const unlockResult = await supabaseAdmin.rpc('unlock_employer_candidate', {
+      p_user_id: req.user.uid, p_application_id: application.id,
+    });
+    if (unlockResult.error) {
+      if (/no profile unlocks remaining|active plan/i.test(unlockResult.error.message)) {
+        throw fail('No profile unlocks remain on your current plan. Choose a hiring plan to continue.', 402);
+      }
+      throw fail('Applicant details are temporarily unavailable. Try again.', 503);
+    }
     res.set('Cache-Control', 'no-store');
-    return res.json({ profile: {
-      name: candidate.full_name || application.applicant_name,
-      email: account?.email || '', phone: account?.phone || application.applicant_phone,
-      location: candidate.district || '',
-      qualification: education.qualification || '',
+    return res.json({ alreadyUnlocked: unlockResult.data?.alreadyUnlocked === true, profile: {
+      name: application.applicant_name || candidate.full_name,
+      email: application.applicant_email || account?.email || '',
+      phone: application.applicant_phone || account?.phone || '',
+      location: application.applicant_district || candidate.district || '',
+      qualification: application.education_details || education.qualification || '',
       educationLevel: education.educationLevel || '',
-      experienceYears: experience.experienceYears || '',
+      experienceYears: application.experience_level || experience.experienceYears || '',
+      noticePeriod: application.notice_period || '', skills: application.skills || [],
+      coverNote: application.cover_note || '',
+      resumeFileName: application.resume_file_name || '', resumeUrl,
       experienceMonths: experience.experienceMonths || '',
       preferredJobTitles: candidate.preferred_job_titles || [],
       profilePhotoUrl: candidate.profile_photo_url || null,

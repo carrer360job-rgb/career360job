@@ -19,6 +19,7 @@ import 'data/models/job_model.dart';
 import 'data/models/employer_profile.dart';
 import 'features/auth/role_selection_screen.dart';
 import 'features/candidate/candidate_guidelines_screen.dart';
+import 'features/candidate/job_detail_screen.dart';
 import 'features/employer/employer_guidelines_screen.dart';
 import 'features/employer/employer_login_screen.dart';
 import 'features/auth/candidate_login_screen.dart';
@@ -1853,482 +1854,20 @@ class _MainShellScreenState extends State<MainShellScreen>
     );
   }
 
-  Future<void> _makeCall(String phone) async {
-    final clean = phone.replaceAll(RegExp(r'[^0-9+]'), '');
-    final uri = Uri.parse('tel:$clean');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not start phone call to $phone')),
-        );
-      }
-    }
-  }
-
-  Future<void> _openWhatsApp(String phone, String title) async {
-    String clean = phone.replaceAll(RegExp(r'[^0-9]'), '');
-    if (clean.length == 10) clean = '91$clean';
-    final msg = Uri.encodeComponent(
-      'Hello, I am contacting you regarding the "$title" role on Career360.',
-    );
-    final uri = Uri.parse('https://wa.me/$clean?text=$msg');
-    try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not open WhatsApp for $phone')),
-        );
-      }
-    }
-  }
-
-  Future<void> _sendEmail(String email, String title) async {
-    final subject = Uri.encodeComponent('Application for $title - Career360');
-    final uri = Uri.parse('mailto:$email?subject=$subject');
-    try {
-      await launchUrl(uri);
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not open email client for $email')),
-        );
-      }
-    }
-  }
-
-  void _applyToJob(JobModel job) async {
-    if (_appliedJobIds.contains(job.id)) return;
-    if (!job.isOpen) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This job is no longer accepting applications.')),
-      );
-      _refreshJobs();
-      return;
-    }
-    setState(() {
-      _appliedJobIds.add(job.id);
-    });
-
-    final user = AppAuthBridge.currentUser;
-    Map<String, dynamic>? profile;
-    try {
-      profile = await _firestoreService
-          .streamCandidateProfile(_currentUid)
-          .first;
-    } catch (_) {}
-
-    final applicationSubmitted = await _firestoreService.applyToJob(
-      jobId: job.id,
-      job: job,
-      candidateUid: _currentUid,
-      candidateProfile: {
-        'fullName': profile?['fullName'] ?? user?.displayName ?? 'Applicant',
-        'email': user?.email ?? '',
-        'phone': profile?['phone'] ?? '',
-        'qualification':
-            profile?['qualification'] ?? profile?['educationLevel'] ?? '',
-        'experienceYears': profile?['experienceYears'] ?? '0',
-      },
-    );
-    if (!mounted) return;
-    if (!applicationSubmitted) {
-      setState(() => _appliedJobIds.remove(job.id));
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Application could not be submitted. Please try again.',
-          ),
-        ),
-      );
-      return;
-    }
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: const BoxDecoration(
-                color: Color(0xFFDCFCE7),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.check_circle,
-                color: AppTheme.success,
-                size: 36,
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Application Submitted!',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Your application has been sent to the hiring team at ${job.companyName}.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 14,
-                color: AppTheme.textSecondary,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Continue Exploring'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _showJobDetails(JobModel job) {
-    final isApplied = _appliedJobIds.contains(job.id);
-    final isSaved = _savedJobIds.contains(job.id);
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => JobDetailScreen(
+          job: job,
+          candidateUid: _currentUid,
+          isApplied: _appliedJobIds.contains(job.id),
+          isSaved: _savedJobIds.contains(job.id),
+          onApply: () => setState(() => _appliedJobIds.add(job.id)),
+          onToggleSave: () => _toggleSaveJob(job.id),
+          onReport: () => _reportJob(job),
+        ),
       ),
-      builder: (ctx) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.85,
-          minChildSize: 0.5,
-          maxChildSize: 0.95,
-          expand: false,
-          builder: (_, scrollCtrl) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: ListView(
-                controller: scrollCtrl,
-                children: [
-                  const SizedBox(height: 12),
-                  Center(
-                    child: Container(
-                      width: 44,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      _buildCompanyAvatar(job.companyName, size: 48),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              job.title,
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              job.companyName,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: AppTheme.primary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          isSaved ? Icons.bookmark : Icons.bookmark_border,
-                          color: isSaved
-                              ? AppTheme.primary
-                              : AppTheme.textSecondary,
-                        ),
-                        onPressed: () {
-                          _toggleSaveJob(job.id);
-                          Navigator.pop(ctx);
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      if (job.isFeatured)
-                        _buildChip(
-                          Icons.star_rounded,
-                          'Featured Job',
-                          isFeatured: true,
-                        ),
-                      if (job.isStatewide)
-                        _buildChip(
-                          Icons.public_rounded,
-                          'Statewide (All Tamil Nadu)',
-                          isStatewide: true,
-                        ),
-                      _buildChip(Icons.location_on_outlined, job.locationCity),
-                      _buildChip(Icons.access_time_outlined, job.workMode),
-                      _buildChip(
-                        Icons.currency_rupee,
-                        job.salaryText,
-                        isPrimary: true,
-                      ),
-                      if (job.isVerified)
-                        _buildChip(
-                          Icons.verified,
-                          'Verified Recruiter',
-                          isSuccess: true,
-                        ),
-                    ],
-                  ),
-                  const Divider(height: 32),
-                  const Text(
-                    'Job Description',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    job.description,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: AppTheme.textSecondary,
-                      height: 1.5,
-                    ),
-                  ),
-                  if (job.requirements.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    const Text('Requirements', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    ...job.requirements.map(_buildRequirementBullet),
-                  ],
-                  if (job.responsibilities.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    const Text('Responsibilities', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    ...job.responsibilities.map(_buildRequirementBullet),
-                  ],
-                  if ((job.phone ?? '').isNotEmpty ||
-                      (job.whatsappNumber ?? '').isNotEmpty ||
-                      (job.email ?? '').isNotEmpty) ...[
-                  const SizedBox(height: 24),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0FDF4),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFFBBF7D0)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.quick_contacts_mail_rounded,
-                              color: Color(0xFF15803D),
-                              size: 22,
-                            ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'Direct Recruiter Connect',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFF14532D),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Contact ${job.contactName?.isNotEmpty == true ? job.contactName : "the recruiter"} using the available options below.',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: Color(0xFF166534),
-                            height: 1.3,
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            if ((job.phone ?? '').isNotEmpty) ...[
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: () => _makeCall(job.phone!),
-                                  icon: const Icon(Icons.call, size: 16),
-                                  label: const Text('Call HR'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF15803D),
-                                    foregroundColor: Colors.white,
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 10,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                            ],
-                            if ((job.whatsappNumber ?? job.phone ?? '')
-                                .isNotEmpty) ...[
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: () => _openWhatsApp(
-                                    (job.whatsappNumber ?? job.phone)!,
-                                    job.title,
-                                  ),
-                                  icon: const Icon(
-                                    Icons.chat_bubble_outline_rounded,
-                                    size: 16,
-                                  ),
-                                  label: const Text('WhatsApp'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF25D366),
-                                    foregroundColor: Colors.white,
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 10,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                            ],
-                            if ((job.email ?? '').isNotEmpty) ...[
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: () =>
-                                      _sendEmail(job.email!, job.title),
-                                  icon: const Icon(
-                                    Icons.email_outlined,
-                                    size: 16,
-                                  ),
-                                  label: const Text('Email'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF2563EB),
-                                    foregroundColor: Colors.white,
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 10,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  ],
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFEF3C7),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFFDE68A)),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(
-                          Icons.shield_outlined,
-                          color: Color(0xFFB45309),
-                          size: 20,
-                        ),
-                        SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Career360 jobs are 100% free for candidates. Never pay fees for interview or job offers.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF92400E),
-                              height: 1.3,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: () => _reportJob(job),
-                      icon: const Icon(Icons.flag_outlined, size: 17),
-                      label: const Text('Report this job'),
-                    ),
-                  ),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: isApplied || !job.isOpen
-                          ? null
-                          : () {
-                              Navigator.pop(ctx);
-                              _applyToJob(job);
-                            },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isApplied
-                            ? Colors.grey.shade400
-                            : AppTheme.primary,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      child: Text(
-                        isApplied ? 'Already Applied' : job.isOpen ? 'Apply for this Job ➔' : 'Applications Closed',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
-              ),
-            );
-          },
-        );
-      },
     );
   }
 
@@ -2437,82 +1976,6 @@ class _MainShellScreenState extends State<MainShellScreen>
         );
       }
     }
-  }
-
-  Widget _buildRequirementBullet(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '• ',
-            style: TextStyle(
-              color: AppTheme.primary,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppTheme.textSecondary,
-                height: 1.4,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildChip(
-    IconData icon,
-    String label, {
-    bool isPrimary = false,
-    bool isSuccess = false,
-    bool isFeatured = false,
-    bool isStatewide = false,
-  }) {
-    Color bg = const Color(0xFFF1F5F9);
-    Color fg = AppTheme.textPrimary;
-    if (isFeatured) {
-      bg = const Color(0xFFFEF3C7);
-      fg = const Color(0xFF92400E);
-    } else if (isStatewide) {
-      bg = const Color(0xFFF5F3FF);
-      fg = const Color(0xFF6D28D9);
-    } else if (isPrimary) {
-      bg = AppTheme.primaryLight;
-      fg = AppTheme.primary;
-    } else if (isSuccess) {
-      bg = const Color(0xFFDCFCE7);
-      fg = AppTheme.success;
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: fg),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: fg,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   void _showFilterModal() {
@@ -3931,42 +3394,61 @@ class _MainShellScreenState extends State<MainShellScreen>
                       ),
                     ),
                     const SizedBox(width: 8),
-                    ElevatedButton(
-                      onPressed: isApplied ? null : () => _applyToJob(job),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isApplied
-                            ? const Color(0xFFDCFCE7)
-                            : AppTheme.primary,
-                        foregroundColor: isApplied
-                            ? AppTheme.success
-                            : Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            isApplied ? 'Applied ✓' : 'Apply Now',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: isApplied
-                                  ? AppTheme.success
-                                  : Colors.white,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (isApplied) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFDCFCE7),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text(
+                              'Applied ✓',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.success,
+                              ),
                             ),
                           ),
-                          if (!isApplied) ...[
-                            const SizedBox(width: 4),
-                            const Icon(Icons.arrow_forward, size: 13),
-                          ],
+                          const SizedBox(width: 6),
                         ],
-                      ),
+                        ElevatedButton(
+                          onPressed: () => _showJobDetails(job),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 8,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              Text(
+                                'Details',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              SizedBox(width: 4),
+                              Icon(Icons.arrow_forward_rounded, size: 13),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
