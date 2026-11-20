@@ -1,6 +1,6 @@
 import express from 'express';
 import { supabaseAdmin } from '../config/supabase.js';
-import { initialPlanDrafts, publicPlan, validatePlanDraft } from '../services/planCatalog.js';
+import { initialPlanDrafts, publicPlan, subscriptionPlanIds, validatePlanDraft } from '../services/planCatalog.js';
 
 const router = express.Router();
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -211,7 +211,7 @@ function planDraft(row) {
 
 router.get('/plans', async (_req, res) => {
   try {
-    const { data, error } = await supabaseAdmin.from('employer_plans').select('*').gt('price_paise', 0).order('sort_order', { ascending: true });
+    const { data, error } = await supabaseAdmin.from('employer_plans').select('*').in('id', subscriptionPlanIds).order('sort_order', { ascending: true });
     if (error) throw unavailable('Hiring plans are temporarily unavailable.');
     const plans = (data || []).map((row) => {
       const draft = planDraft(row);
@@ -225,8 +225,11 @@ router.get('/plans', async (_req, res) => {
 router.post('/plans/seed', async (_req, res) => {
   try {
     const rows = initialPlanDrafts.map((plan) => ({ id: plan.id, name: plan.name, tier: plan.tier,
-      price_paise: plan.pricePaise, job_credits: plan.jobCredits, listing_days: plan.listingDays,
-      reach: plan.reach, features: plan.features, is_active: false, version: 0, draft: plan }));
+      price_paise: plan.pricePaise, tax_mode: plan.taxMode, tax_rate_bps: plan.taxRateBps,
+      job_credits: plan.jobCredits, listing_days: plan.listingDays,
+      credit_validity_days: plan.creditValidityDays, profile_unlock_limit: plan.profileUnlockLimit,
+      reach: plan.reach, sort_order: plan.sortOrder, features: plan.features,
+      is_active: false, version: 0, draft: plan }));
     const { error } = await supabaseAdmin.from('employer_plans').upsert(rows, { onConflict: 'id', ignoreDuplicates: true });
     if (error) throw unavailable('Could not create plan drafts.');
     res.status(201).json({ status: 'drafts_created' });
@@ -236,8 +239,9 @@ router.post('/plans/seed', async (_req, res) => {
 router.put('/plans/:id/draft', async (req, res) => {
   try {
     const id = req.params.id;
-    if (!/^[a-z][a-z0-9_]{2,39}$/.test(id)) return res.status(400).json({ error: { message: 'Invalid plan ID.' } });
+    if (!subscriptionPlanIds.includes(id)) return res.status(400).json({ error: { message: 'Choose a subscription plan.' } });
     const draft = validatePlanDraft(req.body);
+    if (draft.tier !== id) return res.status(400).json({ error: { message: 'Plan type must match its subscription period.' } });
     const { data: existing, error: lookupError } = await supabaseAdmin.from('employer_plans').select('id').eq('id', id).maybeSingle();
     if (lookupError) throw unavailable('Could not load this plan.');
     const values = { draft, updated_at: new Date().toISOString() };
@@ -257,6 +261,7 @@ router.post('/plans/:id/publish', async (req, res) => {
     if (lookupError) throw unavailable('Could not load this plan.');
     if (!row?.draft) return res.status(404).json({ error: { message: 'Save a draft first.' } });
     const draft = validatePlanDraft(row.draft);
+    if (draft.tier !== row.id) return res.status(400).json({ error: { message: 'Plan type must match its subscription period.' } });
     const version = (row.version || 0) + 1;
     const { data: updated, error } = await supabaseAdmin.from('employer_plans').update({
       name: draft.name, tier: draft.tier, badge: draft.badge, price_paise: draft.pricePaise,

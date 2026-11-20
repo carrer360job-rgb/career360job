@@ -3,6 +3,7 @@ import { verifyAdminToken } from '../middlewares/authMiddleware.js';
 import { requireAdmin } from '../middlewares/adminMiddleware.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import adminSupabaseModules from './adminSupabaseModules.js';
+import { razorpayRequest, revokeFullyRefundedOrder } from './employerRoutes.js';
 
 const router = express.Router();
 
@@ -148,6 +149,15 @@ router.get('/employers/:uid', async (req, res) => {
     if (!company || !profile || profile.role !== 'EMPLOYER' || !identity) {
       return res.status(404).json({ error: { message: 'Employer account not found.' } });
     }
+    const [subscriptionResult, ordersResult] = await Promise.all([
+      supabaseAdmin.from('employer_subscriptions').select('id,plan_name,total_posts,used_posts,starts_at,expires_at,status,order_id')
+        .eq('employer_id', company.id).order('created_at', { ascending: false }).limit(25),
+      supabaseAdmin.from('employer_orders').select('id,plan_name,amount_paise,tax_paise,status,created_at,paid_at')
+        .eq('employer_id', company.id).order('created_at', { ascending: false }).limit(25),
+    ]);
+    if (subscriptionResult.error || ordersResult.error) {
+      throw Object.assign(new Error('Employer billing history is unavailable.'), { status: 503 });
+    }
     const status = employerStatus(company.review_state, profile.status);
     res.set('Cache-Control', 'no-store');
     res.json({ employer: {
@@ -169,10 +179,35 @@ router.get('/employers/:uid', async (req, res) => {
       rejectionReason: company.rejection_reason || null, reviewedBy: company.reviewed_by || null,
       reviewedAt: company.reviewed_at || null, createdAt: company.created_at || profile.created_at || null,
       updatedAt: company.updated_at || null,
+      subscriptions: (subscriptionResult.data || []).map((row) => ({
+        ...row, status: row.status === 'active' && Date.parse(row.expires_at) <= Date.now()
+          ? 'expired' : row.status,
+      })), orders: ordersResult.data || [],
     } });
   } catch (error) {
     fail(res, error);
   }
+});
+
+router.post('/employers/:uid/quota', async (req, res) => {
+  try {
+    const uid = req.params.uid;
+    const delta = req.body?.delta;
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uid) ||
+        !Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 10000 ||
+        reason.length < 5 || reason.length > 500) {
+      return res.status(400).json({ error: { message: 'Enter a valid quota change and reason.' } });
+    }
+    const { data, error } = await supabaseAdmin.rpc('admin_adjust_employer_quota', {
+      p_actor_uid: req.user.uid, p_employer_uid: uid, p_delta: delta, p_reason: reason,
+    });
+    if (error) {
+      console.error('[Admin quota adjustment]', error);
+      return res.status(409).json({ error: { message: error.message } });
+    }
+    res.set('Cache-Control', 'no-store').json(data);
+  } catch (error) { fail(res, error); }
 });
 
 // 3. Employer Review (Approve / Reject)
@@ -223,15 +258,109 @@ router.post('/employers/:uid/review', async (req, res) => {
 
 router.use(adminSupabaseModules);
 
-// Billing and job reports still depend on records in the legacy store. An
-// unavailable response must not pretend there are zero payments or reports.
-router.get('/payments', (_req, res) => {
-  return res.set('Cache-Control', 'no-store').json({ available: false, payments: [], nextCursor: null });
+router.get('/payments', async (req, res) => {
+  try {
+    const offset = req.query.cursor === undefined ? 0 : Number(req.query.cursor);
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      return res.status(400).json({ error: { message: 'Invalid page cursor.' } });
+    }
+    const status = ['created','failed','paid','refunded'].includes(req.query.status) ? req.query.status : 'all';
+    let query = supabaseAdmin.from('employer_orders').select('*').order('created_at', { ascending: false });
+    if (status !== 'all') query = query.eq('status', status);
+    const { data, error } = await query.range(offset, offset + 49);
+    if (error) throw Object.assign(new Error('Payments are unavailable.'), { status: 503 });
+    const payments = (data || []).map((row) => ({
+      id: row.id, employerUid: row.employer_user_id, planId: row.plan_id,
+      planName: row.plan_name, amountPaise: row.amount_paise,
+      basePaise: row.base_paise, taxPaise: row.tax_paise,
+      taxMode: row.tax_mode || 'inclusive',
+      taxRateBps: row.tax_rate_bps ?? (row.base_paise ? Math.round(row.tax_paise / row.base_paise * 10000) : 0),
+      currency: row.currency, status: row.status, paymentId: row.payment_id,
+      createdAt: row.created_at, paidAt: row.paid_at, refundedAt: row.refunded_at,
+      failedAt: row.failed_at, failureCode: row.failure_code,
+      refundStatus: row.refund_status, refundReason: row.refund_reason,
+      refundRequestedAt: row.refund_requested_at,
+    }));
+    res.set('Cache-Control', 'no-store').json({
+      available: true, payments, nextCursor: (data || []).length === 50 ? String(offset + 50) : null,
+    });
+  } catch (error) { fail(res, error); }
+});
+router.post('/payments/:orderId/refund', async (req, res) => {
+  try {
+    const orderId = req.params.orderId;
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 500) : '';
+    if (!/^order_[a-zA-Z0-9]{8,60}$/.test(orderId) || reason.length < 5) {
+      return res.status(400).json({ error: { message: 'Enter a valid order and refund reason.' } });
+    }
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+      return res.status(503).json({ error: { message: 'Razorpay is not configured.' } });
+    }
+    const { data: order, error } = await supabaseAdmin.from('employer_orders').select('*').eq('id', orderId).maybeSingle();
+    if (error) throw Object.assign(new Error('Payment record is unavailable.'), { status: 503 });
+    if (!order || order.status !== 'paid' || !order.payment_id ||
+        (order.refund_status && order.refund_status !== 'failed')) {
+      return res.status(409).json({ error: { message: 'This order is not eligible for a new refund request.' } });
+    }
+    const payment = await razorpayRequest(`/payments/${encodeURIComponent(order.payment_id)}`);
+    if (payment.status !== 'captured' || payment.order_id !== order.id ||
+        payment.amount !== order.amount_paise || payment.amount_refunded > 0) {
+      return res.status(409).json({ error: { message: 'Razorpay payment status does not allow a full refund.' } });
+    }
+    let claim = supabaseAdmin.from('employer_orders').update({
+      refund_status: 'requested', refund_reason: reason,
+      refund_requested_at: new Date().toISOString(),
+    }).eq('id', orderId).eq('status', 'paid');
+    claim = order.refund_status == null ? claim.is('refund_status', null)
+      : claim.eq('refund_status', order.refund_status);
+    const { data: claimed, error: claimError } = await claim.select('id').maybeSingle();
+    if (claimError) throw Object.assign(new Error('Could not reserve this refund.'), { status: 503 });
+    if (!claimed) return res.status(409).json({ error: { message: 'A refund is already being handled.' } });
+    const refund = await razorpayRequest(`/payments/${encodeURIComponent(order.payment_id)}/refund`, {
+      method: 'POST',
+      headers: { 'X-Refund-Idempotency': `career360_${orderId}` },
+      body: JSON.stringify({ amount: order.amount_paise, speed: 'normal' }),
+    });
+    await supabaseAdmin.from('employer_orders').update({
+      refund_id: refund.id, refund_status: refund.status || 'requested',
+    }).eq('id', orderId);
+    if (refund.status === 'processed') {
+      const refreshed = await razorpayRequest(`/payments/${encodeURIComponent(order.payment_id)}`);
+      await revokeFullyRefundedOrder(refreshed);
+    }
+    res.json({ status: refund.status || 'requested', refundId: refund.id || null });
+  } catch (error) { fail(res, error); }
+});
+router.post('/payments/:orderId/reconcile', async (req, res) => {
+  try {
+    const { data: order, error } = await supabaseAdmin.from('employer_orders')
+      .select('id,payment_id,amount_paise,refund_id,refund_status').eq('id', req.params.orderId).maybeSingle();
+    if (error || !order?.payment_id || !order.refund_status) {
+      return res.status(404).json({ error: { message: 'Refund record not found.' } });
+    }
+    const refund = order.refund_id
+      ? await razorpayRequest(`/refunds/${encodeURIComponent(order.refund_id)}`)
+      : await razorpayRequest(`/payments/${encodeURIComponent(order.payment_id)}/refund`, {
+        method: 'POST', headers: { 'X-Refund-Idempotency': `career360_${order.id}` },
+        body: JSON.stringify({ amount: order.amount_paise, speed: 'normal' }),
+      });
+    if (refund.payment_id !== order.payment_id) {
+      return res.status(409).json({ error: { message: 'Refund does not match this payment.' } });
+    }
+    await supabaseAdmin.from('employer_orders').update({
+      refund_id: refund.id, refund_status: refund.status,
+    }).eq('id', order.id);
+    if (refund.status === 'processed') {
+      const payment = await razorpayRequest(`/payments/${encodeURIComponent(order.payment_id)}`);
+      await revokeFullyRefundedOrder(payment);
+    }
+    res.json({ status: refund.status });
+  } catch (error) { fail(res, error); }
 });
 router.get('/reports', (_req, res) => {
   return res.set('Cache-Control', 'no-store').json({ available: false, summary: null, reports: [], nextCursor: null });
 });
-router.post(['/payments/:orderId/refund', '/payments/:orderId/reconcile', '/reports/:id/resolve'], (_req, res) => {
+router.post('/reports/:id/resolve', (_req, res) => {
   return res.status(503).json({ error: { message: 'This admin action is temporarily unavailable.' } });
 });
 

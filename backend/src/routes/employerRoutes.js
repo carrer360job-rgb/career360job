@@ -86,7 +86,7 @@ function jobFields(body = {}) {
   };
 }
 
-async function razorpayRequest(path, options = {}) {
+export async function razorpayRequest(path, options = {}) {
   const key = Buffer.from(`${process.env.RAZORPAY_KEY_ID}:${process.env.RAZORPAY_KEY_SECRET}`).toString('base64');
   const response = await fetch(`https://api.razorpay.com/v1${path}`, {
     ...options,
@@ -154,13 +154,8 @@ employerRouter.post('/orders', verifySensitiveToken, verified, async (req, res) 
     if (typeof planId !== 'string') throw fail('Choose a plan.');
     const plan = await publishedPlan(planId);
     if (req.body?.planVersion !== plan.version) throw fail('This plan has changed. Refresh plans before checkout.', 409);
-    if (plan.amountPaise < 100 || !['standard', 'featured', 'elite'].includes(plan.tier)) {
+    if (plan.amountPaise < 100 || !['monthly', 'quarterly', 'yearly'].includes(plan.tier)) {
       throw fail('Choose a paid plan.', 409);
-    }
-    const entitlement = checked(await supabaseAdmin.from('employer_entitlements')
-      .select('expires_at').eq('employer_id', employer.id).maybeSingle());
-    if (entitlement && Date.parse(entitlement.expires_at) > Date.now()) {
-      throw fail('Your paid plan is still active. Renew after it expires.', 409);
     }
     if (!paymentReady()) throw fail('Payments are not configured yet.', 503);
     const created = await razorpayRequest('/orders', {
@@ -177,6 +172,7 @@ employerRouter.post('/orders', verifySensitiveToken, verified, async (req, res) 
       plan_id: plan.id, plan_version: plan.version, plan_name: plan.name,
       tier: plan.tier, amount_paise: plan.amountPaise,
       base_paise: plan.basePaise, tax_paise: plan.taxPaise, currency: 'INR',
+      tax_mode: plan.taxMode, tax_rate_bps: plan.taxRateBps,
       job_credits: plan.jobCredits, listing_days: plan.listingDays,
       credit_validity_days: plan.creditValidityDays,
       profile_unlock_limit: plan.profileUnlockLimit, reach: plan.reach,
@@ -364,14 +360,20 @@ employerRouter.patch('/applications/:applicationId/status', verifySupabaseToken,
 employerRouter.get('/entitlement', verifySupabaseToken, verified, async (req, res) => {
   try {
     const employer = await approvedEmployer(req.user.uid);
-    const row = checked(await supabaseAdmin.from('employer_entitlements').select('*')
-      .eq('employer_id', employer.id).maybeSingle());
+    const [row, subscription] = await Promise.all([
+      supabaseAdmin.from('employer_entitlements').select('*').eq('employer_id', employer.id).maybeSingle(),
+      supabaseAdmin.from('employer_subscriptions').select('*').eq('employer_id', employer.id).eq('status', 'active').maybeSingle(),
+    ]);
+    if (row.error || subscription.error) throw fail('Subscription details are unavailable.', 503);
     res.set('Cache-Control', 'no-store');
-    return res.json({ entitlement: row ? {
-      planId: row.plan_id, planName: row.plan_name, tier: row.tier,
-      reach: row.reach, profileUnlockLimit: row.profile_unlock_limit,
-      unlocksUsed: row.unlocks_used, expiresAt: row.expires_at,
-      active: Date.parse(row.expires_at) > Date.now(),
+    return res.json({ entitlement: row.data ? {
+      planId: row.data.plan_id, planName: row.data.plan_name, tier: row.data.tier,
+      reach: row.data.reach, profileUnlockLimit: row.data.profile_unlock_limit,
+      unlocksUsed: row.data.unlocks_used, startsAt: row.data.starts_at,
+      expiresAt: row.data.expires_at, active: Date.parse(row.data.expires_at) > Date.now(),
+      totalPosts: subscription.data?.total_posts ?? null,
+      usedPosts: subscription.data?.used_posts ?? null,
+      remainingPosts: subscription.data ? subscription.data.total_posts - subscription.data.used_posts : null,
     } : null });
   } catch (error) { return handleError(res, error); }
 });

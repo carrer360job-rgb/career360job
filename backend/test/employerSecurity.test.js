@@ -7,10 +7,10 @@ test('employer access needs a recorded admin review', () => {
   assert.equal(hasTrustedApproval({ is_verified: true }), false);
   assert.equal(hasTrustedApproval({ is_verified: true, reviewed_by: 'admin' }), false);
   assert.equal(hasTrustedApproval({
-    is_verified: true, reviewed_by: 'admin', reviewed_at: '2026-11-19T00:00:00Z',
+    is_verified: true, review_state: 'approved', reviewed_by: 'admin', reviewed_at: '2026-11-19T00:00:00Z',
   }), true);
   assert.equal(hasTrustedApproval({
-    is_verified: false, reviewed_by: 'admin', reviewed_at: '2026-11-19T00:00:00Z',
+    is_verified: false, review_state: 'approved', reviewed_by: 'admin', reviewed_at: '2026-11-19T00:00:00Z',
   }), false);
 });
 
