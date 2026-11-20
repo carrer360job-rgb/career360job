@@ -270,6 +270,8 @@ class SupabaseService {
       return rows.where((job) {
         final isPublished = job['status'] == 'PUBLISHED';
         if (!isPublished) return false;
+        final expiry = DateTime.tryParse(job['expires_at']?.toString() ?? '');
+        if (expiry != null && !expiry.isAfter(DateTime.now())) return false;
         if (district == null || district.isEmpty) return true;
         final reach = job['reach']?.toString().toLowerCase() ?? 'district';
         final jobDistrict = job['district']?.toString().toLowerCase() ?? '';

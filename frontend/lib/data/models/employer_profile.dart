@@ -19,6 +19,8 @@ class EmployerProfile {
   final String description;
   final String registrationNumber;
   final String status;
+  final String reviewState;
+  final String rejectionReason;
   final String reviewedBy;
   final bool isVerified;
   final int postingCredits;
@@ -50,6 +52,8 @@ class EmployerProfile {
     this.description = '',
     required this.registrationNumber,
     required this.status,
+    this.reviewState = 'pending',
+    this.rejectionReason = '',
     this.reviewedBy = '',
     this.isVerified = false,
     required this.postingCredits,
@@ -61,10 +65,10 @@ class EmployerProfile {
     this.planReach = 'district',
   });
 
-  bool get isApproved => isVerified;
+  bool get isApproved => reviewState == 'approved' && isVerified;
   bool get hasActiveCredits =>
       postingCredits > 0 &&
-      const {'standard', 'featured', 'elite'}.contains(planTier) &&
+      const {'standard', 'featured', 'elite', 'monthly', 'quarterly', 'yearly'}.contains(planTier) &&
       creditsExpireAt != null &&
       creditsExpireAt!.isAfter(DateTime.now());
   bool get isStandardPlan =>
@@ -76,6 +80,9 @@ class EmployerProfile {
 
   String get planBadgeText {
     if (activePlan.isEmpty) return 'NO PLAN';
+    if (planTier == 'monthly') return 'MONTHLY';
+    if (planTier == 'quarterly') return 'QUARTERLY';
+    if (planTier == 'yearly') return 'YEARLY';
     if (isElitePlan) return 'ELITE ALL-TN 👑';
     if (isFeaturedPlan) return 'PREMIUM - 30 ⭐';
     if (isStandardPlan) return 'STARTER - 15';
@@ -92,28 +99,50 @@ class EmployerProfile {
     String value(String key) => data[key] is String ? data[key] as String : '';
     return EmployerProfile(
       uid: uid,
-      companyName: value('company_name').isNotEmpty ? value('company_name') : value('companyName'),
-      logoUrl: value('logo_url').isNotEmpty ? value('logo_url') : value('logoUrl'),
-      contactName: value('contact_name').isNotEmpty ? value('contact_name') : value('contactName'),
+      companyName: value('company_name').isNotEmpty
+          ? value('company_name')
+          : value('companyName'),
+      logoUrl: value('logo_url').isNotEmpty
+          ? value('logo_url')
+          : value('logoUrl'),
+      contactName: value('contact_name').isNotEmpty
+          ? value('contact_name')
+          : value('contactName'),
       designation: value('designation'),
       industry: value('industry'),
-      companySize: value('company_size').isNotEmpty ? value('company_size') : value('companySize'),
+      companySize: value('company_size').isNotEmpty
+          ? value('company_size')
+          : value('companySize'),
       email: value('email'),
       phone: value('phone'),
-      whatsappPhone: value('whatsapp_phone').isNotEmpty ? value('whatsapp_phone') : value('whatsappPhone'),
-      whatsappSameAsPhone: data['whatsapp_same_as_phone'] == true || data['whatsappSameAsPhone'] == true,
+      whatsappPhone: value('whatsapp_phone').isNotEmpty
+          ? value('whatsapp_phone')
+          : value('whatsappPhone'),
+      whatsappSameAsPhone:
+          data['whatsapp_same_as_phone'] == true ||
+          data['whatsappSameAsPhone'] == true,
       website: value('website'),
       address: value('address'),
       city: value('city'),
       state: value('state').isNotEmpty ? value('state') : 'Tamil Nadu',
       district: value('district').isNotEmpty ? value('district') : 'Chennai',
-      postalCode: value('postal_code').isNotEmpty ? value('postal_code') : value('postalCode'),
+      postalCode: value('postal_code').isNotEmpty
+          ? value('postal_code')
+          : value('postalCode'),
       description: value('description'),
-      registrationNumber: value('registration_number').isNotEmpty ? value('registration_number') : value('registrationNumber'),
+      registrationNumber: value('registration_number').isNotEmpty
+          ? value('registration_number')
+          : value('registrationNumber'),
       status: value('status').isNotEmpty
           ? value('status')
           : (data['is_verified'] == true ? 'approved' : 'pending'),
-      reviewedBy: value('reviewed_by').isNotEmpty ? value('reviewed_by') : value('reviewedBy'),
+      reviewState: value('review_state').isNotEmpty
+          ? value('review_state')
+          : (data['is_verified'] == true ? 'approved' : 'pending'),
+      rejectionReason: value('rejection_reason'),
+      reviewedBy: value('reviewed_by').isNotEmpty
+          ? value('reviewed_by')
+          : value('reviewedBy'),
       isVerified: data['is_verified'] == true,
       postingCredits: data['posting_credits'] is int
           ? data['posting_credits'] as int
@@ -124,10 +153,18 @@ class EmployerProfile {
       creditsExpireAt: data['credits_expire_at'] is String
           ? DateTime.tryParse(data['credits_expire_at'] as String)
           : null,
-      activePlan: value('active_plan').isNotEmpty ? value('active_plan') : value('activePlan'),
-      activePlanName: value('active_plan_name').isNotEmpty ? value('active_plan_name') : value('activePlanName'),
-      planTier: value('plan_tier').isNotEmpty ? value('plan_tier') : value('planTier'),
-      planReach: value('plan_reach').isNotEmpty ? value('plan_reach') : (value('planReach').isNotEmpty ? value('planReach') : 'district'),
+      activePlan: value('active_plan').isNotEmpty
+          ? value('active_plan')
+          : value('activePlan'),
+      activePlanName: value('active_plan_name').isNotEmpty
+          ? value('active_plan_name')
+          : value('activePlanName'),
+      planTier: value('plan_tier').isNotEmpty
+          ? value('plan_tier')
+          : value('planTier'),
+      planReach: value('plan_reach').isNotEmpty
+          ? value('plan_reach')
+          : (value('planReach').isNotEmpty ? value('planReach') : 'district'),
     );
   }
 }

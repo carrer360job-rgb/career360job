@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 
 import 'supabase_service.dart';
+import 'supabase_auth_service.dart';
 
 /// Unified Application User Model bridging Supabase and Firebase
 class AppAuthUser {
@@ -51,6 +52,7 @@ class AppAuthBridge {
 
   /// Current Supabase Auth user.
   static AppAuthUser? get currentUser {
+    if (SupabaseAuthService.recoveryInProgress) return null;
     final sbUser = SupabaseService.client.auth.currentUser;
     return _mapSupabaseUser(sbUser);
   }
@@ -61,9 +63,20 @@ class AppAuthBridge {
     StreamSubscription? sbSub;
     controller = StreamController<AppAuthUser?>.broadcast(
       onListen: () {
-        sbSub = SupabaseService.client.auth.onAuthStateChange.listen((data) {
-          controller.add(_mapSupabaseUser(data.session?.user));
-        }, onError: (_) {});
+        sbSub = SupabaseService.client.auth.onAuthStateChange.listen(
+          (data) {
+            controller.add(
+              SupabaseAuthService.recoveryInProgress
+                  ? null
+                  : _mapSupabaseUser(data.session?.user),
+            );
+          },
+          onError: (error) {
+            if (SupabaseAuthService.isSuspendedSignInError(error)) {
+              unawaited(SupabaseAuthService.showSuspensionNotice());
+            }
+          },
+        );
 
         // Emit the restored session only after the UI has subscribed.
         controller.add(currentUser);

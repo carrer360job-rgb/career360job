@@ -45,6 +45,22 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
       _message('Online payment is unavailable right now. Please try again later.');
       return;
     }
+    if (widget.profile.creditsExpireAt?.isAfter(DateTime.now()) == true) {
+      final replace = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Replace current subscription?'),
+          content: const Text(
+            'The new plan starts after payment. Unused posts and the remaining time on your current plan will not carry over.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Keep current plan')),
+            TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Continue to payment')),
+          ],
+        ),
+      );
+      if (replace != true || !mounted) return;
+    }
     setState(() => _busy = true);
     try {
       final order = await _api.createOrder(plan['id'] as String, plan['version'] as int);
@@ -91,8 +107,8 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           icon: const Icon(Icons.verified_rounded, color: AppTheme.success, size: 54),
-          title: const Text('Payment Successful!', style: TextStyle(fontWeight: FontWeight.bold)),
-          content: const Text('Your posting plan is now active. You can now publish jobs and receive candidate direct calls & WhatsApp inquiries.'),
+          title: const Text('Subscription active', style: TextStyle(fontWeight: FontWeight.bold)),
+          content: const Text('Your job post quota is ready. You can now publish jobs and manage applicants.'),
           actions: [
             FilledButton(
               onPressed: () {
@@ -269,7 +285,7 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                   side: BorderSide(
-                    color: isExpanded ? const Color(0xFF93C5FD) : const Color(0xFFE2E8F0),
+                    color: isExpanded ? AppTheme.primaryLightBorder : const Color(0xFFE2E8F0),
                     width: isExpanded ? 1.5 : 1,
                   ),
                 ),
@@ -284,11 +300,11 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Header Row (matching Nithra)
+                      // Header Row
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                         decoration: BoxDecoration(
-                          color: isExpanded ? const Color(0xFFEFF6FF) : Colors.white,
+                          color: isExpanded ? AppTheme.primaryLight : Colors.white,
                           borderRadius: BorderRadius.vertical(
                             top: const Radius.circular(9),
                             bottom: Radius.circular(isExpanded ? 0 : 9),
@@ -301,7 +317,7 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
                               width: 28,
                               height: 28,
                               decoration: const BoxDecoration(
-                                color: Color(0xFF2563EB),
+                                color: AppTheme.primary,
                                 shape: BoxShape.circle,
                               ),
                               child: Center(
@@ -321,7 +337,7 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
                               child: Text(
                                 plan['name'] ?? '',
                                 style: const TextStyle(
-                                  color: Color(0xFF1E3A8A),
+                                  color: AppTheme.textPrimary,
                                   fontWeight: FontWeight.w700,
                                   fontSize: 16,
                                 ),
@@ -332,14 +348,14 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
                                 margin: const EdgeInsets.only(right: 8),
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFEFF6FF),
+                                  color: AppTheme.primaryLight,
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: const Color(0xFF93C5FD)),
+                                  border: Border.all(color: AppTheme.primaryLightBorder),
                                 ),
                                 child: const Text(
                                   'ACTIVE PLAN',
                                   style: TextStyle(
-                                    color: Color(0xFF1D4ED8),
+                                    color: AppTheme.primaryDark,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 10,
                                   ),
@@ -347,7 +363,7 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
                               ),
                             Icon(
                               isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                              color: const Color(0xFF2563EB),
+                              color: AppTheme.primary,
                               size: 24,
                             ),
                           ],
@@ -413,14 +429,14 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
                                   ),
                                   const SizedBox(width: 12),
 
-                                  // Blue Action Button
+                                  // Emerald Action Button
                                   Expanded(
                                     child: ElevatedButton(
-                                      onPressed: _busy || isFree || isCurrent || paidTermActive
+                                      onPressed: _busy || isFree
                                           ? null
                                           : () => _buyPaidPlan(plan, ready),
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFF2563EB),
+                                        backgroundColor: AppTheme.primary,
                                         foregroundColor: Colors.white,
                                         elevation: 0,
                                         shape: RoundedRectangleBorder(
@@ -431,13 +447,11 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
                                       child: Text(
                                         _busy
                                             ? 'Processing...'
-                                            : isCurrent
-                                                ? 'Current plan'
-                                            : paidTermActive
-                                                ? 'Renew after expiry'
-                                                : isFree
+                                            : isFree
                                                     ? 'Unavailable'
-                                                    : 'Pay Now',
+                                                    : paidTermActive
+                                                        ? isCurrent ? 'Renew plan' : 'Change plan'
+                                                        : 'Pay now',
                                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                                       ),
                                     ),
@@ -470,7 +484,7 @@ class _EmployerPlanScreenState extends State<EmployerPlanScreen> {
     final items = [
       'Job Count : $jobs',
       'Location Count : $locations',
-      'Job Validity : $listingDays days',
+      'Job listing: up to $listingDays days (ends with plan)',
       'Plan Validity : $planValidity days',
       'Applicant profiles : $unlocks unlocks',
     ];

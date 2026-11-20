@@ -1,10 +1,29 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { listEmployers, reviewEmployer, type EmployerRecord } from './api';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { adjustEmployerQuota, getEmployer, listEmployers, reviewEmployer, type EmployerDetails, type EmployerRecord } from './api';
 import { auth } from './supabase';
+
+type Filter = 'pending' | 'approved' | 'rejected' | 'all';
+const date = (value: string | null | undefined) => {
+  if (!value) return 'Not available';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? 'Not available' : parsed.toLocaleString();
+};
+const value = (entry: string | number | null | undefined) =>
+  entry === null || entry === undefined || entry === '' ? 'Not provided' : String(entry);
+
+function DetailField({ label, entry }: { label: string; entry: string | number | null | undefined }) {
+  return <div className="job-seeker-detail-field"><span>{label}</span><strong>{value(entry)}</strong></div>;
+}
+
+function Status({ status }: { status: EmployerRecord['status'] }) {
+  return <span className={`status-pill pill-${status === 'suspended' ? 'rejected' : status}`}>
+    {status === 'approved' ? 'Approved' : status === 'pending' ? 'Pending review' : status === 'rejected' ? 'Rejected' : 'Suspended'}
+  </span>;
+}
 
 export default function EmployersPanel() {
   const [employers, setEmployers] = useState<EmployerRecord[]>([]);
-  const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [statusFilter, setStatusFilter] = useState<Filter>('pending');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -13,277 +32,278 @@ export default function EmployersPanel() {
   const [busyUid, setBusyUid] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [suspendingUid, setSuspendingUid] = useState<string | null>(null);
-  const [suspendReason, setSuspendReason] = useState('');
+  const [reasonUid, setReasonUid] = useState<string | null>(null);
+  const [reason, setReason] = useState('');
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [selectedUid, setSelectedUid] = useState<string | null>(null);
+  const [details, setDetails] = useState<EmployerDetails | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState('');
+  const [detailsRefresh, setDetailsRefresh] = useState(0);
+  const [quotaChange, setQuotaChange] = useState('');
+  const [quotaReason, setQuotaReason] = useState('');
+
+  const token = async () => {
+    if (!auth?.currentUser) throw new Error('Sign in again to continue.');
+    return auth.currentUser.getIdToken();
+  };
 
   const load = useCallback(async (background = false) => {
     const currentRequest = ++requestId.current;
+    if (background) setRefreshing(true);
+    else { setLoading(true); setRefreshing(false); }
     try {
-      if (background) setRefreshing(true); else { setRefreshing(false); setLoading(true); }
-      const token = await auth.currentUser.getIdToken();
-      const res = await listEmployers(token, statusFilter, search);
+      const result = await listEmployers(await token(), statusFilter, search);
       if (currentRequest !== requestId.current) return;
-      setEmployers(res.employers);
-      setNextCursor(res.nextCursor);
+      setEmployers(result.employers);
+      setNextCursor(result.nextCursor);
       setError('');
-    } catch (err) {
-      if (currentRequest === requestId.current) setError((err as Error).message);
+    } catch (caught) {
+      if (currentRequest === requestId.current) setError((caught as Error).message);
     } finally {
       if (currentRequest === requestId.current) { setLoading(false); setRefreshing(false); }
     }
   }, [statusFilter, search]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      void load();
-    }, 200);
+    const timer = setTimeout(() => { void load(); }, search ? 250 : 0);
     return () => { clearTimeout(timer); ++requestId.current; };
-  }, [load]);
+  }, [load, search]);
 
-  const handleModeration = async (uid: string, decision: 'approved' | 'rejected', notes?: string) => {
-    if (!auth?.currentUser) return;
-    setBusyUid(uid);
+  useEffect(() => {
+    if (!selectedUid) { setDetails(null); setDetailsError(''); return; }
+    let active = true;
+    setDetailsLoading(true);
+    setDetailsError('');
+    void token().then((idToken) => getEmployer(idToken, selectedUid))
+      .then((result) => { if (active) setDetails(result.employer); })
+      .catch((caught) => { if (active) setDetailsError((caught as Error).message); })
+      .finally(() => { if (active) setDetailsLoading(false); });
+    return () => { active = false; };
+  }, [selectedUid, detailsRefresh]);
+
+  const openDetails = (uid: string) => {
+    setDetails(null);
+    setNotice('');
     setError('');
+    setSelectedUid(uid);
+  };
+
+  const moderate = async (employer: EmployerRecord, decision: 'approved' | 'rejected') => {
+    setBusyUid(employer.uid);
+    setError('');
+    setDetailsError('');
     setNotice('');
     try {
-      const token = await auth.currentUser.getIdToken();
-      await reviewEmployer(token, uid, decision, notes);
-      const previousStatus = employers.find((employer) => employer.uid === uid)?.status;
+      await reviewEmployer(await token(), employer.uid, decision, decision === 'rejected' ? reason.trim() : undefined);
       setNotice(decision === 'approved'
-        ? previousStatus === 'pending' ? 'Company approved.' : 'Company reactivated.'
-        : previousStatus === 'pending' ? 'Application rejected.' : 'Company suspended.');
-      setSuspendingUid(null);
-      setSuspendReason('');
+        ? employer.status === 'pending' ? 'Company approved.' : 'Company reactivated.'
+        : employer.status === 'pending' ? 'Application rejected.' : 'Company suspended.');
+      setReasonUid(null);
+      setReason('');
+      if (selectedUid === employer.uid) setDetailsRefresh((current) => current + 1);
       await load(true);
-    } catch (err) {
-      setError((err as Error).message);
+    } catch (caught) {
+      const message = (caught as Error).message;
+      if (selectedUid === employer.uid) setDetailsError(message);
+      else setError(message);
     } finally {
       setBusyUid(null);
     }
   };
 
-  return (
-    <div className="employers-panel">
-      {notice && <div className="banner success">{notice}</div>}
-      {error && <div className="banner error">{error}</div>}
-
-      {/* Filter and Search Bar */}
-      <div className="panel-controls">
-        <button type="button" className="text-button panel-refresh" disabled={loading || loadingMore || refreshing} onClick={() => void load(true)}>{refreshing ? 'Refreshing…' : 'Refresh'}</button>
-        <div className="filter-tabs">
-          {(['pending', 'approved', 'rejected', 'all'] as const).map((filter) => (
-            <button
-              key={filter}
-              className={`filter-tab ${statusFilter === filter ? 'active' : ''}`}
-              onClick={() => setStatusFilter(filter)}
-            >
-              {filter === 'pending' ? 'Needs review' : filter === 'approved' ? 'Approved' : filter === 'rejected' ? 'Rejected / suspended' : 'All companies'}
-            </button>
-          ))}
+  const actions = (employer: EmployerRecord) => {
+    const isBusy = busyUid === employer.uid;
+    if (reasonUid === employer.uid) {
+      return <div className="employer-reason-form">
+        <label htmlFor={`employer-reason-${employer.uid}`}>{employer.status === 'pending' ? 'Rejection reason' : 'Suspension reason'}</label>
+        <input id={`employer-reason-${employer.uid}`} value={reason} maxLength={500}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="Enter a reason (at least 3 characters)" autoFocus />
+        <div className="employer-action-buttons">
+          <button className="row-action danger-action" disabled={isBusy || reason.trim().length < 3}
+            onClick={() => void moderate(employer, 'rejected')}>{isBusy ? 'Saving…' : 'Confirm'}</button>
+          <button className="row-action" disabled={isBusy} onClick={() => { setReasonUid(null); setReason(''); }}>Cancel</button>
         </div>
+      </div>;
+    }
+    return <div className="employer-action-buttons">
+      {employer.status !== 'approved' &&
+        <button className="row-action" disabled={isBusy} onClick={() => void moderate(employer, 'approved')}>
+          {isBusy ? 'Saving…' : employer.status === 'pending' ? 'Approve' : 'Reactivate'}
+        </button>}
+      {(employer.status === 'pending' || employer.status === 'approved') &&
+        <button className="row-action danger-action" disabled={isBusy}
+          onClick={() => { setReasonUid(employer.uid); setReason(''); }}>
+          {employer.status === 'pending' ? 'Reject' : 'Suspend'}
+        </button>}
+    </div>;
+  };
 
-        <div className="search-box">
-          <input
-            aria-label="Search companies"
-            type="text"
-            placeholder="Search company, phone, contact or district..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          {search && (
-            <button className="clear-btn" type="button" aria-label="Clear search" onClick={() => setSearch('')}>×</button>
-          )}
-        </div>
+  if (selectedUid) {
+    return <section className="job-seeker-detail-page employer-detail-page" aria-busy={detailsLoading}>
+      <div className="job-seeker-detail-toolbar">
+        <button className="text-button" onClick={() => { setSelectedUid(null); setReasonUid(null); setReason(''); }}>← Back to employers</button>
+        <button className="text-button" disabled={detailsLoading} onClick={() => setDetailsRefresh((current) => current + 1)}>
+          {detailsLoading ? 'Refreshing…' : 'Refresh details'}
+        </button>
       </div>
-
-      {loading ? (
-        <div className="company-cards-grid" aria-busy="true" aria-label="Loading company directory">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="company-card skeleton-card">
-              <div className="company-card-header">
-                <div style={{ flex: 1 }}>
-                  <span className="skeleton-bone" style={{ width: `${58 - (i % 2) * 12}%`, height: '20px', marginBottom: '10px' }} />
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <span className="skeleton-bone" style={{ width: '80px', height: '20px', borderRadius: '4px' }} />
-                    <span className="skeleton-bone" style={{ width: '100px', height: '20px', borderRadius: '4px' }} />
-                  </div>
-                </div>
-                <span className="skeleton-bone" style={{ width: '74px', height: '22px', borderRadius: '4px' }} />
-              </div>
-
-              <div className="company-details-grid">
-                <div className="detail-item">
-                  <span className="skeleton-bone" style={{ width: '90px', height: '10px', marginBottom: '8px' }} />
-                  <span className="skeleton-bone" style={{ width: '130px', height: '15px' }} />
-                </div>
-                <div className="detail-item">
-                  <span className="skeleton-bone" style={{ width: '95px', height: '10px', marginBottom: '8px' }} />
-                  <span className="skeleton-bone" style={{ width: '115px', height: '15px' }} />
-                </div>
-                <div className="detail-item">
-                  <span className="skeleton-bone" style={{ width: '80px', height: '10px', marginBottom: '8px' }} />
-                  <span className="skeleton-bone" style={{ width: '150px', height: '15px' }} />
-                </div>
-                <div className="detail-item">
-                  <span className="skeleton-bone" style={{ width: '110px', height: '10px', marginBottom: '8px' }} />
-                  <span className="skeleton-bone" style={{ width: '100px', height: '15px' }} />
-                </div>
-                <div className="detail-item full-width">
-                  <span className="skeleton-bone" style={{ width: '60px', height: '10px', marginBottom: '8px' }} />
-                  <span className="skeleton-bone" style={{ width: '85%', height: '15px' }} />
-                </div>
-              </div>
-
-              <div className="company-card-actions" style={{ display: 'flex', gap: '8px', paddingTop: '12px', borderTop: '1px solid #f0f3f6' }}>
-                <span className="skeleton-bone" style={{ width: '120px', height: '36px', borderRadius: '6px' }} />
-                <span className="skeleton-bone" style={{ width: '100px', height: '36px', borderRadius: '6px' }} />
-              </div>
-            </div>
-          ))}
+      {detailsError && <div className="banner error" role="alert">{detailsError}</div>}
+      {notice && <div className="banner success" role="status">{notice}</div>}
+      {detailsLoading && !details && <div className="panel-loading">Loading company profile…</div>}
+      {!detailsLoading && !details && <button className="secondary-button" onClick={() => setDetailsRefresh((current) => current + 1)}>Try again</button>}
+      {details && <>
+        <header className="job-seeker-profile-header">
+          <div className="job-seeker-avatar employer-avatar" aria-hidden="true">{(details.companyName || 'C').charAt(0).toUpperCase()}
+            {details.logoUrl && <img src={details.logoUrl} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
+          </div>
+          <div className="job-seeker-profile-title">
+            <p className="section-eyebrow">EMPLOYER PROFILE</p>
+            <h2>{details.companyName || 'Unnamed company'}</h2>
+            <p>{[details.industry, details.district, details.state].filter(Boolean).join(' · ') || details.email}</p>
+          </div>
+          <div className="job-seeker-profile-actions"><Status status={details.status} /></div>
+        </header>
+        <div className="employer-detail-review job-seeker-detail-section">
+          <div><h3>Account review</h3>
+            <p>{details.status === 'pending' ? 'Review this company before it can use the employer portal.' :
+              details.status === 'approved' ? 'This company can use the employer portal.' :
+              details.status === 'suspended' ? 'This company cannot use the employer portal.' : 'This application was rejected.'}</p>
+            {details.rejectionReason && <p className="employer-review-reason"><strong>Reason:</strong> {details.rejectionReason}</p>}
+          </div>
+          {actions(details)}
         </div>
-      ) : employers.length === 0 ? (
-        <div className="empty-panel">
-          <p>{error ? "Companies could not be loaded. Use Refresh to try again." : "No companies found in this section."}</p>
+        <div className="job-seeker-account-meta">
+          <DetailField label="Email verification" entry={details.emailVerified ? 'Verified' : 'Unverified'} />
+          <DetailField label="Account created" entry={date(details.createdAt)} />
+          <DetailField label="Last sign in" entry={date(details.lastSignInAt)} />
+          <DetailField label="Reviewed" entry={date(details.reviewedAt)} />
         </div>
-      ) : (
-        <div className="company-cards-grid">
-          {employers.map((emp) => {
-            const isBusy = busyUid === emp.uid;
-            return (
-              <div key={emp.uid} className={`company-card status-${emp.status}`}>
-                <div className="company-card-header">
-                  <div>
-                    <h3 className="company-title">{emp.companyName || 'Unnamed Business'}</h3>
-                    <span className="industry-pill">{emp.industry || 'General Business'}</span>
-                    <span className="location-pill">{emp.district ? `${emp.district}, ${emp.state}` : 'Tamil Nadu'}</span>
-                  </div>
-                  <span className={`status-pill pill-${emp.status}`}>
-                    {emp.status === 'approved'
-                      ? '✓ Active'
-                      : emp.status === 'rejected'
-                      ? '✕ Suspended'
-                      : '⏳ Pending'}
-                  </span>
-                </div>
-
-                <div className="company-details-grid">
-                  <div className="detail-item">
-                    <span className="detail-label">Recruiter / Contact</span>
-                    <span className="detail-value">{emp.contactName} ({emp.designation || 'HR'})</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="detail-label">Phone & WhatsApp</span>
-                    <span className="detail-value">
-                      <a href={`tel:${emp.phone}`}>{emp.phone}</a>
-                      {emp.whatsappPhone && emp.whatsappPhone !== emp.phone && (
-                        <span> · WA: <a href={`https://wa.me/91${emp.whatsappPhone}`} target="_blank" rel="noreferrer">{emp.whatsappPhone}</a></span>
-                      )}
-                    </span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="detail-label">Account Email</span>
-                    <span className="detail-value">{emp.email}</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="detail-label">GSTIN / Registration</span>
-                    <span className="detail-value">{emp.registrationNumber || 'Not provided'}</span>
-                  </div>
-                  <div className="detail-item full-width">
-                    <span className="detail-label">Address</span>
-                    <span className="detail-value">{emp.address || 'Address not provided'} {emp.postalCode ? `- ${emp.postalCode}` : ''}</span>
-                  </div>
-                  {emp.rejectionReason && (
-                    <div className="detail-item full-width rejection-box">
-                      <span className="detail-label">Suspension Reason</span>
-                      <span className="detail-value">{emp.rejectionReason}</span>
-                    </div>
-                  )}
-                  {emp.status === 'approved' && (
-                    <div className="detail-item full-width approved-box">
-                      <span className="detail-label">Plan & Posting Status</span>
-                      <span className="detail-value">
-                        {emp.postingCredits} posting credit{emp.postingCredits === 1 ? '' : 's'} available (Plan: {emp.activePlan})
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Moderation Actions */}
-                <div className="company-card-actions">
-                  {suspendingUid === emp.uid ? (
-                    <div className="rejection-form">
-                      <input
-                        type="text"
-                        aria-label="Reason for rejection or suspension"
-                        required
-                        placeholder="Reason for suspension (e.g. Scammer, illegal fee asked, fake job)"
-                        value={suspendReason}
-                        onChange={(e) => setSuspendReason(e.target.value)}
-                        autoFocus
-                      />
-                      <div className="rejection-form-buttons">
-                        <button
-                          className="danger-button"
-                          disabled={isBusy || suspendReason.trim().length < 3}
-                          onClick={() => void handleModeration(emp.uid, 'rejected', suspendReason)}
-                        >
-                          Confirm Suspend
-                        </button>
-                        <button
-                          className="text-button"
-                          onClick={() => { setSuspendingUid(null); setSuspendReason(''); }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      {emp.status === 'approved' ? (
-                        <button
-                          className="reject-button"
-                          disabled={isBusy}
-                          onClick={() => setSuspendingUid(emp.uid)}
-                        >
-                          ✕ Suspend Company
-                        </button>
-                      ) : (
-                        <button
-                          className="approve-button"
-                          disabled={isBusy}
-                          onClick={() => void handleModeration(emp.uid, 'approved')}
-                        >
-                          {isBusy ? 'Updating...' : emp.status === 'pending' ? 'Approve company' : 'Reactivate company'}
-                        </button>
-                      )}
-                      {emp.status === 'pending' && (
-                        <button className="reject-button" disabled={isBusy} onClick={() => setSuspendingUid(emp.uid)}>
-                          Reject application
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+        <div className="job-seeker-detail-grid">
+          <section className="job-seeker-detail-section"><h3>Subscriptions and quota</h3>
+            {details.subscriptions.length === 0 ? <p>No subscription purchases recorded.</p> :
+              details.subscriptions.map((subscription) => <div className="employer-subscription-row" key={subscription.id}>
+                <strong>{subscription.plan_name} · {subscription.status}</strong>
+                <span>{subscription.used_posts} of {subscription.total_posts} posts used</span>
+                <small>{date(subscription.starts_at)} to {date(subscription.expires_at)}</small>
+              </div>)}
+            {details.subscriptions.some((subscription) => subscription.status === 'active' && new Date(subscription.expires_at) > new Date()) &&
+              <form className="employer-quota-form" onSubmit={async (event) => {
+                event.preventDefault();
+                const delta = Number(quotaChange);
+                if (!Number.isInteger(delta) || delta === 0 || quotaReason.trim().length < 5) return;
+                setBusyUid(details.uid); setDetailsError(''); setNotice('');
+                try {
+                  await adjustEmployerQuota(await token(), details.uid, delta, quotaReason.trim());
+                  setQuotaChange(''); setQuotaReason(''); setNotice('Quota updated and logged.');
+                  setDetailsRefresh((current) => current + 1);
+                  await load(true);
+                } catch (caught) { setDetailsError((caught as Error).message); }
+                finally { setBusyUid(null); }
+              }}>
+                <label>Adjust total posts (+ or −)<input type="number" step="1" required value={quotaChange}
+                  onChange={(event) => setQuotaChange(event.target.value)} /></label>
+                <label>Reason<input required minLength={5} maxLength={500} value={quotaReason}
+                  onChange={(event) => setQuotaReason(event.target.value)} /></label>
+                <button className="row-action" disabled={busyUid === details.uid}>Save quota change</button>
+              </form>}
+          </section>
+          <section className="job-seeker-detail-section"><h3>Payment history</h3>
+            {details.orders.length === 0 ? <p>No payment orders yet.</p> :
+              details.orders.map((order) => <div className="employer-subscription-row" key={order.id}>
+                <strong>{order.plan_name} · ₹{(order.amount_paise / 100).toLocaleString('en-IN')}</strong>
+                <span>{order.status} · GST ₹{(order.tax_paise / 100).toFixed(2)}</span>
+                <small>{date(order.paid_at || order.created_at)} · {order.id}</small>
+              </div>)}
+          </section>
+          <section className="job-seeker-detail-section"><h3>Recruiter and contact</h3><div className="job-seeker-fields">
+            <DetailField label="Recruiter name" entry={details.contactName} />
+            <DetailField label="Designation" entry={details.designation} />
+            <DetailField label="Account email" entry={details.email} />
+            <DetailField label="Mobile number" entry={details.phone} />
+            <DetailField label="WhatsApp number" entry={details.whatsappPhone} />
+            <DetailField label="WhatsApp contact" entry={details.whatsappSameAsPhone ? 'Same as mobile' : 'Separate number'} />
+          </div></section>
+          <section className="job-seeker-detail-section"><h3>Company information</h3><div className="job-seeker-fields">
+            <DetailField label="Company name" entry={details.companyName} />
+            <DetailField label="Industry" entry={details.industry} />
+            <DetailField label="Company size" entry={details.companySize} />
+            <DetailField label="Registration / GSTIN" entry={details.registrationNumber} />
+            <DetailField label="Website" entry={details.website} />
+            <DetailField label="About the company" entry={details.description} />
+          </div></section>
+          <section className="job-seeker-detail-section"><h3>Location and address</h3><div className="job-seeker-fields">
+            <DetailField label="Street address" entry={details.address} />
+            <DetailField label="City" entry={details.city} />
+            <DetailField label="District" entry={details.district} />
+            <DetailField label="State" entry={details.state} />
+            <DetailField label="Postal code" entry={details.postalCode} />
+          </div></section>
+          <section className="job-seeker-detail-section"><h3>Hiring account</h3><div className="job-seeker-fields">
+            <DetailField label="Account access" entry={details.accountStatus} />
+            <DetailField label="Posting credits" entry={details.postingCredits} />
+            <DetailField label="Plan" entry={details.activePlanName || details.activePlan} />
+            <DetailField label="Plan tier" entry={details.planTier} />
+            <DetailField label="Plan reach" entry={details.planReach} />
+            <DetailField label="Listing duration" entry={details.listingDays ? `${details.listingDays} days` : ''} />
+            <DetailField label="Credits expire" entry={date(details.creditsExpireAt)} />
+            <DetailField label="Last profile update" entry={date(details.updatedAt)} />
+          </div></section>
         </div>
-      )}
-      {!loading && nextCursor && (
-        <div className="pagination-row"><button className="text-button" disabled={loadingMore} onClick={async () => {
-          if (!auth?.currentUser || !nextCursor) return;
-          const currentRequest = requestId.current;
-          try {
-            setLoadingMore(true);
-            const result = await listEmployers(await auth.currentUser.getIdToken(), statusFilter, search, nextCursor);
-            if (currentRequest !== requestId.current) return;
-            setEmployers((current) => [...current, ...result.employers]);
-            setNextCursor(result.nextCursor);
-          } catch (err) { if (currentRequest === requestId.current) setError((err as Error).message); }
-          finally { setLoadingMore(false); }
-        }}>{loadingMore ? 'Loading more…' : 'Load more companies'}</button></div>
-      )}
+      </>}
+    </section>;
+  }
+
+  return <div className="employers-panel">
+    {notice && <div className="banner success" role="status">{notice}</div>}
+    {error && <div className="banner error" role="alert">{error}</div>}
+    <div className="panel-controls">
+      <div className="filter-tabs" aria-label="Filter companies">
+        {(['pending', 'approved', 'rejected', 'all'] as const).map((filter) =>
+          <button key={filter} type="button" className={`filter-tab ${statusFilter === filter ? 'active' : ''}`}
+            aria-pressed={statusFilter === filter} onClick={() => setStatusFilter(filter)}>
+            {filter === 'pending' ? 'Needs review' : filter === 'approved' ? 'Approved' : filter === 'rejected' ? 'Rejected / suspended' : 'All companies'}
+          </button>)}
+      </div>
+      <div className="search-box">
+        <input aria-label="Search companies" type="search" placeholder="Search company, contact or district"
+          value={search} onChange={(event) => setSearch(event.target.value)} />
+      </div>
+      <button type="button" className="text-button panel-refresh" disabled={loading || loadingMore || refreshing}
+        onClick={() => void load(true)}>{refreshing ? 'Refreshing…' : 'Refresh'}</button>
     </div>
-  );
+    {loading && <div className="panel-loading" aria-busy="true">Loading companies…</div>}
+    {!loading && employers.length === 0 && <div className="empty-panel">
+      <p>{error ? 'Companies could not be loaded. Use Refresh to try again.' : 'No companies found in this section.'}</p>
+    </div>}
+    {!loading && employers.length > 0 && <div className="operations-table-wrap">
+      <table className="operations-table employers-table">
+        <thead><tr><th>Company</th><th>Recruiter</th><th>Location</th><th>Submitted</th><th>Status</th><th>Details</th><th>Action</th></tr></thead>
+        <tbody>{employers.map((employer) => <tr key={employer.uid}>
+          <td data-label="Company"><strong>{employer.companyName || 'Unnamed company'}</strong><small>{employer.industry || employer.email || 'Industry not provided'}</small></td>
+          <td data-label="Recruiter"><strong>{employer.contactName || 'Not provided'}</strong><small>{employer.designation || employer.email || ''}</small></td>
+          <td data-label="Location">{[employer.district, employer.state].filter(Boolean).join(', ') || 'Not provided'}</td>
+          <td data-label="Submitted">{date(employer.createdAt)}</td>
+          <td data-label="Status"><Status status={employer.status} /></td>
+          <td data-label="Details"><button className="row-action employer-view-button" onClick={() => openDetails(employer.uid)}>View profile</button></td>
+          <td data-label="Action">{actions(employer)}</td>
+        </tr>)}</tbody>
+      </table>
+    </div>}
+    {!loading && nextCursor && <div className="pagination-row">
+      <button className="text-button" disabled={loadingMore} onClick={async () => {
+        if (!nextCursor) return;
+        const currentRequest = requestId.current;
+        setLoadingMore(true);
+        try {
+          const result = await listEmployers(await token(), statusFilter, search, nextCursor);
+          if (currentRequest !== requestId.current) return;
+          setEmployers((current) => [...current, ...result.employers]);
+          setNextCursor(result.nextCursor);
+        } catch (caught) {
+          if (currentRequest === requestId.current) setError((caught as Error).message);
+        } finally { setLoadingMore(false); }
+      }}>{loadingMore ? 'Loading more…' : 'Load more companies'}</button>
+    </div>}
+  </div>;
 }

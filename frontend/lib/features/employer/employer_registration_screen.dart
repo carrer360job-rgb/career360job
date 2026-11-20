@@ -5,18 +5,19 @@ import '../../core/responsive/responsive_layout.dart';
 import '../../core/services/employer_service.dart';
 import '../../core/services/app_auth_bridge.dart';
 import '../../core/services/location_service.dart';
+import '../../core/theme/app_theme.dart';
 import '../../core/widgets/bouncy_button.dart';
 import '../../data/models/employer_profile.dart';
 
 /// Company Registration — 3-Screen UI/UX Flow
-/// Replicates the exact visual patterns from the Candidate Personal Info screen:
+/// Replicates the exact visual patterns from DESIGN.md:
 /// - Clean white canvas with no redundant card-in-card wrapping
 /// - Centered title in deep navy with back arrow
-/// - Floating circular step numbers (1 ── 2 ── 3) directly under title
+/// - Floating circular step numbers (1 ── 2 ── 3) in Emerald Green
 /// - Bold labels above outlined rounded inputs with muted outline icons
 /// - Radio selector rows for WhatsApp Contact
-/// - Blue "Detect Location" button + "─── OR ───" divider + Outlined Dropdown pickers
-/// - Bottom bar: "< Back" on left, blue "Continue →" pill button on right
+/// - Emerald "Detect Current Location" button + "─── OR ───" divider + Outlined Dropdown pickers
+/// - Bottom bar: "< Back" on left, solid Emerald "Continue →" pill button on right
 class EmployerRegistrationScreen extends StatefulWidget {
   final VoidCallback onSignOut;
   final VoidCallback onSubmissionStarted;
@@ -42,16 +43,21 @@ class EmployerRegistrationScreen extends StatefulWidget {
 
 class _EmployerRegistrationScreenState
     extends State<EmployerRegistrationScreen> {
-  // Theme Design Tokens from Candidate UI Screenshot
-  static const Color _primaryBlue = Color(0xFF155EEF);
-  static const Color _textDark = Color(0xFF0F172A);
-  static const Color _textSecondary = Color(0xFF475569);
+  // Theme Design Tokens from DESIGN.md (Emerald Growth & Pine Green)
+  static const Color _primaryEmerald = AppTheme.primary; // 0xFF16A34A
+  static const Color _primaryDark = AppTheme.primaryDark; // 0xFF065F46
+  static const Color _primaryLight = AppTheme.primaryLight; // 0xFFF0FDF4
+  static const Color _primaryLightBorder = AppTheme.primaryLightBorder; // 0xFFDCFCE7
+  static const Color _textDark = AppTheme.textPrimary; // 0xFF172B40
+  static const Color _textSecondary = AppTheme.textSecondary; // 0xFF64748B
   static const Color _textMuted = Color(0xFF94A3B8);
   static const Color _inputBorder = Color(0xFFD0D5DD);
   static const Color _stepInactive = Color(0xFFE2E8F0);
-  static const Color _successGreen = Color(0xFF16A34A);
-  static const Color _successLight = Color(0xFFDCFCE7);
-  static const Color _errorRed = Color(0xFFDC2626);
+  static const Color _successGreen = AppTheme.primary; // 0xFF16A34A
+  static const Color _successLight = AppTheme.primaryLightBorder; // 0xFFDCFCE7
+  static const Color _errorRed = AppTheme.error; // 0xFFDC2626
+  // Backward compatibility alias
+  static const Color _primaryBlue = AppTheme.primary;
 
   // Dropdown Options
   static const _designations = [
@@ -358,7 +364,7 @@ class _EmployerRegistrationScreenState
               builder: (_, scrollController) {
                 return Column(
                   children: [
-                    // Solid Blue Header Bar (Matching Job Seeker screenshot)
+                    // Solid Emerald Header Bar (Matching DESIGN.md)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(
@@ -366,7 +372,7 @@ class _EmployerRegistrationScreenState
                         vertical: 12,
                       ),
                       decoration: const BoxDecoration(
-                        color: _primaryBlue,
+                        color: _primaryEmerald,
                         borderRadius: BorderRadius.vertical(
                           top: Radius.circular(20),
                         ),
@@ -427,7 +433,7 @@ class _EmployerRegistrationScreenState
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                             borderSide: const BorderSide(
-                              color: _primaryBlue,
+                              color: _primaryEmerald,
                               width: 1.5,
                             ),
                           ),
@@ -438,7 +444,7 @@ class _EmployerRegistrationScreenState
                       ),
                     ),
 
-                    // Custom entry card if typed and no exact match (Exact match to Job Seeker screenshot)
+                    // Custom entry card if typed and no exact match (Matching DESIGN.md)
                     if (searchQuery.trim().isNotEmpty &&
                         !filtered.any(
                           (it) =>
@@ -451,15 +457,15 @@ class _EmployerRegistrationScreenState
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFEFF6FF),
+                          color: _primaryLight,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFFBFDBFE)),
+                          border: Border.all(color: _primaryLightBorder),
                         ),
                         child: ListTile(
                           dense: true,
                           leading: const CircleAvatar(
                             radius: 14,
-                            backgroundColor: _primaryBlue,
+                            backgroundColor: _primaryEmerald,
                             child: Icon(
                               Icons.add_rounded,
                               color: Colors.white,
@@ -469,7 +475,7 @@ class _EmployerRegistrationScreenState
                           title: Text(
                             'Use "${searchQuery.trim()}"',
                             style: const TextStyle(
-                              color: _primaryBlue,
+                              color: _primaryDark,
                               fontWeight: FontWeight.w700,
                               fontSize: 14,
                             ),
@@ -511,7 +517,7 @@ class _EmployerRegistrationScreenState
                           : ListView.separated(
                               controller: scrollController,
                               keyboardDismissBehavior:
-                                  ScrollViewKeyboardDismissBehavior.onDrag,
+                                   ScrollViewKeyboardDismissBehavior.onDrag,
                               itemCount: filtered.length,
                               separatorBuilder: (context, index) =>
                                   const Divider(
@@ -524,13 +530,13 @@ class _EmployerRegistrationScreenState
                                 return ListTile(
                                   dense: true,
                                   tileColor: isSelected
-                                      ? const Color(0xFFEFF8FF)
+                                      ? _primaryLight
                                       : Colors.transparent,
                                   leading: Icon(
                                     itemIcon ?? Icons.location_on_outlined,
                                     size: 20,
                                     color: isSelected
-                                        ? _primaryBlue
+                                        ? _primaryEmerald
                                         : const Color(0xFF64748B),
                                   ),
                                   title: Text(
@@ -541,14 +547,14 @@ class _EmployerRegistrationScreenState
                                           ? FontWeight.w700
                                           : FontWeight.w500,
                                       color: isSelected
-                                          ? _primaryBlue
+                                          ? _primaryDark
                                           : const Color(0xFF1E293B),
                                     ),
                                   ),
                                   trailing: isSelected
                                       ? const Icon(
                                           Icons.check_rounded,
-                                          color: _primaryBlue,
+                                          color: _primaryEmerald,
                                           size: 18,
                                         )
                                       : null,
@@ -1069,7 +1075,7 @@ class _EmployerRegistrationScreenState
         ),
         const SizedBox(height: 18),
 
-        // Your Location* (Blue Button from Screenshot)
+        // Your Location* (Emerald Button matching Candidate screen)
         _buildFieldLabel('Your Location*'),
         const SizedBox(height: 6),
         SizedBox(
@@ -1081,8 +1087,15 @@ class _EmployerRegistrationScreenState
             child: Container(
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: _primaryBlue,
+                color: _primaryEmerald,
                 borderRadius: BorderRadius.circular(10),
+                boxShadow: [
+                  BoxShadow(
+                    color: _primaryEmerald.withValues(alpha: 0.22),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
               ),
               child: _detectingLocation
                   ? const SizedBox(
@@ -1093,12 +1106,27 @@ class _EmployerRegistrationScreenState
                         color: Colors.white,
                       ),
                     )
-                  : const Text(
-                      'Detect Location',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
+                  : const FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.my_location_rounded,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'Detect Current Location',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
             ),
@@ -1432,7 +1460,7 @@ class _EmployerRegistrationScreenState
             ),
           ),
 
-          // Right side: Blue Continue Pill Button
+          // Right side: Emerald Continue / Register Pill Button
           Flexible(
             flex: 2,
             child: BouncyButton(
@@ -1445,15 +1473,15 @@ class _EmployerRegistrationScreenState
                 ),
                 decoration: BoxDecoration(
                   color: isStepReady
-                      ? _primaryBlue
-                      : _primaryBlue.withValues(alpha: 0.5),
+                      ? _primaryEmerald
+                      : const Color(0xFFA7F3D0),
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: isStepReady
                       ? [
                           BoxShadow(
-                            color: _primaryBlue.withValues(alpha: 0.25),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
+                            color: _primaryEmerald.withValues(alpha: 0.28),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
                           ),
                         ]
                       : null,
@@ -1476,18 +1504,22 @@ class _EmployerRegistrationScreenState
                                       ? 'Save changes'
                                       : 'Register Company ✓')
                                 : 'Continue',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 14.5,
                               fontWeight: FontWeight.w700,
-                              color: Colors.white,
+                              color: isStepReady
+                                  ? Colors.white
+                                  : const Color(0xFF065F46).withValues(alpha: 0.65),
                             ),
                           ),
                           if (_step < 2) ...[
                             const SizedBox(width: 6),
-                            const Icon(
-                              Icons.arrow_forward,
+                            Icon(
+                              Icons.arrow_forward_rounded,
                               size: 16,
-                              color: Colors.white,
+                              color: isStepReady
+                                  ? Colors.white
+                                  : const Color(0xFF065F46).withValues(alpha: 0.65),
                             ),
                           ],
                         ],

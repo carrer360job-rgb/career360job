@@ -38,7 +38,7 @@ async function adminRequest<T>(token: string, path: string, method = 'GET', body
 }
 
 export type PlanDraft = {
-  name: string; tier: 'standard' | 'featured' | 'elite'; badge: string;
+  name: string; tier: 'monthly' | 'quarterly' | 'yearly'; badge: string;
   pricePaise: number; taxMode: 'inclusive' | 'exclusive'; taxRateBps: number;
   jobCredits: number; listingDays: number; creditValidityDays: number;
   profileUnlockLimit: number; reach: 'district' | 'statewide'; sortOrder: number;
@@ -86,13 +86,34 @@ export type EmployerRecord = {
   address: string;
   postalCode: string;
   registrationNumber: string;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'suspended';
   postingCredits: number;
   activePlan: string;
   rejectionReason: string | null;
   reviewedBy: string | null;
   createdAt: string | null;
   reviewedAt: string | null;
+};
+
+export type EmployerDetails = EmployerRecord & {
+  logoUrl: string;
+  whatsappSameAsPhone: boolean;
+  website: string;
+  description: string;
+  city: string;
+  accountStatus: string;
+  emailVerified: boolean;
+  lastSignInAt: string | null;
+  activePlanName: string;
+  planTier: string;
+  planReach: string;
+  listingDays: number;
+  creditsExpireAt: string | null;
+  updatedAt: string | null;
+  subscriptions: Array<{ id: string; plan_name: string; total_posts: number; used_posts: number;
+    starts_at: string; expires_at: string; status: string; order_id: string | null }>;
+  orders: Array<{ id: string; plan_name: string; amount_paise: number; tax_paise: number;
+    status: string; created_at: string; paid_at: string | null }>;
 };
 
 export type JobRecord = {
@@ -122,6 +143,13 @@ export const listEmployers = (token: string, status = 'all', search = '', cursor
     `/employers?status=${encodeURIComponent(status)}&search=${encodeURIComponent(search)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`
   );
 
+export const getEmployer = (token: string, uid: string) =>
+  adminRequest<{ employer: EmployerDetails }>(token, `/employers/${encodeURIComponent(uid)}`);
+
+export const adjustEmployerQuota = (token: string, uid: string, delta: number, reason: string) =>
+  adminRequest<{ totalPosts: number; usedPosts: number }>(
+    token, `/employers/${encodeURIComponent(uid)}/quota`, 'POST', { delta, reason });
+
 export const reviewEmployer = (token: string, uid: string, decision: 'approved' | 'rejected', notes?: string) =>
   adminRequest<{ uid: string; status: string }>(
     token,
@@ -139,13 +167,31 @@ export const listJobs = (token: string, status = 'all', search = '', cursor?: st
 export const closeJob = (token: string, jobId: string) =>
   adminRequest<{ status: string }>(token, `/jobs/${encodeURIComponent(jobId)}/close`, 'POST');
 
-export type AdminUser = { uid: string; email: string; displayName: string; role: string;
+export type JobSeekerRecord = { uid: string; email: string; displayName: string;
   disabled: boolean; emailVerified: boolean; createdAt: string | null; lastSignInAt: string | null };
-export const listUsers = (token: string, search = '', pageToken?: string) => adminRequest<{
-  users: AdminUser[]; nextPageToken: string | null;
-}>(token, `/users?search=${encodeURIComponent(search)}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`);
+export type JobSeekerDetails = Omit<JobSeekerRecord, 'displayName'> & {
+  phone: string;
+  profile: {
+    fullName: string;
+    district: string;
+    personalDetails: Record<string, unknown>;
+    education: Record<string, unknown>;
+    preferredJobTitles: string[];
+    experience: Record<string, unknown>;
+    profilePhotoUrl: string | null;
+    onboardingStep: number;
+    onboardingCompletedAt: string | null;
+    createdAt: string | null;
+    updatedAt: string | null;
+  };
+};
+export const listJobSeekers = (token: string, search = '', pageToken?: string) => adminRequest<{
+  jobSeekers: JobSeekerRecord[]; nextPageToken: string | null;
+}>(token, `/job-seekers?search=${encodeURIComponent(search)}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`);
+export const getJobSeeker = (token: string, uid: string) =>
+  adminRequest<{ jobSeeker: JobSeekerDetails }>(token, `/job-seekers/${encodeURIComponent(uid)}`);
 export const setUserDisabled = (token: string, uid: string, disabled: boolean, reason = '') =>
-  adminRequest<{ uid: string; disabled: boolean }>(token, `/users/${encodeURIComponent(uid)}/status`, 'POST', { disabled, reason });
+  adminRequest<{ uid: string; disabled: boolean; status: 'ACTIVE' | 'SUSPENDED' }>(token, `/users/${encodeURIComponent(uid)}/status`, 'POST', { disabled, reason });
 
 export type PaymentRecord = { id: string; employerUid: string; planId: string; planName: string;
   amountPaise: number; basePaise: number; taxPaise: number; taxMode: string; taxRateBps: number;

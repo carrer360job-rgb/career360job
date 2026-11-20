@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getStats, listEmployers, type EmployerRecord, type PlatformStats } from './api';
 import { getAccessToken } from './supabase';
 
-type Destination = 'employers' | 'jobs' | 'users' | 'plans' | 'reports' | 'payments';
+type Destination = 'employers' | 'jobs' | 'jobseekers' | 'plans' | 'reports' | 'payments';
 type QueueItem = { id: string; title: string; detail: string; kind: string; destination: Destination };
 
 function shortDate(value: string | null | undefined) {
@@ -51,7 +51,7 @@ export default function StatsOverview({ onNavigateTab }: { onNavigateTab: (tab: 
     { label: 'Awaiting review', value: stats?.pendingEmployers, note: 'Employer accounts', destination: 'employers' },
     { label: 'Active employers', value: stats?.approvedEmployers, note: stats ? `${stats.totalEmployers} registered` : 'Registered employers', destination: 'employers' },
     { label: 'Live jobs', value: stats?.activeJobs, note: stats ? `${stats.totalJobs} total listings` : 'Total listings', destination: 'jobs' },
-    { label: 'Job seekers', value: stats?.totalCandidates, note: 'Registered candidates', destination: 'users' },
+    { label: 'Job seekers', value: stats?.totalCandidates, note: 'Registered candidates', destination: 'jobseekers' },
   ];
 
   return <div className="overview-content" aria-busy={loading}>

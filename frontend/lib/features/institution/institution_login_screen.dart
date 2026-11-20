@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
@@ -16,10 +17,7 @@ enum InstitutionAuthState { signIn, signUp, verifyEmail, forgotPassword }
 class InstitutionLoginScreen extends StatefulWidget {
   final VoidCallback onBack;
 
-  const InstitutionLoginScreen({
-    super.key,
-    required this.onBack,
-  });
+  const InstitutionLoginScreen({super.key, required this.onBack});
 
   @override
   State<InstitutionLoginScreen> createState() => _InstitutionLoginScreenState();
@@ -54,10 +52,12 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
   final TextEditingController _coordinatorNameController =
       TextEditingController();
   final TextEditingController _signUpEmailController = TextEditingController();
-  final TextEditingController _contactPhoneController = TextEditingController();
   final TextEditingController _signUpPasswordController =
       TextEditingController();
+  final TextEditingController _signUpConfirmPasswordController =
+      TextEditingController();
   bool _obscureSignUpPassword = true;
+  bool _obscureConfirmPassword = true;
   String? _selectedInstitutionType;
   bool _agreedToGuidelines = false;
 
@@ -65,12 +65,6 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
   final TextEditingController _emailOtpController = TextEditingController();
   final TextEditingController _forgotEmailController = TextEditingController();
   final TextEditingController _forgotOtpController = TextEditingController();
-  final TextEditingController _forgotNewPasswordController =
-      TextEditingController();
-  final TextEditingController _forgotConfirmPasswordController =
-      TextEditingController();
-  bool _obscureForgotNewPassword = true;
-  bool _obscureForgotConfirmPassword = true;
   int _forgotPasswordStep = 1;
   String? _pendingSignupEmail;
   Timer? _resendCooldownTimer;
@@ -119,13 +113,11 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
     _instNameController.dispose();
     _coordinatorNameController.dispose();
     _signUpEmailController.dispose();
-    _contactPhoneController.dispose();
     _signUpPasswordController.dispose();
+    _signUpConfirmPasswordController.dispose();
     _emailOtpController.dispose();
     _forgotEmailController.dispose();
     _forgotOtpController.dispose();
-    _forgotNewPasswordController.dispose();
-    _forgotConfirmPasswordController.dispose();
     _termsRecognizer.dispose();
     _privacyRecognizer.dispose();
     super.dispose();
@@ -155,8 +147,9 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
     _forgotResendCooldownTimer?.cancel();
     if (!mounted) return;
     setState(() => _forgotResendCountdown = seconds);
-    _forgotResendCooldownTimer =
-        Timer.periodic(const Duration(seconds: 1), (timer) {
+    _forgotResendCooldownTimer = Timer.periodic(const Duration(seconds: 1), (
+      timer,
+    ) {
       if (!mounted) {
         timer.cancel();
         return;
@@ -196,7 +189,11 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
         backgroundColor: _deepPine,
         content: Row(
           children: [
-            const Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
+            const Icon(
+              Icons.check_circle_outline,
+              color: Colors.white,
+              size: 20,
+            ),
             const SizedBox(width: 8),
             Expanded(child: Text(message)),
           ],
@@ -229,6 +226,7 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
     } on AuthException catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
+        if (SupabaseAuthService.isSuspendedSignInError(e)) return;
         _showError(e.message);
       }
     } catch (e) {
@@ -244,14 +242,15 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
     final instName = _instNameController.text.trim();
     final coordinator = _coordinatorNameController.text.trim();
     final email = _signUpEmailController.text.trim();
-    final phone = _contactPhoneController.text.trim();
     final password = _signUpPasswordController.text;
+    final confirmPassword = _signUpConfirmPasswordController.text;
 
     if (instName.isEmpty) {
       _showError('Please enter the Institution / College name.');
       return;
     }
-    if (_selectedInstitutionType == null || _selectedInstitutionType!.trim().isEmpty) {
+    if (_selectedInstitutionType == null ||
+        _selectedInstitutionType!.trim().isEmpty) {
       _showError('Please select your Institution Type.');
       return;
     }
@@ -263,12 +262,12 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
       _showError('Please enter a valid official campus email address.');
       return;
     }
-    if (phone.isNotEmpty && phone.length < 7) {
-      _showError('Please enter a valid contact phone number.');
-      return;
-    }
     if (password.length < 6) {
       _showError('Password must be at least 6 characters.');
+      return;
+    }
+    if (password != confirmPassword) {
+      _showError('Passwords do not match. Please check and try again.');
       return;
     }
     if (!_agreedToGuidelines) {
@@ -288,7 +287,6 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
           'institution_name': instName,
           'institution_type': _selectedInstitutionType,
           'coordinator_name': coordinator,
-          'institution_phone': phone,
         },
       );
 
@@ -311,7 +309,9 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
       if (mounted) {
         setState(() => _isLoading = false);
         _showError(
-          e is StateError ? e.message : 'Could not create institution account. Try again.',
+          e is StateError
+              ? e.message
+              : 'Could not create institution account. Try again.',
         );
       }
     }
@@ -323,7 +323,6 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
     final institutionName = _instNameController.text.trim();
     final institutionType = _selectedInstitutionType;
     final coordinatorName = _coordinatorNameController.text.trim();
-    final phone = _contactPhoneController.text.trim();
     if (_isLoading || email == null) return;
     if (!RegExp(r'^\d{6}$').hasMatch(code)) {
       _showError('Enter the 6-digit verification code from your email.');
@@ -344,7 +343,6 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
           'name': institutionName,
           'institution_type': institutionType,
           'coordinator_name': coordinatorName,
-          'phone': phone,
           'email': email,
           'updated_at': DateTime.now().toIso8601String(),
         }, onConflict: 'user_id');
@@ -355,8 +353,12 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
         setState(() => _isLoading = false);
         final msg = error.message.toLowerCase();
         if (msg.contains('expired')) {
-          _showError('This code has expired. Tap "Resend code" for a fresh code.');
-        } else if (msg.contains('invalid') || msg.contains('wrong') || msg.contains('incorrect')) {
+          _showError(
+            'This code has expired. Tap "Resend code" for a fresh code.',
+          );
+        } else if (msg.contains('invalid') ||
+            msg.contains('wrong') ||
+            msg.contains('incorrect')) {
           _showError('Incorrect 6-digit code. Please check your email.');
         } else {
           _showError(error.message);
@@ -366,7 +368,9 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
       if (mounted) {
         setState(() => _isLoading = false);
         _showError(
-          e is StateError ? e.message : 'The code could not be verified. Try again.',
+          e is StateError
+              ? e.message
+              : 'The code could not be verified. Try again.',
         );
       }
     }
@@ -380,7 +384,9 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
       _startResendCooldown(60);
       _showSuccess('Check $email for a new verification code.');
     } catch (e) {
-      _showError('Could not resend verification code. Please wait and try again.');
+      _showError(
+        'Could not resend verification code. Please wait and try again.',
+      );
     }
   }
 
@@ -393,6 +399,10 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isGoogleLoading = false);
+        if (SupabaseAuthService.isSuspendedSignInError(e)) {
+          unawaited(SupabaseAuthService.showSuspensionNotice());
+          return;
+        }
         _showError('Google sign-in could not be completed. Please try again.');
       }
     }
@@ -415,8 +425,6 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
           _isLoading = false;
           _forgotPasswordStep = 2;
           _forgotOtpController.clear();
-          _forgotNewPasswordController.clear();
-          _forgotConfirmPasswordController.clear();
         });
         _startForgotResendCooldown(60);
         _showSuccess('Verification code sent to $email.');
@@ -429,32 +437,21 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
     }
   }
 
-  Future<void> _handleVerifyForgotOtpAndResetPassword() async {
+  Future<void> _handleVerifyForgotOtp() async {
     if (_isLoading) return;
     final email = _forgotEmailController.text.trim();
     final otp = _forgotOtpController.text.trim();
-    final newPassword = _forgotNewPasswordController.text;
-    final confirmPassword = _forgotConfirmPasswordController.text;
 
     if (!RegExp(r'^\d{6}$').hasMatch(otp)) {
       _showError('Enter the 6-digit verification code from your email.');
       return;
     }
-    if (newPassword.length < 6) {
-      _showError('Password must be at least 6 characters.');
-      return;
-    }
-    if (newPassword != confirmPassword) {
-      _showError('Passwords do not match. Please check and try again.');
-      return;
-    }
-
     setState(() => _isLoading = true);
     try {
-      await _supabaseAuth.verifyPasswordResetOtpAndSetPassword(
+      await _supabaseAuth.verifyPasswordResetOtp(
         email: email,
         token: otp,
-        newPassword: newPassword,
+        role: PasswordRecoveryRole.institution,
       );
       if (mounted) {
         setState(() {
@@ -464,8 +461,6 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
           _signInEmailController.text = email;
           _signInPasswordController.clear();
         });
-        _showSuccess(
-            'Password reset successfully! Please sign in with your new password.');
       }
     } on AuthException catch (e) {
       if (mounted) {
@@ -473,7 +468,8 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
         final msg = e.message.toLowerCase();
         if (msg.contains('expired')) {
           _showError(
-              'This code has expired. Tap "Resend code" for a fresh code.');
+            'This code has expired. Tap "Resend code" for a fresh code.',
+          );
         } else if (msg.contains('invalid') ||
             msg.contains('wrong') ||
             msg.contains('incorrect')) {
@@ -485,9 +481,11 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        _showError(e is StateError
-            ? e.message
-            : 'Could not reset password. Please try again.');
+        _showError(
+          e is StateError
+              ? e.message
+              : 'Could not reset password. Please try again.',
+        );
       }
     }
   }
@@ -499,7 +497,8 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
       await _supabaseAuth.resendPasswordResetOtp(email: email);
       _startForgotResendCooldown(60);
       _showSuccess(
-          'A fresh 6-digit verification code has been sent to $email.');
+        'A fresh 6-digit verification code has been sent to $email.',
+      );
     } catch (e) {
       _showError('Could not resend code. Please wait and try again.');
     }
@@ -607,8 +606,12 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
                                       ),
                                     ],
                                   ),
-                                  padding:
-                                      const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    24,
+                                    28,
+                                    24,
+                                    24,
+                                  ),
                                   child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.stretch,
@@ -619,20 +622,23 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
                                           _screenState ==
                                               InstitutionAuthState.signUp) ...[
                                         _buildAuthTabs(
-                                          isSignIn: _screenState ==
+                                          isSignIn:
+                                              _screenState ==
                                               InstitutionAuthState.signIn,
                                         ),
                                         const SizedBox(height: 24),
                                       ],
 
                                       AnimatedSwitcher(
-                                        duration:
-                                            const Duration(milliseconds: 260),
+                                        duration: const Duration(
+                                          milliseconds: 260,
+                                        ),
                                         switchInCurve: Curves.easeOutCubic,
                                         switchOutCurve: Curves.easeInCubic,
                                         child: KeyedSubtree(
                                           key: ValueKey(
-                                              '${_screenState.name}_$_forgotPasswordStep'),
+                                            '${_screenState.name}_$_forgotPasswordStep',
+                                          ),
                                           child: _buildCurrentForm(),
                                         ),
                                       ),
@@ -668,63 +674,69 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
         onPressed: _handleBackNavigation,
       ),
       centerTitle: true,
-      title: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(6)),
-            clipBehavior: Clip.antiAlias,
-            child: Image.asset(
-              'assets/images/career360_icon.png',
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) =>
-                  const Icon(Icons.school_rounded, color: _emeraldPrimary, size: 24),
-            ),
-          ),
-          const SizedBox(width: 8),
-          const Row(
-            children: [
-              Text(
-                'CAREER',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  color: _deepForest,
-                  letterSpacing: 0.5,
-                ),
-              ),
-              Text(
-                '360',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
+      title: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(6)),
+              clipBehavior: Clip.antiAlias,
+              child: Image.asset(
+                'assets/images/career360_icon.png',
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) => const Icon(
+                  Icons.school_rounded,
                   color: _emeraldPrimary,
+                  size: 24,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Row(
+              children: [
+                Text(
+                  'CAREER',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: _deepForest,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                Text(
+                  '360',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: _emeraldPrimary,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFFDCFCE7),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFF86EFAC), width: 0.8),
+              ),
+              child: const Text(
+                'INSTITUTION',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF166534),
                   letterSpacing: 0.5,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-            decoration: BoxDecoration(
-              color: const Color(0xFFDCFCE7),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: const Color(0xFF86EFAC), width: 0.8),
             ),
-            child: const Text(
-              'INSTITUTION',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF166534),
-                letterSpacing: 0.5,
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -741,27 +753,23 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
       badgeText = 'Campus Network Registration';
       badgeIcon = Icons.domain_add_rounded;
       heading = 'Register Institution';
-      description =
-          'Connect your college or academy with verified recruiters and conduct campus drives.';
+      description = 'Connect your college or academy with verified recruiters and conduct campus drives.';
     } else if (_screenState == InstitutionAuthState.verifyEmail) {
       badgeText = 'Official Email Verification';
       badgeIcon = Icons.mark_email_read_outlined;
       heading = 'Verify Campus Email';
-      description =
-          'Enter the 6-digit confirmation code sent to your official placement email.';
+      description = 'Enter the 6-digit confirmation code sent to your official placement email.';
     } else if (_screenState == InstitutionAuthState.forgotPassword) {
       if (_forgotPasswordStep == 2) {
         badgeText = 'Enter Verification Code';
         badgeIcon = Icons.pin_outlined;
-        heading = 'Set New Password';
-        description =
-            'Enter the 6-digit code sent to your email along with your new password.';
+        heading = 'Verify Recovery Code';
+        description = 'Enter the 6-digit code sent to your email. You can set a new password after verification.';
       } else {
         badgeText = 'Security & Access Recovery';
         badgeIcon = Icons.lock_reset_rounded;
         heading = 'Reset Password';
-        description =
-            'Enter your registered placement email and we\'ll send you a verification code.';
+        description = 'Enter your registered placement email and we\'ll send you a verification code.';
       }
     }
 
@@ -797,13 +805,15 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
               children: [
                 Icon(badgeIcon, size: 14, color: const Color(0xFF86EFAC)),
                 const SizedBox(width: 6),
-                Text(
-                  badgeText,
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                    letterSpacing: 0.2,
+                Flexible(
+                  child: Text(
+                    badgeText,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                      letterSpacing: 0.2,
+                    ),
                   ),
                 ),
               ],
@@ -843,9 +853,8 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
             Expanded(
               child: BouncyButton(
                 scaleDown: 0.97,
-                onPressed: () => setState(
-                  () => _screenState = InstitutionAuthState.signIn,
-                ),
+                onPressed: () =>
+                    setState(() => _screenState = InstitutionAuthState.signIn),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Center(
@@ -853,8 +862,9 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
                       'Institution Sign In',
                       style: TextStyle(
                         fontSize: 15.5,
-                        fontWeight:
-                            isSignIn ? FontWeight.w700 : FontWeight.w600,
+                        fontWeight: isSignIn
+                            ? FontWeight.w700
+                            : FontWeight.w600,
                         color: isSignIn ? _emeraldPrimary : _secondaryText,
                         letterSpacing: -0.2,
                       ),
@@ -866,9 +876,8 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
             Expanded(
               child: BouncyButton(
                 scaleDown: 0.97,
-                onPressed: () => setState(
-                  () => _screenState = InstitutionAuthState.signUp,
-                ),
+                onPressed: () =>
+                    setState(() => _screenState = InstitutionAuthState.signUp),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Center(
@@ -876,8 +885,9 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
                       'Register Institution',
                       style: TextStyle(
                         fontSize: 15.5,
-                        fontWeight:
-                            !isSignIn ? FontWeight.w700 : FontWeight.w600,
+                        fontWeight: !isSignIn
+                            ? FontWeight.w700
+                            : FontWeight.w600,
                         color: !isSignIn ? _emeraldPrimary : _secondaryText,
                         letterSpacing: -0.2,
                       ),
@@ -894,8 +904,9 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
             AnimatedAlign(
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeInOut,
-              alignment:
-                  isSignIn ? Alignment.centerLeft : Alignment.centerRight,
+              alignment: isSignIn
+                  ? Alignment.centerLeft
+                  : Alignment.centerRight,
               child: FractionallySizedBox(
                 widthFactor: 0.5,
                 child: Container(
@@ -949,9 +960,8 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
           controller: _signInPasswordController,
           hint: 'Enter your password',
           obscureText: _obscureSignInPassword,
-          onToggleVisibility: () => setState(
-            () => _obscureSignInPassword = !_obscureSignInPassword,
-          ),
+          onToggleVisibility: () =>
+              setState(() => _obscureSignInPassword = !_obscureSignInPassword),
         ),
         const SizedBox(height: 12),
 
@@ -959,45 +969,60 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: Checkbox(
-                    value: _rememberMe,
-                    activeColor: _emeraldPrimary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(4),
+            Flexible(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: Checkbox(
+                      value: _rememberMe,
+                      activeColor: _emeraldPrimary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      side: const BorderSide(color: _inputBorder, width: 1.4),
+                      onChanged: (val) =>
+                          setState(() => _rememberMe = val ?? false),
                     ),
-                    side: const BorderSide(color: _inputBorder, width: 1.4),
-                    onChanged: (val) =>
-                        setState(() => _rememberMe = val ?? false),
                   ),
-                ),
-                const SizedBox(width: 8),
-                const Text(
-                  'Remember me',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF334155),
-                    fontWeight: FontWeight.w500,
+                  const SizedBox(width: 8),
+                  const Flexible(
+                    child: Text(
+                      'Remember me',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF334155),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-            BouncyButton(
-              scaleDown: 0.95,
-              onPressed: () => setState(() {
-                _forgotPasswordStep = 1;
-                _screenState = InstitutionAuthState.forgotPassword;
-              }),
-              child: const Text(
-                'Forgot Password?',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: _deepPine,
+            const SizedBox(width: 8),
+            Flexible(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: BouncyButton(
+                    scaleDown: 0.95,
+                    onPressed: () => setState(() {
+                      _forgotPasswordStep = 1;
+                      _screenState = InstitutionAuthState.forgotPassword;
+                    }),
+                    child: const Text(
+                      'Forgot Password?',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: _deepPine,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -1051,9 +1076,8 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
               ),
               BouncyButton(
                 scaleDown: 0.95,
-                onPressed: () => setState(
-                  () => _screenState = InstitutionAuthState.signUp,
-                ),
+                onPressed: () =>
+                    setState(() => _screenState = InstitutionAuthState.signUp),
                 child: const Text(
                   'Register Institution',
                   style: TextStyle(
@@ -1166,17 +1190,6 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
         ),
         const SizedBox(height: 14),
 
-        // Placement Desk Phone
-        _buildFieldLabel('Placement Cell Contact Number (Optional)'),
-        const SizedBox(height: 6),
-        _buildFormInput(
-          controller: _contactPhoneController,
-          hint: '0422-257xxxx or 98421xxxxx',
-          prefixIcon: Icons.phone_outlined,
-          keyboardType: TextInputType.phone,
-        ),
-        const SizedBox(height: 14),
-
         // Password
         _buildFieldLabel('Password *'),
         const SizedBox(height: 6),
@@ -1184,8 +1197,19 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
           controller: _signUpPasswordController,
           hint: 'Create a password (min. 6 characters)',
           obscureText: _obscureSignUpPassword,
+          onToggleVisibility: () =>
+              setState(() => _obscureSignUpPassword = !_obscureSignUpPassword),
+        ),
+        const SizedBox(height: 14),
+
+        _buildFieldLabel('Confirm Password *'),
+        const SizedBox(height: 6),
+        _buildPasswordInput(
+          controller: _signUpConfirmPasswordController,
+          hint: 'Re-enter your password to confirm',
+          obscureText: _obscureConfirmPassword,
           onToggleVisibility: () => setState(
-            () => _obscureSignUpPassword = !_obscureSignUpPassword,
+            () => _obscureConfirmPassword = !_obscureConfirmPassword,
           ),
         ),
         const SizedBox(height: 16),
@@ -1248,10 +1272,35 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
         const SizedBox(height: 20),
 
         _buildPrimaryButton(
-          label: 'Register Institution & Placement Cell',
+          label: 'Create Account & Send Code',
           icon: Icons.domain_verification_rounded,
           onPressed: _handleInitiateSignUp,
         ),
+
+        const SizedBox(height: 20),
+
+        // Divider
+        Row(
+          children: [
+            Expanded(child: Container(height: 1, color: _dividerColor)),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 14),
+              child: Text(
+                'OR',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF94A3B8),
+                ),
+              ),
+            ),
+            Expanded(child: Container(height: 1, color: _dividerColor)),
+          ],
+        ),
+
+        const SizedBox(height: 20),
+
+        _buildGoogleSignInButton(label: 'Register with Institutional Google'),
 
         const SizedBox(height: 20),
 
@@ -1267,9 +1316,8 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
               ),
               BouncyButton(
                 scaleDown: 0.95,
-                onPressed: () => setState(
-                  () => _screenState = InstitutionAuthState.signIn,
-                ),
+                onPressed: () =>
+                    setState(() => _screenState = InstitutionAuthState.signIn),
                 child: const Text(
                   'Sign In to Placement Desk',
                   style: TextStyle(
@@ -1374,7 +1422,10 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(_inputRadius),
-                borderSide: const BorderSide(color: _emeraldPrimary, width: 1.8),
+                borderSide: const BorderSide(
+                  color: _emeraldPrimary,
+                  width: 1.8,
+                ),
               ),
             ),
           ),
@@ -1404,10 +1455,7 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
               },
               child: const Text(
                 'Change email',
-                style: TextStyle(
-                  color: _deepPine,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TextStyle(color: _deepPine, fontWeight: FontWeight.w600),
               ),
             ),
             TextButton(
@@ -1483,8 +1531,11 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.arrow_back_rounded,
-                      size: 16, color: _emeraldPrimary),
+                  Icon(
+                    Icons.arrow_back_rounded,
+                    size: 16,
+                    color: _emeraldPrimary,
+                  ),
                   SizedBox(width: 6),
                   Text(
                     'Back to Institution Sign In',
@@ -1588,45 +1639,20 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(_inputRadius),
-                borderSide: const BorderSide(color: _emeraldPrimary, width: 1.8),
+                borderSide: const BorderSide(
+                  color: _emeraldPrimary,
+                  width: 1.8,
+                ),
               ),
             ),
           ),
         ),
         const SizedBox(height: 14),
 
-        // New Password
-        _buildFieldLabel('New Password *'),
-        const SizedBox(height: 6),
-        _buildPasswordInput(
-          controller: _forgotNewPasswordController,
-          hint: 'Enter new password (min. 6 characters)',
-          obscureText: _obscureForgotNewPassword,
-          onToggleVisibility: () => setState(
-            () => _obscureForgotNewPassword = !_obscureForgotNewPassword,
-          ),
-        ),
-        const SizedBox(height: 14),
-
-        // Confirm New Password
-        _buildFieldLabel('Confirm New Password *'),
-        const SizedBox(height: 6),
-        _buildPasswordInput(
-          controller: _forgotConfirmPasswordController,
-          hint: 'Re-enter new password to confirm',
-          obscureText: _obscureForgotConfirmPassword,
-          onToggleVisibility: () => setState(
-            () =>
-                _obscureForgotConfirmPassword = !_obscureForgotConfirmPassword,
-          ),
-        ),
-
-        const SizedBox(height: 20),
-
         _buildPrimaryButton(
-          label: 'Reset & Save Password',
+          label: 'Verify code',
           icon: Icons.check_circle_rounded,
-          onPressed: _handleVerifyForgotOtpAndResetPassword,
+          onPressed: _handleVerifyForgotOtp,
         ),
 
         const SizedBox(height: 14),
@@ -1645,22 +1671,21 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
               },
               child: const Text(
                 'Change email',
-                style: TextStyle(
-                  color: _deepPine,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TextStyle(color: _deepPine, fontWeight: FontWeight.w600),
               ),
             ),
             TextButton(
-              onPressed:
-                  _forgotResendCountdown > 0 ? null : _handleResendForgotOtp,
+              onPressed: _forgotResendCountdown > 0
+                  ? null
+                  : _handleResendForgotOtp,
               child: Text(
                 _forgotResendCountdown > 0
                     ? 'Resend code in ${_forgotResendCountdown}s'
                     : 'Resend code',
                 style: TextStyle(
-                  color:
-                      _forgotResendCountdown > 0 ? _secondaryText : _deepPine,
+                  color: _forgotResendCountdown > 0
+                      ? _secondaryText
+                      : _deepPine,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1684,8 +1709,11 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.arrow_back_rounded,
-                      size: 16, color: _emeraldPrimary),
+                  Icon(
+                    Icons.arrow_back_rounded,
+                    size: 16,
+                    color: _emeraldPrimary,
+                  ),
                   SizedBox(width: 6),
                   Text(
                     'Back to Institution Sign In',
@@ -1769,8 +1797,11 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: const TextStyle(fontSize: 14.0, color: Color(0xFF94A3B8)),
-          prefixIcon:
-              const Icon(Icons.lock_outline_rounded, color: _secondaryText, size: 20),
+          prefixIcon: const Icon(
+            Icons.lock_outline_rounded,
+            color: _secondaryText,
+            size: 20,
+          ),
           suffixIcon: IconButton(
             icon: Icon(
               obscureText
@@ -1845,31 +1876,34 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
                     valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                   ),
                 )
-              : Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (icon != null) ...[
-                      Icon(icon, color: Colors.white, size: 18),
-                      const SizedBox(width: 8),
-                    ],
-                    Text(
-                      label,
-                      key: ValueKey(label),
-                      style: const TextStyle(
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.1,
-                        color: Colors.white,
+              : FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (icon != null) ...[
+                        Icon(icon, color: Colors.white, size: 18),
+                        const SizedBox(width: 8),
+                      ],
+                      Text(
+                        label,
+                        key: ValueKey(label),
+                        style: const TextStyle(
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.1,
+                          color: Colors.white,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
         ),
       ),
     );
   }
 
-  Widget _buildGoogleSignInButton() {
+  Widget _buildGoogleSignInButton({String? label}) {
     final bool isEnabled = !_isLoading && !_isGoogleLoading;
     return BouncyButton(
       onPressed: isEnabled ? _handleGoogleSignIn : null,
@@ -1937,9 +1971,9 @@ class _InstitutionLoginScreenState extends State<InstitutionLoginScreen> {
                             ),
                       ),
                       const SizedBox(width: 12),
-                      const Text(
-                        'Continue with Institutional Google',
-                        style: TextStyle(
+                      Text(
+                        label ?? 'Continue with Institutional Google',
+                        style: const TextStyle(
                           fontSize: 15.0,
                           fontWeight: FontWeight.w600,
                           color: _navyText,

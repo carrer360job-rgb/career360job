@@ -7,6 +7,7 @@ import JobsPanel from './JobsPanel';
 import PlansPanel from './PlansPanel';
 import OperationsPanels from './OperationsPanels';
 import AdminDashboard, { AdminDashboardSkeleton } from './AdminDashboard';
+import SettingsPanel from './SettingsPanel';
 
 type View =
   | { kind: 'configuration' }
@@ -16,7 +17,7 @@ type View =
   | { kind: 'denied' }
   | { kind: 'unavailable' };
 
-type ActiveTab = 'overview' | 'users' | 'employers' | 'jobs' | 'plans' | 'payments' | 'reports';
+type ActiveTab = 'overview' | 'jobseekers' | 'employers' | 'jobs' | 'plans' | 'payments' | 'reports' | 'settings';
 
 function Brand() {
   return (
@@ -31,9 +32,10 @@ export default function App() {
   const [view, setView] = useState<View>({ kind: 'checking' });
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     try {
-      const saved = sessionStorage.getItem('career360_admin_active_tab') as ActiveTab | null;
-      if (saved && ['overview', 'employers', 'jobs', 'users', 'plans', 'payments', 'reports'].includes(saved)) {
-        return saved;
+      const saved = sessionStorage.getItem('career360_admin_active_tab');
+      if (saved === 'users') return 'jobseekers';
+      if (saved && ['overview', 'employers', 'jobs', 'jobseekers', 'plans', 'payments', 'reports', 'settings'].includes(saved)) {
+        return saved as ActiveTab;
       }
     } catch { /* ignore */ }
     return 'overview';
@@ -171,8 +173,9 @@ export default function App() {
           {activeTab === 'employers' && <EmployersPanel />}
           {activeTab === 'jobs' && <JobsPanel />}
           {activeTab === 'plans' && <PlansPanel />}
-          {['users', 'payments', 'reports'].includes(activeTab) && (
-            <OperationsPanels key={activeTab} kind={activeTab as 'users' | 'payments' | 'reports'} />
+          {activeTab === 'settings' && <SettingsPanel identity={view.identity} />}
+          {['jobseekers', 'payments', 'reports'].includes(activeTab) && (
+            <OperationsPanels key={activeTab} kind={activeTab as 'jobseekers' | 'payments' | 'reports'} />
           )}
       </AdminDashboard>
     );
@@ -230,6 +233,10 @@ export default function App() {
       <main className="login-main-content">
         <section className="login-content" aria-labelledby="login-title">
           <div className="login-heading-block">
+            <div className="login-badge-pill">
+              <span className="login-badge-dot" />
+              Verified Operations Console
+            </div>
             <h1 id="login-title">Sign in to Operations</h1>
             <p>Use your Career360 staff account to continue.</p>
           </div>
@@ -265,12 +272,19 @@ export default function App() {
                   className="eye-toggle-btn"
                   onClick={() => setShowPassword((visible) => !visible)}
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
                   aria-pressed={showPassword}
                 >
                   {showPassword ? (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
                   ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
                   )}
                 </button>
               </div>

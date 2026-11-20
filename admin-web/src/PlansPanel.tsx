@@ -126,7 +126,7 @@ export default function PlansPanel() {
       ) : plans.length === 0 ? (
         <div className="plan-empty">
           <h3>No hiring plans initialized</h3>
-          <p>Create the 3 standard Career360 starter plans for Tamil Nadu employers.</p>
+          <p>Create the Monthly, Quarterly, and Yearly subscription plans.</p>
           <button
             className="primary-button"
             disabled={busy}
@@ -143,7 +143,7 @@ export default function PlansPanel() {
               }
             }}
           >
-            Initialize Starter Catalog
+            Initialize Subscription Plans
           </button>
         </div>
       ) : (
@@ -186,6 +186,7 @@ function PlanPricingCard({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [jobCredits, setJobCredits] = useState<number>(current?.jobCredits ?? 1);
   const [listingDays, setListingDays] = useState<number>(current?.listingDays ?? 15);
+  const [durationDays, setDurationDays] = useState<number>(current?.creditValidityDays ?? 30);
   const [profileUnlockLimit, setProfileUnlockLimit] = useState<number>(current?.profileUnlockLimit ?? 25);
   const [features, setFeatures] = useState<string[]>(current?.features || []);
   const [newBenefit, setNewBenefit] = useState<string>('');
@@ -202,6 +203,7 @@ function PlanPricingCard({
       setBadge(src.badge || '');
       setJobCredits(src.jobCredits);
       setListingDays(src.listingDays);
+      setDurationDays(src.creditValidityDays);
       setProfileUnlockLimit(src.profileUnlockLimit);
       setFeatures(src.features || []);
     }
@@ -216,14 +218,14 @@ function PlanPricingCard({
 
   const draft: PlanDraft = {
     name: current?.name || entry.id,
-    tier: current?.tier || 'standard',
+    tier: current?.tier || 'monthly',
     badge: badge.trim(),
     pricePaise,
     taxMode: isGstEnabled ? taxMode : 'inclusive',
     taxRateBps,
     jobCredits,
     listingDays,
-    creditValidityDays: current?.creditValidityDays ?? listingDays,
+    creditValidityDays: durationDays,
     profileUnlockLimit,
     reach: current?.reach || 'district',
     sortOrder: current?.sortOrder ?? 0,
@@ -231,11 +233,11 @@ function PlanPricingCard({
   };
 
   const priceCalc = totals(draft);
-  const isFeatured = current?.tier === 'featured';
-  const isElite = current?.tier === 'elite';
+  const isFeatured = current?.tier === 'quarterly';
+  const isElite = current?.tier === 'yearly';
   const tierCardClass = isFeatured ? 'tier-featured' : isElite ? 'tier-elite' : 'tier-standard';
   const tierBadgeClass = isFeatured ? 'tier-badge-featured' : isElite ? 'tier-badge-elite' : 'tier-badge-standard';
-  const tierTag = isFeatured ? 'Featured Tier' : isElite ? 'Elite Tier' : 'Starter Tier';
+  const tierTag = isFeatured ? 'Quarterly' : isElite ? 'Yearly' : 'Monthly';
   const isPublished = Boolean(entry.published);
 
   return (
@@ -398,6 +400,11 @@ function PlanPricingCard({
                 value={listingDays}
                 onChange={(e) => setListingDays(Math.max(1, Number(e.target.value)))}
               />
+            </div>
+            <div className="plan-input-group">
+              <label>Subscription duration (days)</label>
+              <input type="number" min="1" max="365" className="plan-select"
+                value={durationDays} onChange={(e) => setDurationDays(Math.max(1, Number(e.target.value)))} />
             </div>
             <div className="plan-input-group" style={{ gridColumn: '1 / -1' }}>
               <label>Profile Unlocks</label>

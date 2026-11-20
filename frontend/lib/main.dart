@@ -27,6 +27,7 @@ import 'features/institution/institution_guidelines_screen.dart';
 import 'features/institution/institution_login_screen.dart';
 import 'features/institution/institution_workspace_screen.dart';
 import 'features/auth/candidate_login_screen.dart';
+import 'features/auth/password_recovery_completion_screen.dart';
 import 'features/candidate/candidate_onboarding_wizard_screen.dart';
 import 'features/candidate/sample_job_details_screen.dart';
 import 'features/employer/employer_registration_screen.dart';
@@ -35,6 +36,7 @@ import 'features/legal/privacy_policy_screen.dart';
 import 'features/notifications/notification_center_screen.dart';
 import 'core/services/supabase_service.dart';
 import 'core/services/app_auth_bridge.dart';
+import 'core/services/supabase_auth_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -61,6 +63,8 @@ class _Career360BootstrapState extends State<Career360Bootstrap> {
     final stopwatch = Stopwatch()..start();
     try {
       await SupabaseService.initialize();
+      await SupabaseAuthService.restoreRecoveryState();
+      await SupabaseAuthService.restoreSuspensionNotice();
     } catch (e) {
       debugPrint('[Supabase Initialization Notice] $e');
     }
@@ -279,6 +283,26 @@ class _Career360AppState extends State<Career360App> {
     await SupabaseService.client.auth.signOut();
   }
 
+  Future<void> _retrySuspendedSignIn() async {
+    try {
+      await SupabaseService.client.auth.signOut();
+    } catch (error) {
+      debugPrint('[Suspended account sign-out] $error');
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _showCandidateGuidelines = false;
+      _showCandidateLogin = true;
+      _showEmployerGuidelines = false;
+      _showEmployerLogin = false;
+      _showInstitutionGuidelines = false;
+      _showInstitutionLogin = false;
+      _currentRole = AppUserRole.candidate;
+    });
+    await SupabaseAuthService.clearSuspensionNotice();
+  }
+
   void _resetToRoleSelection() {
     setState(() {
       _showCandidateGuidelines = false;
@@ -352,60 +376,85 @@ class _Career360AppState extends State<Career360App> {
       title: 'Career360 — Job Portal',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      home: StreamBuilder<dynamic>(
-        key: ValueKey('auth_stream_$_sessionGeneration'),
-        stream: widget.authChanges ?? AppAuthBridge.authStateChanges,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            debugPrint('[Auth state stream] ${snapshot.error}');
-            return AuthStateLoadFailure(
-              error: snapshot.error,
-              onRetry: _retrySessionStreams,
-              onSignOut: _signOutToRoleSelection,
+      home: ValueListenableBuilder<bool>(
+        valueListenable: SupabaseAuthService.suspensionNotice,
+        builder: (context, isSuspended, _) {
+          if (isSuspended) {
+            return AccountAccessUnavailableScreen(
+              status: 'SUSPENDED',
+              onRetryLogin: () => unawaited(_retrySuspendedSignIn()),
             );
           }
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData) {
-            return const SessionLoadingScreen();
-          }
+          return ValueListenableBuilder<bool>(
+            valueListenable: SupabaseAuthService.recoveryVerified,
+            builder: (context, recoveryVerified, _) {
+              if (recoveryVerified) {
+                return PasswordRecoveryCompletionScreen(
+                  role:
+                      SupabaseAuthService.recoveryRole ??
+                      PasswordRecoveryRole.candidate,
+                );
+              }
+              return StreamBuilder<dynamic>(
+                key: ValueKey('auth_stream_$_sessionGeneration'),
+                stream: widget.authChanges ?? AppAuthBridge.authStateChanges,
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    debugPrint('[Auth state stream] ${snapshot.error}');
+                    return AuthStateLoadFailure(
+                      error: snapshot.error,
+                      onRetry: _retrySessionStreams,
+                      onSignOut: _signOutToRoleSelection,
+                    );
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData) {
+                    return const SessionLoadingScreen();
+                  }
 
-          final user = snapshot.data;
-          if (user != null) {
-            return AccountSessionGate(
-              key: ValueKey('account_session_${user.uid}_$_sessionGeneration'),
-              user: user,
-              requestedRole: _currentRole,
-              onRoleSelected: _onRoleSelected,
-              onBackToLogin: _onCandidateOnboardingBack,
-              onRoleChanged: _onRoleSelected,
-              onSwitchRoleRequested: _signOutToRoleSelection,
-              onSignOutRequested: _signOutToRoleSelection,
-              onRetry: _retrySessionStreams,
-            );
-          }
+                  final user = snapshot.data;
+                  if (user != null) {
+                    return AccountSessionGate(
+                      key: ValueKey(
+                        'account_session_${user.uid}_$_sessionGeneration',
+                      ),
+                      user: user,
+                      requestedRole: _currentRole,
+                      onRoleSelected: _onRoleSelected,
+                      onBackToLogin: _onCandidateOnboardingBack,
+                      onRoleChanged: _onRoleSelected,
+                      onSwitchRoleRequested: _signOutToRoleSelection,
+                      onSignOutRequested: _signOutToRoleSelection,
+                      onRetry: _retrySessionStreams,
+                    );
+                  }
 
-          return AnimatedSwitcher(
-            duration: const Duration(milliseconds: 320),
-            reverseDuration: const Duration(milliseconds: 260),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
-            transitionBuilder: (child, animation) {
-              final slide =
-                  Tween<Offset>(
-                    begin: const Offset(0.04, 0.0),
-                    end: Offset.zero,
-                  ).animate(
-                    CurvedAnimation(
-                      parent: animation,
-                      curve: Curves.easeOutCubic,
-                    ),
+                  return AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 320),
+                    reverseDuration: const Duration(milliseconds: 260),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) {
+                      final slide =
+                          Tween<Offset>(
+                            begin: const Offset(0.04, 0.0),
+                            end: Offset.zero,
+                          ).animate(
+                            CurvedAnimation(
+                              parent: animation,
+                              curve: Curves.easeOutCubic,
+                            ),
+                          );
+                      return SlideTransition(
+                        position: slide,
+                        child: FadeTransition(opacity: animation, child: child),
+                      );
+                    },
+                    child: _buildCurrentScreen(),
                   );
-              return SlideTransition(
-                position: slide,
-                child: FadeTransition(opacity: animation, child: child),
+                },
               );
             },
-            child: _buildCurrentScreen(),
           );
         },
       ),
@@ -496,6 +545,19 @@ class AccountSessionGate extends StatelessWidget {
               : storedRole == 'admin'
               ? AppUserRole.admin
               : requestedRole;
+          final accountStatus = rows.isNotEmpty
+              ? rows.first['status']?.toString().toUpperCase()
+              : null;
+          if (selectedRole == AppUserRole.candidate &&
+              accountStatus != 'ACTIVE') {
+            if (accountStatus == 'SUSPENDED' || accountStatus == 'BLOCKED') {
+              unawaited(SupabaseAuthService.showSuspensionNotice());
+            }
+            return AccountAccessUnavailableScreen(
+              status: accountStatus,
+              onRetryLogin: onSignOutRequested,
+            );
+          }
           if (selectedRole == null) {
             return Scaffold(
               body: SafeArea(
@@ -562,23 +624,33 @@ class AccountSessionGate extends StatelessWidget {
           }
           if (selectedRole == AppUserRole.admin) {
             return Scaffold(
-              body: Center(child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.admin_panel_settings_outlined, size: 48),
-                  const SizedBox(height: 12),
-                  const Text('Use the web dashboard for this admin account.',
-                      textAlign: TextAlign.center),
-                  const SizedBox(height: 16),
-                  FilledButton(onPressed: onSignOutRequested,
-                      child: const Text('Sign out')),
-                ]),
-              )),
+              body: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.admin_panel_settings_outlined, size: 48),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Use the web dashboard for this admin account.',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: onSignOutRequested,
+                        child: const Text('Sign out'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             );
           }
           if (selectedRole == AppUserRole.employer) {
             return EmployerSessionGate(
               user: user,
+              accountStatus: accountStatus,
               onSignOut: onSignOutRequested,
               onRetry: onRetry,
             );
@@ -606,14 +678,126 @@ class AccountSessionGate extends StatelessWidget {
       );
 }
 
+class AccountAccessUnavailableScreen extends StatelessWidget {
+  final String? status;
+  final VoidCallback onRetryLogin;
+
+  const AccountAccessUnavailableScreen({
+    super.key,
+    required this.status,
+    required this.onRetryLogin,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final title = status == 'SUSPENDED'
+        ? 'Your account is suspended'
+        : status == 'BLOCKED'
+        ? 'Account blocked'
+        : 'Account access unavailable';
+    final message = status == 'SUSPENDED' || status == 'BLOCKED'
+        ? 'You can’t use the job seeker portal right now. Contact Career360 support if you need help.'
+        : 'We couldn’t confirm that your account is active. Try again or sign out and sign in again.';
+
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    status == 'SUSPENDED' || status == 'BLOCKED'
+                        ? Icons.lock_outline_rounded
+                        : Icons.info_outline_rounded,
+                    size: 48,
+                    color: AppTheme.primary,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(message, textAlign: TextAlign.center),
+                  const SizedBox(height: 22),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppTheme.primary.withValues(alpha: 0.16),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'Need help or have a question?',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 6),
+                        InkWell(
+                          onTap: () => launchUrl(
+                            Uri(
+                              scheme: 'mailto',
+                              path: AppConstants.supportEmail,
+                              queryParameters: {
+                                'subject': 'Career360 account access',
+                              },
+                            ),
+                          ),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Text(
+                              AppConstants.supportEmail,
+                              style: TextStyle(
+                                color: AppTheme.primary,
+                                fontWeight: FontWeight.w700,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  OutlinedButton.icon(
+                    onPressed: onRetryLogin,
+                    icon: const Icon(Icons.login_rounded),
+                    label: const Text('Back to sign in'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class EmployerSessionGate extends StatefulWidget {
   final dynamic user;
+  final String? accountStatus;
   final VoidCallback onSignOut;
   final Future<void> Function() onRetry;
 
   const EmployerSessionGate({
     super.key,
     required this.user,
+    required this.accountStatus,
     required this.onSignOut,
     required this.onRetry,
   });
@@ -674,18 +858,136 @@ class _EmployerSessionGateState extends State<EmployerSessionGate> {
             },
           );
         }
+        if (!profile.isApproved || widget.accountStatus != 'ACTIVE') {
+          return EmployerReviewScreen(
+            profile: profile,
+            accountSuspended:
+                widget.accountStatus == 'SUSPENDED' ||
+                widget.accountStatus == 'BLOCKED',
+            onRefresh: () {
+              if (mounted) {
+                setState(() {
+                  _profileStream = EmployerService().watchProfile(
+                    widget.user.uid,
+                  );
+                });
+              }
+            },
+            onSignOut: widget.onSignOut,
+          );
+        }
         return EmployerWorkspaceScreen(
           profile: profile,
           onSignOut: widget.onSignOut,
           onProfileUpdated: () {
             if (mounted) {
               setState(() {
-                _profileStream = EmployerService().watchProfile(widget.user.uid);
+                _profileStream = EmployerService().watchProfile(
+                  widget.user.uid,
+                );
               });
             }
           },
         );
       },
+    );
+  }
+}
+
+class EmployerReviewScreen extends StatelessWidget {
+  final EmployerProfile profile;
+  final bool accountSuspended;
+  final VoidCallback onRefresh;
+  final VoidCallback onSignOut;
+
+  const EmployerReviewScreen({
+    super.key,
+    required this.profile,
+    this.accountSuspended = false,
+    required this.onRefresh,
+    required this.onSignOut,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final rejected = profile.reviewState == 'rejected';
+    final suspended = accountSuspended || profile.reviewState == 'suspended';
+    final title = suspended
+        ? 'Company access suspended'
+        : rejected
+        ? 'Company review unsuccessful'
+        : 'Approval pending';
+    final message = suspended
+        ? 'Your company cannot use the employer portal right now.'
+        : rejected
+        ? 'Your company was not approved for the employer portal.'
+        : 'Your company details have been submitted. An admin will review them before you can use the employer portal.';
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    rejected || suspended
+                        ? Icons.business_outlined
+                        : Icons.hourglass_top_rounded,
+                    size: 48,
+                    color: AppTheme.primary,
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 23,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    profile.companyName,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(message, textAlign: TextAlign.center),
+                  if ((rejected || suspended) &&
+                      profile.rejectionReason.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      'Reason: ${profile.rejectionReason}',
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  const Text('Questions or help?'),
+                  TextButton(
+                    onPressed: () => launchUrl(
+                      Uri(scheme: 'mailto', path: AppConstants.supportEmail),
+                    ),
+                    child: const Text(AppConstants.supportEmail),
+                  ),
+                  const SizedBox(height: 10),
+                  FilledButton.icon(
+                    onPressed: onRefresh,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Refresh status'),
+                  ),
+                  TextButton(
+                    onPressed: onSignOut,
+                    child: const Text('Sign out'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -807,10 +1109,7 @@ class _SessionLoadingScreenState extends State<SessionLoadingScreen>
       curve: Curves.easeOut,
     );
     _scaleAnimation = Tween<double>(begin: 0.92, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _animController,
-        curve: Curves.easeOutBack,
-      ),
+      CurvedAnimation(parent: _animController, curve: Curves.easeOutBack),
     );
     _animController.forward();
   }
@@ -936,11 +1235,16 @@ class _SessionLoadingScreenState extends State<SessionLoadingScreen>
                       const Spacer(),
                       Container(
                         margin: const EdgeInsets.only(bottom: 24),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 7,
+                        ),
                         decoration: BoxDecoration(
                           color: AppTheme.primaryLight,
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: AppTheme.primaryLightBorder),
+                          border: Border.all(
+                            color: AppTheme.primaryLightBorder,
+                          ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -4032,8 +4336,10 @@ class _MainShellScreenState extends State<MainShellScreen> {
                             _buildCandidateStatusBadge(
                               experienceRecorded: experienceRecorded,
                               hasExperience: hasExperience,
-                              experienceYears:
-                                  _profileString(profile, 'experienceYears'),
+                              experienceYears: _profileString(
+                                profile,
+                                'experienceYears',
+                              ),
                             ),
                           ],
                         ),
@@ -4088,7 +4394,10 @@ class _MainShellScreenState extends State<MainShellScreen> {
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: _openCandidateApplications,
-                          icon: const Icon(Icons.work_outline_rounded, size: 18),
+                          icon: const Icon(
+                            Icons.work_outline_rounded,
+                            size: 18,
+                          ),
                           label: const Text('Applied Jobs'),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppTheme.primary,

@@ -3,14 +3,70 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'supabase_service.dart';
+
+enum PasswordRecoveryRole { candidate, employer, institution }
 
 /// Complete Supabase Authentication Service
 /// Handles Email/Password, Phone OTP, Session persistence & Profile sync
 class SupabaseAuthService {
   static SupabaseClient get _client => SupabaseService.client;
+  static const _recoveryPreference = 'password_recovery_verified';
+  static const _recoveryRolePreference = 'password_recovery_role';
+  static const _suspensionNoticePreference = 'account_suspended_notice';
+  static final ValueNotifier<bool> recoveryVerified = ValueNotifier(false);
+  static final ValueNotifier<bool> suspensionNotice = ValueNotifier(false);
+  static bool recoveryInProgress = false;
+  static PasswordRecoveryRole? recoveryRole;
+
+  static Future<void> restoreRecoveryState() async {
+    final preferences = SharedPreferencesAsync();
+    final pending = await preferences.getBool(_recoveryPreference) ?? false;
+    recoveryVerified.value = pending && _client.auth.currentSession != null;
+    recoveryInProgress = recoveryVerified.value;
+    final storedRole = await preferences.getString(_recoveryRolePreference);
+    recoveryRole = recoveryVerified.value
+        ? PasswordRecoveryRole.values
+              .where((role) => role.name == storedRole)
+              .firstOrNull
+        : null;
+    if (pending && !recoveryVerified.value) {
+      await preferences.remove(_recoveryPreference);
+      await preferences.remove(_recoveryRolePreference);
+    }
+  }
+
+  static Future<void> clearRecoveryState() async {
+    recoveryVerified.value = false;
+    recoveryInProgress = false;
+    recoveryRole = null;
+    final preferences = SharedPreferencesAsync();
+    await preferences.remove(_recoveryPreference);
+    await preferences.remove(_recoveryRolePreference);
+  }
+
+  static Future<void> restoreSuspensionNotice() async {
+    suspensionNotice.value =
+        await SharedPreferencesAsync().getBool(_suspensionNoticePreference) ??
+        false;
+  }
+
+  static Future<void> showSuspensionNotice() async {
+    if (suspensionNotice.value) return;
+    suspensionNotice.value = true;
+    await SharedPreferencesAsync().setBool(_suspensionNoticePreference, true);
+  }
+
+  static Future<void> clearSuspensionNotice() async {
+    suspensionNotice.value = false;
+    await SharedPreferencesAsync().remove(_suspensionNoticePreference);
+  }
+
+  static bool isSuspendedSignInError(Object error) =>
+      error is AuthException && error.code == 'user_banned';
 
   /// Current authenticated Supabase User
   User? get currentUser => _client.auth.currentUser;
@@ -38,8 +94,10 @@ class SupabaseAuthService {
         email: email.trim(),
         password: password,
       );
+      await clearSuspensionNotice();
       return response;
     } on AuthException catch (e) {
+      if (isSuspendedSignInError(e)) await showSuspensionNotice();
       debugPrint('[SupabaseAuthService] Sign-in error: ${e.message}');
       rethrow;
     }
@@ -146,10 +204,11 @@ class SupabaseAuthService {
       final redirect =
           redirectTo ??
           (kIsWeb ? null : 'io.supabase.career360://login-callback/');
-      return await _client.auth.signInWithOAuth(
+      final success = await _client.auth.signInWithOAuth(
         OAuthProvider.google,
         redirectTo: redirect,
       );
+      return success;
     } on AuthException catch (e) {
       debugPrint('[SupabaseAuthService] Google OAuth error: ${e.message}');
       rethrow;
@@ -166,30 +225,55 @@ class SupabaseAuthService {
 
   /// Resend Password Reset OTP
   Future<void> resendPasswordResetOtp({required String email}) async {
-    await _client.auth.resend(
-      type: OtpType.recovery,
-      email: email.trim(),
-    );
+    await _client.auth.resetPasswordForEmail(email.trim());
   }
 
-  /// Verify Password Reset OTP and update password
-  Future<void> verifyPasswordResetOtpAndSetPassword({
+  /// A verified recovery code creates a temporary authenticated session.
+  Future<void> verifyPasswordResetOtp({
     required String email,
     required String token,
-    required String newPassword,
+    required PasswordRecoveryRole role,
   }) async {
-    final response = await _client.auth.verifyOTP(
-      email: email.trim(),
-      token: token.trim(),
-      type: OtpType.recovery,
-    );
-    if (response.session == null) {
-      throw StateError('The recovery code could not be verified. Please try again.');
+    recoveryInProgress = true;
+    try {
+      final preferences = SharedPreferencesAsync();
+      await preferences.setString(_recoveryRolePreference, role.name);
+      await preferences.setBool(_recoveryPreference, true);
+      final response = await _client.auth.verifyOTP(
+        email: email.trim(),
+        token: token.trim(),
+        type: OtpType.recovery,
+      );
+      if (response.session == null) {
+        throw StateError(
+          'The recovery code could not be verified. Please try again.',
+        );
+      }
+      recoveryRole = role;
+      recoveryVerified.value = true;
+    } catch (_) {
+      recoveryInProgress = false;
+      final preferences = SharedPreferencesAsync();
+      await preferences.remove(_recoveryPreference);
+      await preferences.remove(_recoveryRolePreference);
+      rethrow;
     }
-    await _client.auth.updateUser(
-      UserAttributes(password: newPassword),
-    );
+  }
+
+  Future<void> updatePasswordAfterRecovery(String newPassword) async {
+    if (!recoveryVerified.value || _client.auth.currentSession == null) {
+      throw StateError(
+        'Your recovery session has expired. Request a new code.',
+      );
+    }
+    await _client.auth.updateUser(UserAttributes(password: newPassword));
     await _client.auth.signOut();
+    await clearRecoveryState();
+  }
+
+  Future<void> cancelPasswordRecovery() async {
+    await _client.auth.signOut();
+    await clearRecoveryState();
   }
 
   /// Sign Out current user

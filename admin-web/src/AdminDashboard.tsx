@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { AdminIdentity } from './api';
 import './dashboard.css';
 
-export type AdminTab = 'overview' | 'employers' | 'jobs' | 'users' | 'plans' | 'payments' | 'reports';
+export type AdminTab = 'overview' | 'employers' | 'jobs' | 'jobseekers' | 'plans' | 'payments' | 'reports' | 'settings';
 
 type Props = {
   identity: AdminIdentity;
@@ -17,7 +17,7 @@ const groups: { label: string; items: { key: AdminTab; label: string; icon: stri
     { key: 'overview', label: 'Overview', icon: 'grid' },
     { key: 'employers', label: 'Employers', icon: 'building' },
     { key: 'jobs', label: 'Jobs', icon: 'briefcase' },
-    { key: 'users', label: 'People', icon: 'people' },
+    { key: 'jobseekers', label: 'Job Seekers', icon: 'people' },
   ] },
   { label: 'Commerce', items: [
     { key: 'plans', label: 'Hiring plans', icon: 'layers' },
@@ -25,6 +25,7 @@ const groups: { label: string; items: { key: AdminTab; label: string; icon: stri
   ] },
   { label: 'Platform', items: [
     { key: 'reports', label: 'Reports', icon: 'flag' },
+    { key: 'settings', label: 'Settings', icon: 'settings' },
   ] },
 ];
 
@@ -32,10 +33,11 @@ const copy: Record<AdminTab, { title: string; description: string }> = {
   overview: { title: 'Overview', description: 'A clear view of what needs attention across Career360.' },
   employers: { title: 'Employers', description: 'Review companies and manage access to hiring.' },
   jobs: { title: 'Jobs', description: 'Review live listings and take action on unsafe posts.' },
-  users: { title: 'People', description: 'Search and manage platform accounts.' },
+  jobseekers: { title: 'Job Seekers', description: 'Find candidate accounts and manage access to Career360.' },
   plans: { title: 'Hiring plans', description: 'Set the offers employers see in the app.' },
   payments: { title: 'Payments', description: 'Track orders, payment status, and refunds.' },
   reports: { title: 'Reports', description: 'Resolve reported listings and review platform totals.' },
+  settings: { title: 'Settings', description: 'Manage the password for your admin account.' },
 };
 
 function Icon({ name, size = 19 }: { name: string; size?: number }) {
@@ -47,6 +49,7 @@ function Icon({ name, size = 19 }: { name: string; size?: number }) {
     layers: <><rect x="4" y="4" width="16" height="5" rx="1"/><rect x="4" y="11" width="16" height="5" rx="1"/><path d="M4 19h16"/></>,
     receipt: <><path d="M5 3h14v18l-3-2-4 2-4-2-3 2V3Z"/><path d="M9 8h6m-6 4h6"/></>,
     flag: <><path d="M5 21V4m0 1c6-4 8 3 15-1v11c-7 4-9-3-15 1"/></>,
+    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-2.8 2.8-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.56V21h-4v-.04a1.7 1.7 0 0 0-1-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06-2.8-2.8.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1H3v-4h.04A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87L4.2 7.07l2.87-2.87.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.56V3h4v.04A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06 2.87 2.87-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.56 1H21v4h-.04A1.7 1.7 0 0 0 19.4 15Z"/></>,
     menu: <path d="M4 6h16M4 12h16M4 18h16"/>,
     close: <path d="M5 5l14 14M19 5 5 19"/>,
     exit: <><path d="M10 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5M15 7l5 5-5 5m5-5H9"/></>,

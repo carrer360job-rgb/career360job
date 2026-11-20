@@ -1,18 +1,20 @@
 ---
 name: "Career360 Design System"
-description: "Design specification and anti-vibe-coded UI tokens for Career360 Job Portal."
+description: "Design specification and anti-vibe-coded UI tokens for Career360 Job Portal, featuring the distinctive Emerald Growth & Pine Green palette."
 colors:
   canvas: "#F8FAFC"
   surface: "#FFFFFF"
-  text: "#172B4D"
+  surfaceTint: "#F0FDF4"
+  text: "#172B40"
   mutedText: "#64748B"
   border: "#E2E8F0"
-  primary: "#155EEF"
+  primary: "#16A34A"
   onPrimary: "#FFFFFF"
-  primaryDark: "#0B1F3A"
-  accent: "#38BDF8"
-  primaryLight: "#EFF8FF"
-  focus: "#155EEF"
+  primaryDark: "#065F46"
+  accent: "#22C55E"
+  primaryLight: "#F0FDF4"
+  primaryLightBorder: "#DCFCE7"
+  focus: "#16A34A"
   success: "#16A34A"
   warning: "#F59E0B"
   danger: "#DC2626"
@@ -42,32 +44,35 @@ spacing:
 
 ## Overview
 
-- **Visual thesis:** Clean, corporate Indian employment platform delivering credible job discoveries with zero clutter, authentic employer verification, and instant 1-tap mobile apply workflows.
-- **Surface mode:** OPERATE (Job seekers quickly searching, filtering, and applying to verified roles; recruiters screening applicants) with selective PERSUADE on onboarding/splash.
+- **Visual thesis:** Distinctive Indian employment platform delivering credible job discoveries with zero clutter, authentic employer verification, and instant 1-tap mobile apply workflows. Replaces ubiquitous corporate blue with an energetic, growth-oriented Emerald & Pine Green brand language.
+- **Surface mode:** OPERATE (Job seekers searching, filtering, and applying to verified roles; recruiters screening applicants) with selective PERSUADE on onboarding/splash.
 - **Design priorities:** 
   1. Job title, salary clarity (e.g. ₹8 - 12 LPA), verified company badge, and location.
   2. High-contrast, 44px+ touch targets for effortless thumb operation on mobile devices.
   3. Responsive adaptability across narrow mobile (360px), tablets (768px), and wide monitors (1440px).
-- **Distinctive signature:** Crisp Corporate Blue (`#155EEF`) accents with Midnight Navy (`#0B1F3A`) structure, clean curved category chips, and verified checkmarks providing high trust without generic glowing gradient clichés.
+- **Distinctive signature:** Vibrant **Emerald Green (`#16A34A`)** primary actions paired with authoritative **Deep Pine (`#065F46`)** headers and soft **Mint (`#F0FDF4`)** surfaces. Symbolizes career growth, promotion, and financial prosperity while standing apart from generic blue job portals (LinkedIn, Indeed, Naukri).
 
 ## Colors
 
-- `primary` (`#155EEF`): Main call-to-actions, active navigation states, interactive links, brand accents.
-- `primaryDark` (`#0B1F3A`): High-authority headers, desktop sidebar backgrounds, role selection card headers.
-- `accent` (`#38BDF8`): Subtle sky-blue highlights, secondary status highlights.
-- `background` (`#F8FAFC`): Soothing light grey-blue canvas that prevents eye fatigue.
-- `cardSurface` (`#FFFFFF`): Pure white elevated card surfaces for job cards, input bars, bottom sheets.
-- `textPrimary` (`#172B4D`): High contrast deep slate navy for headings, job titles, primary text.
-- `textSecondary` (`#64748B`): Neutral slate for timestamps, company metadata, locations.
+- `primary` (`#16A34A`): Main call-to-actions (`Apply Now`, `Update & Publish Price`, `Get Started`), active navigation highlights, interactive links.
+- `primaryDark` (`#065F46`): Deep Pine Green for authoritative page titles, active sidebar selection backgrounds, and primary branding icons.
+- `accent` (`#22C55E`): Vibrant leaf green for badges, verified checkmark accents, and high-energy highlights.
+- `primaryLight` / `surfaceTint` (`#F0FDF4`): Fresh mint off-white for soft pill chips, summary breakdown boxes, and subtle card hover backgrounds.
+- `primaryLightBorder` (`#DCFCE7`): Soft green border for active pills and verified badges.
+- `canvas` / `background` (`#F8FAFC`): Soothing light neutral canvas that prevents eye fatigue.
+- `cardSurface` (`#FFFFFF`): Pure white elevated card surfaces for job cards, input fields, and bottom sheets.
+- `textPrimary` (`#172B40`): High-contrast slate navy-charcoal for headings, job titles, and primary text (WCAG AAA compliant on white).
+- `textSecondary` (`#64748B`): Neutral slate for timestamps, company metadata, locations, and quota descriptions.
 - `border` (`#E2E8F0`): Subtle borders providing clear separation without heavy dropshadows.
-- `success` (`#16A34A`): Verified employer badges and application submitted tags.
+- `success` (`#16A34A`): Verified employer badges, checkmark bullets, and application status tags.
 - `warning` (`#F59E0B`): Cautionary notices, candidate safety alerts, pending review statuses.
+- `danger` (`#DC2626`): Destructive actions (Archive, Delete) and critical errors.
 
 ## Typography
 
 - Modern sans-serif (Inter / system fallback).
-- Header scale: 28px bold for Hero, 20px semibold for Section headings, 16px semibold for Job titles.
-- Body scale: 14px regular for descriptions, 12px medium for metadata badges (LPA, WorkMode, Posted time).
+- Header scale: 28px–32px bold for Hero / Page titles, 20px–24px semibold for Section headings, 16px semibold for Job titles.
+- Body scale: 14px–16px regular for descriptions, 12px–13px medium for metadata badges (LPA, WorkMode, Posted time, Quotas).
 - Contrast ratio strictly meets WCAG 2.2 AA (>= 4.5:1 for body, >= 3.0:1 for large text).
 
 ## Layout & Responsive Invariants
@@ -81,5 +86,6 @@ spacing:
 ## Components & Touch Targets
 
 - All buttons, chips, and tap targets maintain minimum 44 × 44 pt hit areas.
+- Primary buttons use solid Emerald Green (`#16A34A`) with white text and 6px–8px radius.
 - Inputs provide clear placeholder text, search prefix icons, and instant clear/filter buttons.
 - Bottom actions provide full device `SafeArea` support avoiding Android 3-button and gesture bar collisions.

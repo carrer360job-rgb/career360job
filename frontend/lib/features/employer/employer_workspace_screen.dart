@@ -415,9 +415,9 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
           : 'Plan';
       label = '$name · ${profile.postingCredits}';
       icon = Icons.bolt_rounded;
-      bg = const Color(0xFFEFF6FF);
+      bg = AppTheme.primaryLight;
       fg = AppTheme.primary;
-      border = const Color(0xFFBFDBFE);
+      border = AppTheme.primaryLightBorder;
     } else {
       label = 'Upgrade ↗';
       icon = Icons.bolt_rounded;
@@ -825,7 +825,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
             : 'Information Technology & Services');
 
     Widget fallbackLogo() => Container(
-      color: const Color(0xFFEFF6FF),
+      color: AppTheme.primaryLight,
       alignment: Alignment.center,
       child: const Icon(
         Icons.apartment_rounded,
@@ -862,10 +862,10 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
                   width: 72,
                   height: 72,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
+                    color: AppTheme.primaryLight,
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: const Color(0xFFDBEAFE),
+                      color: AppTheme.primaryLightBorder,
                       width: 1.5,
                     ),
                   ),
@@ -930,7 +930,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
+                      color: AppTheme.primaryLight,
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: _isUploadingLogo
@@ -1271,24 +1271,36 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
                     ),
                   ],
                 ),
-                subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    '${profile.postingCredits} credit(s) available · ${profile.listingDays} days listing duration',
-                    style: const TextStyle(fontSize: 12),
-                  ),
+                subtitle: FutureBuilder<Map<String, dynamic>>(
+                  future: _entitlementFuture,
+                  builder: (context, snapshot) {
+                    final entitlement = snapshot.data?['entitlement'];
+                    final total = entitlement is Map ? entitlement['totalPosts'] : null;
+                    final used = entitlement is Map ? entitlement['usedPosts'] : null;
+                    final expiry = profile.creditsExpireAt;
+                    final summary = total is int && used is int
+                        ? '$used of $total posts used · ${total - used} remaining'
+                        : '${profile.postingCredits} posts remaining';
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        expiry == null ? summary : '$summary · Ends ${expiry.day}/${expiry.month}/${expiry.year}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    );
+                  },
                 ),
                 trailing: TextButton(
                   onPressed: _openPlans,
-                  child: const Text('Change'),
+                  child: const Text('Plans'),
                 ),
               ),
               const Divider(height: 1),
               ListTile(
                 leading: const Icon(Icons.receipt_long_outlined),
-                title: const Text('Payment History & Invoices'),
+                title: const Text('Payment history'),
                 subtitle: const Text(
-                  'View receipts and completed transactions',
+                  'View orders, tax and payment status',
                 ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.push(
@@ -1535,12 +1547,32 @@ class EmployerPaymentHistoryScreen extends StatelessWidget {
               margin: const EdgeInsets.only(bottom: 9),
               child: ListTile(
                 title: Text('${order['plan_name'] ?? 'Hiring plan'} · ₹${amount.toStringAsFixed(2)}'),
-                subtitle: Text('GST ₹${tax.toStringAsFixed(2)} · Order ${order['id']}'),
+                subtitle: Text(
+                  'GST ₹${tax.toStringAsFixed(2)} · ${order['credit_validity_days'] ?? '—'} days · Order ${order['id']}',
+                ),
                 trailing: _StatusPill(
                   text: order['status'] == 'paid' ? 'Paid' :
                       order['status'] == 'refunded' ? 'Refunded' :
                       order['status'] == 'failed' ? 'Failed' : 'Pending',
                   positive: order['status'] == 'paid',
+                ),
+                onTap: () => showDialog<void>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: Text(order['status'] == 'paid' ? 'Payment receipt' : 'Order details'),
+                    content: SelectableText(
+                      'Plan: ${order['plan_name'] ?? 'Hiring plan'}\n'
+                      'Amount paid: ₹${amount.toStringAsFixed(2)}\n'
+                      'GST included: ₹${tax.toStringAsFixed(2)}\n'
+                      'Status: ${order['status']}\n'
+                      'Order: ${order['id']}\n'
+                      'Payment: ${order['payment_id'] ?? 'Pending'}',
+                    ),
+                    actions: [TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Close'),
+                    )],
+                  ),
                 ),
               ),
             );
