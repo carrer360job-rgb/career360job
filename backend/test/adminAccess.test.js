@@ -75,6 +75,17 @@ test('admin endpoint rejects missing tokens and does not allow arbitrary browser
   assert.equal(preflight.headers.get('access-control-allow-origin'), 'http://localhost:5173');
   assert.match(preflight.headers.get('access-control-allow-headers') ?? '', /authorization/i);
 
+  const productionPreflight = await fetch(url, {
+    method: 'OPTIONS',
+    headers: {
+      Origin: 'https://career360-admin.vercel.app',
+      'Access-Control-Request-Method': 'GET',
+      'Access-Control-Request-Headers': 'authorization',
+    },
+  });
+  assert.equal(productionPreflight.status, 204);
+  assert.equal(productionPreflight.headers.get('access-control-allow-origin'), 'https://career360-admin.vercel.app');
+
   const rejected = await fetch(url, { headers: { Origin: 'https://untrusted.example' } });
   assert.equal(rejected.headers.get('access-control-allow-origin'), null);
 });

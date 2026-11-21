@@ -17,6 +17,7 @@ app.use(helmet());
 const allowedOrigins = new Set([
   process.env.CLIENT_URL_ADMIN,
   process.env.CLIENT_URL_EMPLOYER,
+  'https://career360-admin.vercel.app',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
 ].filter(Boolean).map((origin) => origin.replace(/\/$/, '')));
