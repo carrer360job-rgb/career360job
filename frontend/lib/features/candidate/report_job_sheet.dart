@@ -206,6 +206,10 @@ class _ReportJobSheetState extends State<ReportJobSheet> {
                                 ? 'Tell us more *'
                                 : 'Tell us more (optional)',
                             hintText: 'Share details that will help our team review the job.',
+                            hintStyle: const TextStyle(
+                              color: Color(0xFF94A3B8),
+                              fontSize: 13,
+                            ),
                             alignLabelWithHint: true,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(10),
