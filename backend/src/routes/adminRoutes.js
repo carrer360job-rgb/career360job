@@ -360,7 +360,7 @@ router.post('/payments/:orderId/reconcile', async (req, res) => {
 });
 const reportReasons = new Set(['fraud', 'misleading', 'duplicate', 'inappropriate', 'other']);
 const reportStatuses = new Set(['pending', 'dismissed', 'job_closed']);
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function reportRecord(row) {
   const job = row.jobs || {};
