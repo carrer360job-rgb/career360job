@@ -112,6 +112,12 @@ async function grantCredits(orderId, payment) {
       !payment.id || !Number.isInteger(payment.amount) || payment.currency !== 'INR') {
     throw fail('Payment details do not match the order.');
   }
+  const orderExists = await supabaseAdmin.from('employer_orders')
+    .select('id').eq('id', orderId).maybeSingle();
+  if (!orderExists.data) {
+    console.warn(`[Razorpay Webhook] Order ${orderId} not found in database; skipping fulfillment.`);
+    return { alreadyGranted: false, ignored: true };
+  }
   return checked(await supabaseAdmin.rpc('fulfill_employer_order', {
     p_order_id: orderId, p_payment_id: payment.id,
     p_amount: payment.amount, p_currency: payment.currency,
@@ -220,7 +226,7 @@ employerRouter.post('/orders/failure', verifySensitiveToken, verified, async (re
   } catch (error) { return handleError(res, error); }
 });
 
-employerWebhookRouter.post('/', express.raw({ type: 'application/json', limit: '256kb' }), async (req, res) => {
+employerWebhookRouter.post('/', express.raw({ type: '*/*', limit: '256kb' }), async (req, res) => {
   try {
     const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
     if (!secret || !Buffer.isBuffer(req.body) ||
@@ -228,12 +234,26 @@ employerWebhookRouter.post('/', express.raw({ type: 'application/json', limit: '
       return res.status(401).end();
     }
     const event = JSON.parse(req.body.toString('utf8'));
-    if (event.event === 'payment.captured') {
-      const paymentId = event.payload?.payment?.entity?.id;
+    if (event.event === 'payment.captured' || event.event === 'order.paid') {
+      let paymentId = event.payload?.payment?.entity?.id;
+      if (!paymentId && event.payload?.order?.entity?.id) {
+        const orderPayments = await razorpayRequest(`/orders/${encodeURIComponent(event.payload.order.entity.id)}/payments`);
+        paymentId = orderPayments?.items?.find((p) => p.status === 'captured')?.id;
+      }
       if (paymentId) {
         const payment = await razorpayRequest(`/payments/${encodeURIComponent(paymentId)}`);
         if (payment.amount_refunded >= payment.amount) await revokeFullyRefundedOrder(payment);
         else await grantCredits(payment.order_id, payment);
+      }
+    } else if (event.event === 'payment.failed') {
+      const orderId = event.payload?.payment?.entity?.order_id;
+      const code = event.payload?.payment?.entity?.error_code || 'payment_failed';
+      if (orderId) {
+        await supabaseAdmin.from('employer_orders').update({
+          status: 'failed',
+          failure_code: safeString(code, 80) || 'payment_failed',
+          failed_at: new Date().toISOString(),
+        }).eq('id', orderId).eq('status', 'created');
       }
     } else if (event.event === 'refund.processed' || event.event === 'payment.refunded') {
       const paymentId = event.event === 'refund.processed'
