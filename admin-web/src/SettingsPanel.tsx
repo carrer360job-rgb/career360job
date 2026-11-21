@@ -1,3 +1,4 @@
+import AdvertisingSettings from './AdvertisingSettings';
 import { useState, type FormEvent } from 'react';
 import type { AdminIdentity } from './api';
 import { supabase } from './supabase';
@@ -46,7 +47,7 @@ export default function SettingsPanel({ identity }: Props) {
   }
 
   return (
-    <section className="settings-panel" aria-labelledby="settings-password-title">
+    <> <section className="settings-panel" aria-labelledby="settings-password-title">
       <div className="settings-panel-heading">
         <p className="section-eyebrow">ACCOUNT SECURITY</p>
         <h2 id="settings-password-title">Change password</h2>
@@ -129,6 +130,6 @@ export default function SettingsPanel({ identity }: Props) {
           {saving ? 'Saving…' : 'Save password'}
         </button>
       </form>
-    </section>
+    </section><AdvertisingSettings /></>
   );
 }

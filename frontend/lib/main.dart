@@ -1,3 +1,5 @@
+import 'core/services/advertising.dart';
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -484,7 +486,8 @@ class AccountSessionGate extends StatelessWidget {
           final storedRole = rows.isNotEmpty
               ? rows.first['role']?.toString().toLowerCase()
               : null;
-          final unsupportedStoredRole = storedRole != null &&
+          final unsupportedStoredRole =
+              storedRole != null &&
               !{'candidate', 'employer', 'admin'}.contains(storedRole);
           if (unsupportedStoredRole) {
             return Scaffold(
@@ -1563,22 +1566,24 @@ class _MainShellScreenState extends State<MainShellScreen>
       _savedJobsReady = false;
       _savedJobsLoadFailed = false;
     });
-    _savedSub = _firestoreService.streamSavedJobIds(_currentUid).listen(
-      (ids) {
-        if (!mounted) return;
-        setState(() {
-          _savedJobsReady = true;
-          _savedJobsLoadFailed = false;
-          _savedJobIds
-            ..clear()
-            ..addAll(ids);
-        });
-      },
-      onError: (Object error, StackTrace stackTrace) {
-        debugPrint('[Saved jobs] $error');
-        if (mounted) setState(() => _savedJobsLoadFailed = true);
-      },
-    );
+    _savedSub = _firestoreService
+        .streamSavedJobIds(_currentUid)
+        .listen(
+          (ids) {
+            if (!mounted) return;
+            setState(() {
+              _savedJobsReady = true;
+              _savedJobsLoadFailed = false;
+              _savedJobIds
+                ..clear()
+                ..addAll(ids);
+            });
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint('[Saved jobs] $error');
+            if (mounted) setState(() => _savedJobsLoadFailed = true);
+          },
+        );
   }
 
   Future<void> _loadManagedCategories() async {
@@ -1639,13 +1644,15 @@ class _MainShellScreenState extends State<MainShellScreen>
     if (job.contains(filter) || filter.contains(job)) return true;
 
     // IT & Software / Information Technology
-    final filterIsTech = filter.contains('it') ||
+    final filterIsTech =
+        filter.contains('it') ||
         filter.contains('software') ||
         filter.contains('information technology') ||
         filter.contains('tech') ||
         filter.contains('developer') ||
         filter.contains('computer');
-    final jobIsTech = job.contains('it') ||
+    final jobIsTech =
+        job.contains('it') ||
         job.contains('software') ||
         job.contains('information technology') ||
         job.contains('tech') ||
@@ -1654,14 +1661,16 @@ class _MainShellScreenState extends State<MainShellScreen>
     if (filterIsTech && jobIsTech) return true;
 
     // Manufacturing & Production
-    final filterIsMfg = filter.contains('manufactur') ||
+    final filterIsMfg =
+        filter.contains('manufactur') ||
         filter.contains('production') ||
         filter.contains('automobile') ||
         filter.contains('auto') ||
         filter.contains('textile') ||
         filter.contains('industrial') ||
         filter.contains('plant');
-    final jobIsMfg = job.contains('manufactur') ||
+    final jobIsMfg =
+        job.contains('manufactur') ||
         job.contains('production') ||
         job.contains('automobile') ||
         job.contains('auto') ||
@@ -1671,12 +1680,14 @@ class _MainShellScreenState extends State<MainShellScreen>
     if (filterIsMfg && jobIsMfg) return true;
 
     // Sales & Marketing
-    final filterIsSales = filter.contains('sales') ||
+    final filterIsSales =
+        filter.contains('sales') ||
         filter.contains('market') ||
         filter.contains('retail') ||
         filter.contains('commerce') ||
         filter.contains('advertising');
-    final jobIsSales = job.contains('sales') ||
+    final jobIsSales =
+        job.contains('sales') ||
         job.contains('market') ||
         job.contains('retail') ||
         job.contains('commerce') ||
@@ -1684,12 +1695,14 @@ class _MainShellScreenState extends State<MainShellScreen>
     if (filterIsSales && jobIsSales) return true;
 
     // Finance & Banking
-    final filterIsFinance = filter.contains('finan') ||
+    final filterIsFinance =
+        filter.contains('finan') ||
         filter.contains('bank') ||
         filter.contains('account') ||
         filter.contains('tax') ||
         filter.contains('audit');
-    final jobIsFinance = job.contains('finan') ||
+    final jobIsFinance =
+        job.contains('finan') ||
         job.contains('bank') ||
         job.contains('account') ||
         job.contains('tax') ||
@@ -1697,13 +1710,15 @@ class _MainShellScreenState extends State<MainShellScreen>
     if (filterIsFinance && jobIsFinance) return true;
 
     // Healthcare & Medical
-    final filterIsHealth = filter.contains('health') ||
+    final filterIsHealth =
+        filter.contains('health') ||
         filter.contains('medic') ||
         filter.contains('pharma') ||
         filter.contains('clinic') ||
         filter.contains('hospital') ||
         filter.contains('nurse');
-    final jobIsHealth = job.contains('health') ||
+    final jobIsHealth =
+        job.contains('health') ||
         job.contains('medic') ||
         job.contains('pharma') ||
         job.contains('clinic') ||
@@ -1712,12 +1727,14 @@ class _MainShellScreenState extends State<MainShellScreen>
     if (filterIsHealth && jobIsHealth) return true;
 
     // Education & EdTech
-    final filterIsEdu = filter.contains('educat') ||
+    final filterIsEdu =
+        filter.contains('educat') ||
         filter.contains('teach') ||
         filter.contains('tutor') ||
         filter.contains('school') ||
         filter.contains('academic');
-    final jobIsEdu = job.contains('educat') ||
+    final jobIsEdu =
+        job.contains('educat') ||
         job.contains('teach') ||
         job.contains('tutor') ||
         job.contains('school') ||
@@ -1725,12 +1742,14 @@ class _MainShellScreenState extends State<MainShellScreen>
     if (filterIsEdu && jobIsEdu) return true;
 
     // Customer Care / Support / BPO
-    final filterIsBpo = filter.contains('support') ||
+    final filterIsBpo =
+        filter.contains('support') ||
         filter.contains('bpo') ||
         filter.contains('customer') ||
         filter.contains('call center') ||
         filter.contains('helpdesk');
-    final jobIsBpo = job.contains('support') ||
+    final jobIsBpo =
+        job.contains('support') ||
         job.contains('bpo') ||
         job.contains('customer') ||
         job.contains('call center') ||
@@ -1738,12 +1757,14 @@ class _MainShellScreenState extends State<MainShellScreen>
     if (filterIsBpo && jobIsBpo) return true;
 
     // Logistics & Supply Chain
-    final filterIsLogistics = filter.contains('logistic') ||
+    final filterIsLogistics =
+        filter.contains('logistic') ||
         filter.contains('supply') ||
         filter.contains('warehouse') ||
         filter.contains('delivery') ||
         filter.contains('transport');
-    final jobIsLogistics = job.contains('logistic') ||
+    final jobIsLogistics =
+        job.contains('logistic') ||
         job.contains('supply') ||
         job.contains('warehouse') ||
         job.contains('delivery') ||
@@ -1751,12 +1772,14 @@ class _MainShellScreenState extends State<MainShellScreen>
     if (filterIsLogistics && jobIsLogistics) return true;
 
     // Hospitality & Tourism
-    final filterIsHospitality = filter.contains('hospital') ||
+    final filterIsHospitality =
+        filter.contains('hospital') ||
         filter.contains('hotel') ||
         filter.contains('tour') ||
         filter.contains('restaurant') ||
         filter.contains('food');
-    final jobIsHospitality = job.contains('hospital') ||
+    final jobIsHospitality =
+        job.contains('hospital') ||
         job.contains('hotel') ||
         job.contains('tour') ||
         job.contains('restaurant') ||
@@ -1764,11 +1787,13 @@ class _MainShellScreenState extends State<MainShellScreen>
     if (filterIsHospitality && jobIsHospitality) return true;
 
     // Construction & Real Estate
-    final filterIsConstruction = filter.contains('construct') ||
+    final filterIsConstruction =
+        filter.contains('construct') ||
         filter.contains('real estate') ||
         filter.contains('civil') ||
         filter.contains('architect');
-    final jobIsConstruction = job.contains('construct') ||
+    final jobIsConstruction =
+        job.contains('construct') ||
         job.contains('real estate') ||
         job.contains('civil') ||
         job.contains('architect');
@@ -1783,7 +1808,9 @@ class _MainShellScreenState extends State<MainShellScreen>
       if (!job.isOpen) return false;
       if (_selectedLocation != 'All Locations' &&
           !job.isStatewide &&
-          !job.locationCity.toLowerCase().contains(_selectedLocation.toLowerCase())) {
+          !job.locationCity.toLowerCase().contains(
+            _selectedLocation.toLowerCase(),
+          )) {
         return false;
       }
       if (_selectedCategory != null &&
@@ -1855,8 +1882,10 @@ class _MainShellScreenState extends State<MainShellScreen>
     );
   }
 
-  void _showJobDetails(JobModel job) {
-    Navigator.push(
+  Future<void> _showJobDetails(JobModel job) async {
+    final wasApplied = _appliedJobIds.contains(job.id);
+    unawaited(Advertising.preloadJobView(job.id));
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => JobDetailScreen(
@@ -1870,6 +1899,17 @@ class _MainShellScreenState extends State<MainShellScreen>
         ),
       ),
     );
+    if (mounted && wasApplied == _appliedJobIds.contains(job.id)) {
+      unawaited(
+        Advertising.browsingBreak(
+          () =>
+              mounted &&
+              widget.currentRole == AppUserRole.candidate &&
+              _selectedTabIndex == 1 &&
+              (ModalRoute.of(context)?.isCurrent ?? false),
+        ),
+      );
+    }
   }
 
   Future<void> _reportJob(JobModel job) async {
@@ -1891,7 +1931,9 @@ class _MainShellScreenState extends State<MainShellScreen>
     );
     if (sent == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Thanks. Your report was sent for review.')),
+        const SnackBar(
+          content: Text('Thanks. Your report was sent for review.'),
+        ),
       );
     }
   }
@@ -1979,7 +2021,9 @@ class _MainShellScreenState extends State<MainShellScreen>
                     const SizedBox(height: 10),
                     Builder(
                       builder: (context) {
-                        final locations = List<String>.from(AppConstants.jobLocations);
+                        final locations = List<String>.from(
+                          AppConstants.jobLocations,
+                        );
                         if (!locations.contains(_selectedLocation)) {
                           locations.insert(1, _selectedLocation);
                         }
@@ -2726,6 +2770,7 @@ class _MainShellScreenState extends State<MainShellScreen>
                   _buildHomeEmptyState(hasActiveFilters: hasActiveFilters)
                 else
                   ...jobs.take(3).map(_buildReferenceJobCard),
+                if (jobs.isNotEmpty) const CandidateAd(),
               ],
             );
           },
@@ -3448,10 +3493,7 @@ class _MainShellScreenState extends State<MainShellScreen>
             const SizedBox(height: 6),
             const Text(
               'Browse live job opportunities.',
-              style: TextStyle(
-                fontSize: 13,
-                color: AppTheme.textSecondary,
-              ),
+              style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
             ),
             const SizedBox(height: 16),
             // Search & Location Row
@@ -3495,12 +3537,19 @@ class _MainShellScreenState extends State<MainShellScreen>
             if (snapshot.hasError)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Column(children: [
-                  const Text('Live jobs are unavailable right now. Check your connection and try again.',
-                    style: TextStyle(color: AppTheme.textSecondary)),
-                  const SizedBox(height: 8),
-                  OutlinedButton(onPressed: _refreshJobs, child: const Text('Retry')),
-                ]),
+                child: Column(
+                  children: [
+                    const Text(
+                      'Live jobs are unavailable right now. Check your connection and try again.',
+                      style: TextStyle(color: AppTheme.textSecondary),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      onPressed: _refreshJobs,
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
               )
             else if (isLoading)
               const Center(
@@ -3554,7 +3603,15 @@ class _MainShellScreenState extends State<MainShellScreen>
                 ),
               ),
               const SizedBox(height: 10),
-              ...jobs.map((job) => _buildReferenceJobCard(job)),
+              for (var i = 0; i < jobs.length; i++) ...[
+                _buildReferenceJobCard(jobs[i]),
+                if (i >= 4 && i < 36)
+                  CandidateAd(
+                    key: ValueKey("ad_${jobs[i].id}"),
+                    native: true,
+                    jobPosition: i + 1,
+                  ),
+              ],
             ],
           ],
         );
@@ -3568,22 +3625,35 @@ class _MainShellScreenState extends State<MainShellScreen>
       stream: _jobsStream,
       builder: (context, snapshot) {
         final allJobs = snapshot.data ?? [];
-        final savedJobs = allJobs.where((job) => _savedJobIds.contains(job.id)).toList();
+        final savedJobs = allJobs
+            .where((job) => _savedJobIds.contains(job.id))
+            .toList();
 
         if (snapshot.hasError || _savedJobsLoadFailed) {
-          return Center(child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Text('Could not load saved jobs. Check your connection and try again.'),
-              const SizedBox(height: 12),
-              OutlinedButton(onPressed: () {
-                _refreshJobs();
-                if (_savedJobsLoadFailed) _subscribeSavedJobs();
-              }, child: const Text('Retry')),
-            ]),
-          ));
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Could not load saved jobs. Check your connection and try again.',
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton(
+                    onPressed: () {
+                      _refreshJobs();
+                      if (_savedJobsLoadFailed) _subscribeSavedJobs();
+                    },
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          );
         }
-        if ((snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) ||
+        if ((snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData) ||
             !_savedJobsReady) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -3602,8 +3672,13 @@ class _MainShellScreenState extends State<MainShellScreen>
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    _savedJobIds.isEmpty ? 'No Saved Jobs Yet' : 'No saved jobs available',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    _savedJobIds.isEmpty
+                        ? 'No Saved Jobs Yet'
+                        : 'No saved jobs available',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -5315,7 +5390,9 @@ class _CandidateApplicationsScreenState
     if (id.isEmpty || _savingResumeFor != null) return;
     try {
       final picked = await FilePicker.pickFiles(
-        type: FileType.custom, allowedExtensions: ['pdf', 'doc', 'docx']);
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'doc', 'docx'],
+      );
       if (picked.isEmpty || !mounted) return;
       setState(() => _savingResumeFor = id);
       await widget.firestoreService.attachResumeToApplication(
@@ -5326,13 +5403,16 @@ class _CandidateApplicationsScreenState
       if (!mounted) return;
       setState(() => _savingResumeFor = null);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Resume attached to your application.')));
+        const SnackBar(content: Text('Resume attached to your application.')),
+      );
     } catch (error) {
       if (!mounted) return;
       setState(() => _savingResumeFor = null);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(error.toString().replaceFirst('Bad state: ', '')),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Bad state: ', '')),
+        ),
+      );
     }
   }
 
@@ -5417,7 +5497,8 @@ class _CandidateApplicationsScreenState
                   application['companyName']?.toString() ?? 'Company';
               final location = application['locationCity']?.toString() ?? '';
               final status = application['status']?.toString() ?? 'Applied';
-              final hasResume = (application['resume_url']?.toString().isNotEmpty ?? false);
+              final hasResume =
+                  (application['resume_url']?.toString().isNotEmpty ?? false);
               final appliedAt =
                   application['appliedAt'] ?? application['created_at'];
               final appliedDate = appliedAt is DateTime
@@ -5480,20 +5561,44 @@ class _CandidateApplicationsScreenState
                     ],
                     const SizedBox(height: 10),
                     if (hasResume)
-                      const Text('Resume attached', style: TextStyle(
-                        color: AppTheme.primary, fontSize: 12, fontWeight: FontWeight.w600))
-                    else if (status == 'SUBMITTED')
-                      Row(children: [
-                        const Expanded(child: Text('No resume attached', style: TextStyle(
-                          color: AppTheme.textSecondary, fontSize: 12))),
-                        TextButton.icon(
-                          onPressed: _savingResumeFor == application['id']?.toString()
-                              ? null : () => _attachResume(application),
-                          icon: const Icon(Icons.upload_file_outlined, size: 17),
-                          label: Text(_savingResumeFor == application['id']?.toString()
-                              ? 'Attaching…' : 'Add resume'),
+                      const Text(
+                        'Resume attached',
+                        style: TextStyle(
+                          color: AppTheme.primary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
                         ),
-                      ]),
+                      )
+                    else if (status == 'SUBMITTED')
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'No resume attached',
+                              style: TextStyle(
+                                color: AppTheme.textSecondary,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed:
+                                _savingResumeFor ==
+                                    application['id']?.toString()
+                                ? null
+                                : () => _attachResume(application),
+                            icon: const Icon(
+                              Icons.upload_file_outlined,
+                              size: 17,
+                            ),
+                            label: Text(
+                              _savingResumeFor == application['id']?.toString()
+                                  ? 'Attaching…'
+                                  : 'Add resume',
+                            ),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
               );

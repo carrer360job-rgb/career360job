@@ -1,3 +1,4 @@
+import '../../core/services/advertising.dart';
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/responsive/responsive_layout.dart';
@@ -131,7 +132,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
               _buildSectionTitle('4. Sharing of Personal Information'),
               const SizedBox(height: 8),
               _buildParagraph(
-                'We have a strict zero-sale policy: Career360 does NOT sell, rent, monetize, or trade candidate personal identification information with any third-party marketing brokers or advertising networks.',
+                'Career360 does not sell candidate profiles, resumes, contact details or application contents to advertising networks. The advertising SDK may process device and ad interaction data as described in the Advertising section below.',
               ),
               _buildParagraph(
                 'Your application details are shared with the hiring organization for the job you choose to apply to. We may disclose personal data only when required to do so by applicable Indian law, court order, or governmental authority.',
@@ -146,6 +147,9 @@ class PrivacyPolicyScreen extends StatelessWidget {
               ),
               const SizedBox(height: 22),
 
+              _buildSectionTitle('Advertising'),
+              _buildParagraph('Google AdMob may display advertising on eligible Android job browsing screens. The advertising SDK may process device identifiers, ad interactions and technical information according to your privacy choices. We do not send your resume, contact details or application contents to advertisers. Manage advertising privacy choices below.'),
+              const AdvertisingPrivacyButton(),
               // Section 6
               _buildSectionTitle('6. Candidate Rights & Account Deletion'),
               const SizedBox(height: 8),

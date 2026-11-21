@@ -37,7 +37,7 @@ const copy: Record<AdminTab, { title: string; description: string }> = {
   plans: { title: 'Hiring plans', description: 'Set the offers employers see in the app.' },
   payments: { title: 'Payments', description: 'Track orders, payment status, and refunds.' },
   reports: { title: 'Reports', description: 'Review reported jobs and record moderation decisions.' },
-  settings: { title: 'Settings', description: 'Manage the password for your admin account.' },
+  settings: { title: 'Settings', description: 'Manage account security and app advertising.' },
 };
 
 function Icon({ name, size = 19 }: { name: string; size?: number }) {

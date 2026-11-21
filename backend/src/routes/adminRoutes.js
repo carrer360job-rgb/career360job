@@ -19,6 +19,21 @@ router.get('/me', verifyAdminToken, requireAdmin, (req, res) => {
 
 router.use(verifyAdminToken, requireAdmin);
 
+router.get('/advertising', async (req, res) => {
+ const {data,error} = await supabaseAdmin.from('ad_settings').select('enabled,banner,native,native_interval,interstitial,interstitial_views,cooldown_minutes,daily_cap,updated_at').eq('id',true).single();
+ if(error) return res.status(503).json({error:{message:'Advertising settings are unavailable. Apply the database migration.'}});
+ res.set('Cache-Control','no-store').json(data);
+});
+router.put('/advertising', async (req,res) => {
+ const {enabled,banner,native,native_interval,interstitial,interstitial_views,cooldown_minutes,daily_cap} = req.body || {};
+ if([enabled,banner,native,interstitial].some(v => typeof v !== 'boolean') || !Number.isInteger(native_interval) || native_interval < 5 || native_interval > 12 || !Number.isInteger(interstitial_views) || interstitial_views<5 || interstitial_views>20 || !Number.isInteger(cooldown_minutes) || cooldown_minutes<10 || cooldown_minutes>60 || !Number.isInteger(daily_cap) || daily_cap<1 || daily_cap>2)
+   return res.status(400).json({error:{message:'Use valid switches and an interval from 5 to 12 jobs.'}});
+ const {data,error} = await supabaseAdmin.from('ad_settings').update({enabled,banner,native,native_interval,interstitial,interstitial_views,cooldown_minutes,daily_cap,updated_by:req.user.uid,updated_at:new Date().toISOString()}).eq('id',true).select('enabled,banner,native,native_interval,interstitial,interstitial_views,cooldown_minutes,daily_cap,updated_at').single();
+ if(error) return res.status(503).json({error:{message:'Could not save advertising settings.'}});
+ res.set('Cache-Control','no-store').json(data);
+});
+
+
 function fail(res, error) {
   console.error('[Admin API]', error);
   return res.status(error.status || 500).json({ error: { message: error.status ? error.message : 'Admin request failed.' } });

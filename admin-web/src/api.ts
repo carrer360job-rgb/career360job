@@ -264,3 +264,7 @@ export async function getAdminIdentity(token: string): Promise<AdminIdentity> {
   }
   return identity as AdminIdentity;
 }
+
+export type AdvertisingSettings = { enabled: boolean; banner: boolean; native: boolean; native_interval: number; interstitial: boolean; interstitial_views: number; cooldown_minutes: number; daily_cap: number; updated_at?: string };
+export const getAdvertising = (token: string) => adminRequest<AdvertisingSettings>(token, '/advertising');
+export const saveAdvertising = (token: string, data: AdvertisingSettings) => adminRequest<AdvertisingSettings>(token, '/advertising', 'PUT', data);

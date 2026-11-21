@@ -21,7 +21,12 @@ const defaultAnnouncements = [
   { id: 'launch', title: 'Welcome to Career360', content: 'Verified job platform for candidates and employers across Tamil Nadu and Pan-India.', sortOrder: 1 },
 ];
 
-router.get('/', async (req, res) => {
+router.get('/advertising', async (req,res) => {
+ const {data,error} = await supabaseAdmin.from('ad_settings').select('enabled,banner,native,native_interval,interstitial,interstitial_views,cooldown_minutes,daily_cap').eq('id',true).single();
+ res.set('Cache-Control','no-store').json(error ? {enabled:false} : data);
+});
+
+router.get('/',  async (req, res) => {
   const kind = typeof req.query.kind === 'string' ? req.query.kind : '';
   if (!publicKinds.has(kind)) {
     return res.status(400).json({ error: { message: 'Choose a valid content type.' } });
