@@ -401,19 +401,7 @@ class SupabaseService {
       if (existing != null) throw StateError('You have already applied to this job.');
       String? resumePath;
       if (resumeFile != null) {
-        final extension = resumeFile.extension?.toLowerCase();
-        if (!['pdf', 'doc', 'docx'].contains(extension)) throw StateError('Choose a PDF, DOC, or DOCX resume.');
-        final size = await resumeFile.length();
-        if (size == null || size < 1 || size > 5 * 1024 * 1024) throw StateError('Resume must be under 5 MB.');
-        final bytes = await resumeFile.readAsBytes();
-        if (bytes.length != size) throw StateError('Could not read the selected resume.');
-        final random = Random.secure();
-        final token = List.generate(16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
-        resumePath = '$candidateUid/$token.$extension';
-        final contentType = {'pdf':'application/pdf', 'doc':'application/msword',
-          'docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}[extension]!;
-        await client.storage.from('resumes').uploadBinary(resumePath, bytes,
-            fileOptions: FileOptions(contentType: contentType, upsert: false));
+        resumePath = await _uploadCandidateResume(candidateUid, resumeFile);
       }
       try {
       await client.from('job_applications').insert({
@@ -451,6 +439,55 @@ class SupabaseService {
       rethrow;
     } catch (e) {
       debugPrint('[SupabaseService] Error applying to job: $e');
+      rethrow;
+    }
+  }
+
+  Future<String> _uploadCandidateResume(String candidateUid, PlatformFile resumeFile) async {
+    if (client.auth.currentUser?.id != candidateUid) throw StateError('Sign in to upload your resume.');
+    final extension = resumeFile.extension?.toLowerCase();
+    if (!['pdf', 'doc', 'docx'].contains(extension)) throw StateError('Choose a PDF, DOC, or DOCX resume.');
+    if (resumeFile.name.length > 200) throw StateError('Resume file name is too long.');
+    final size = await resumeFile.length();
+    if (size == null || size < 1 || size > 5 * 1024 * 1024) throw StateError('Resume must be under 5 MB.');
+    final bytes = await resumeFile.readAsBytes();
+    if (bytes.length != size) throw StateError('Could not read the selected resume.');
+    if (extension == 'pdf' && (bytes.length < 4 || bytes[0] != 0x25 ||
+        bytes[1] != 0x50 || bytes[2] != 0x44 || bytes[3] != 0x46)) {
+      throw StateError('The selected file is not a valid PDF.');
+    }
+    final random = Random.secure();
+    final token = List.generate(16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+    final path = '$candidateUid/$token.$extension';
+    final contentType = {'pdf':'application/pdf', 'doc':'application/msword',
+      'docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}[extension]!;
+    await client.storage.from('resumes').uploadBinary(path, bytes,
+      fileOptions: FileOptions(contentType: contentType, upsert: false));
+    return path;
+  }
+
+  Future<void> attachResumeToApplication({
+    required String candidateUid,
+    required String applicationId,
+    required PlatformFile resumeFile,
+  }) async {
+    if (client.auth.currentUser?.id != candidateUid) throw StateError('Sign in to update your application.');
+    final candidate = await client.from('candidate_profiles').select('id')
+      .eq('user_id', candidateUid).maybeSingle();
+    final application = candidate == null ? null : await client.from('job_applications')
+      .select('id,resume_url,status').eq('id', applicationId)
+      .eq('candidate_id', candidate['id']).maybeSingle();
+    if (application == null || application['status'] != 'SUBMITTED' || application['resume_url'] != null) {
+      throw StateError('This application cannot accept a new resume.');
+    }
+    final path = await _uploadCandidateResume(candidateUid, resumeFile);
+    try {
+      final saved = await client.from('job_applications').update({
+        'resume_url': path, 'resume_file_name': resumeFile.name,
+      }).eq('id', applicationId).select('id').maybeSingle();
+      if (saved == null) throw StateError('Could not attach the resume to this application.');
+    } catch (_) {
+      try { await client.storage.from('resumes').remove([path]); } catch (_) {}
       rethrow;
     }
   }

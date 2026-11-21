@@ -5390,6 +5390,34 @@ class _CandidateApplicationsScreen extends StatefulWidget {
 
 class _CandidateApplicationsScreenState
     extends State<_CandidateApplicationsScreen> {
+  String? _savingResumeFor;
+
+  Future<void> _attachResume(Map<String, dynamic> application) async {
+    final id = application['id']?.toString() ?? '';
+    if (id.isEmpty || _savingResumeFor != null) return;
+    try {
+      final picked = await FilePicker.pickFiles(
+        type: FileType.custom, allowedExtensions: ['pdf', 'doc', 'docx']);
+      if (picked.isEmpty || !mounted) return;
+      setState(() => _savingResumeFor = id);
+      await widget.firestoreService.attachResumeToApplication(
+        candidateUid: widget.candidateUid,
+        applicationId: id,
+        resumeFile: picked.first,
+      );
+      if (!mounted) return;
+      setState(() => _savingResumeFor = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Resume attached to your application.')));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _savingResumeFor = null);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(error.toString().replaceFirst('Bad state: ', '')),
+      ));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -5471,6 +5499,7 @@ class _CandidateApplicationsScreenState
                   application['companyName']?.toString() ?? 'Company';
               final location = application['locationCity']?.toString() ?? '';
               final status = application['status']?.toString() ?? 'Applied';
+              final hasResume = (application['resume_url']?.toString().isNotEmpty ?? false);
               final appliedAt =
                   application['appliedAt'] ?? application['created_at'];
               final appliedDate = appliedAt is DateTime
@@ -5531,6 +5560,22 @@ class _CandidateApplicationsScreenState
                         ),
                       ),
                     ],
+                    const SizedBox(height: 10),
+                    if (hasResume)
+                      const Text('Resume attached', style: TextStyle(
+                        color: AppTheme.primary, fontSize: 12, fontWeight: FontWeight.w600))
+                    else if (status == 'SUBMITTED')
+                      Row(children: [
+                        const Expanded(child: Text('No resume attached', style: TextStyle(
+                          color: AppTheme.textSecondary, fontSize: 12))),
+                        TextButton.icon(
+                          onPressed: _savingResumeFor == application['id']?.toString()
+                              ? null : () => _attachResume(application),
+                          icon: const Icon(Icons.upload_file_outlined, size: 17),
+                          label: Text(_savingResumeFor == application['id']?.toString()
+                              ? 'Attaching…' : 'Add resume'),
+                        ),
+                      ]),
                   ],
                 ),
               );

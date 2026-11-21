@@ -471,7 +471,7 @@ employerRouter.post('/applications/:applicationId/view', verifySensitiveToken, v
       candidateProfile: {
         educationLevel: education.educationLevel || '', qualification: education.qualification || '',
         collegeOrSchool: education.collegeOrSchool || '', graduationYear: education.graduationYear || '',
-        hasExperience: experience.hasExperience === true,
+        hasExperience: typeof experience.hasExperience === 'boolean' ? experience.hasExperience : null,
         experienceYears: experience.experienceYears || '', experienceMonths: experience.experienceMonths || '',
         lastCompany: experience.lastCompany || '', lastJobTitle: experience.lastJobTitle || '',
         noticePeriod: experience.noticePeriod || '',

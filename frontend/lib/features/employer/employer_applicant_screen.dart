@@ -135,7 +135,7 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
 
   Widget _section(String title, List<Widget> children) => Container(
     margin: const EdgeInsets.only(bottom: 12),
-    padding: const EdgeInsets.fromLTRB(18, 18, 18, 4),
+    padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
     decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
       border: Border.all(color: const Color(0xFFE2E8E5))),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -162,7 +162,10 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF6F8F7),
       appBar: AppBar(title: const Text('Applicant profile'), backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white),
+        surfaceTintColor: Colors.white, actions: [
+          IconButton(onPressed: _loading ? null : _load,
+            tooltip: 'Refresh applicant', icon: const Icon(Icons.refresh)),
+        ]),
       body: _loading && _data == null
           ? const Center(child: CircularProgressIndicator())
           : _error != null && _data == null
@@ -180,7 +183,11 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
                       }, child: const Text('View hiring plans')),
                     TextButton(onPressed: _load, child: const Text('Try again')),
                   ])))
-              : ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 28), children: [
+              : SafeArea(
+                  top: false,
+                  child: ListView(
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, 36 + MediaQuery.paddingOf(context).bottom),
+                    children: [
                   Container(padding: const EdgeInsets.all(18),
                     margin: const EdgeInsets.only(bottom: 14),
                     decoration: BoxDecoration(color: Colors.white,
@@ -210,9 +217,11 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
                     ])),
                   _section('Submitted with this application', [
                     _field('Name', application['name']),
-                    _field('Location', application['district']),
-                    _field('Education / qualification', application['qualification']),
-                    _field('Experience level', application['experienceLevel']),
+                    _field('Email address', application['email']),
+                    _field('Phone / WhatsApp number', application['phone']),
+                    _field('Current district / city', application['district']),
+                    _field('Highest education / degree', application['qualification']),
+                    _field('Total work experience', application['experienceLevel']),
                     _field('Notice period', application['noticePeriod']),
                     if (skills.isNotEmpty) _field('Skills', skills.join(', ')),
                     _field('Note to recruiter', application['coverNote']),
@@ -230,15 +239,20 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
                     _field('Last company', profile['lastCompany']),
                     _field('Last role', profile['lastJobTitle']),
                   ]),
-                  _section('Contact', [
-                    _field('Email', _data?['email']), _field('Phone', _data?['phone']),
-                    _field('District', _data?['location']),
+                  _section('Contact applicant', [
+                    if (_text(application['email']).isEmpty)
+                      _field('Account email (not captured in this application)', _data?['email']),
+                    if (_text(application['phone']).isEmpty)
+                      _field('Account phone (not captured in this application)', _data?['phone']),
                     if (_text(_data?['phone']).isNotEmpty)
                       TextButton.icon(onPressed: () => launchUrl(Uri(scheme: 'tel', path: _text(_data?['phone']))),
                         icon: const Icon(Icons.call_outlined), label: const Text('Call applicant')),
+                    if (_text(_data?['email']).isNotEmpty)
+                      TextButton.icon(onPressed: () => launchUrl(Uri(scheme: 'mailto', path: _text(_data?['email']))),
+                        icon: const Icon(Icons.mail_outline), label: const Text('Email applicant')),
                   ]),
                   _section('Resume', [
-                    Text(hasResume ? resumeName : 'No resume attached',
+                    Text(hasResume ? resumeName : 'No resume attached to this application. The candidate can add one from Applied jobs.',
                       style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
                     if (hasResume) Padding(padding: const EdgeInsets.only(top: 12, bottom: 12),
                       child: Wrap(spacing: 8, runSpacing: 8, children: [
@@ -254,9 +268,12 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
                         OutlinedButton(onPressed: _busy || _status == status ? null
                           : () => _changeStatus(status), child: Text(status)),
                     ]),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                   ]),
-                ]),
+                  const SizedBox(height: 24),
+                ],
+              ),
+            ),
     );
   }
 }
