@@ -104,14 +104,18 @@ class EmployerService {
 
   Stream<List<Map<String, dynamic>>> watchApplications(String uid) async* {
     while (AppAuthBridge.currentUser?.uid == uid) {
-      final data = await EmployerApiService().applications();
-      final raw = data['applications'];
-      yield raw is List
-          ? raw
-                .whereType<Map>()
-                .map((item) => item.cast<String, dynamic>())
-                .toList()
-          : <Map<String, dynamic>>[];
+      final applications = <Map<String, dynamic>>[];
+      var hasMore = true;
+      while (hasMore) {
+        final data = await EmployerApiService().applications(offset: applications.length);
+        final raw = data['applications'];
+        final page = raw is List
+            ? raw.whereType<Map>().map((item) => item.cast<String, dynamic>()).toList()
+            : <Map<String, dynamic>>[];
+        applications.addAll(page);
+        hasMore = data['hasMore'] == true && page.isNotEmpty;
+      }
+      yield applications;
       await Future<void>.delayed(const Duration(seconds: 20));
     }
   }

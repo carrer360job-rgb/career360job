@@ -28,7 +28,11 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
   bool _loading = true;
   bool _busy = false;
   bool _resumeBusy = false;
+  String? _updatingStatus;
   late String _status = '${widget.application['status'] ?? 'Applied'}';
+
+  bool _isCurrent(String status) =>
+      _status.trim().toLowerCase() == status.trim().toLowerCase();
 
   @override
   void initState() {
@@ -40,7 +44,15 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
     setState(() { _loading = true; _error = null; _data = null; });
     try {
       final data = await _api.viewApplicant('${widget.application['id']}');
-      if (mounted) setState(() => _data = data);
+      if (mounted) {
+        final appStatus = (data['application'] as Map?)?['status']?.toString();
+        setState(() {
+          _data = data;
+          if (appStatus != null && appStatus.isNotEmpty) {
+            _status = appStatus;
+          }
+        });
+      }
     } catch (error) {
       if (mounted) setState(() => _error = error.toString().replaceFirst('Bad state: ', ''));
     } finally {
@@ -49,12 +61,46 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
   }
 
   Future<void> _changeStatus(String status) async {
-    setState(() => _busy = true);
+    if (_busy || _isCurrent(status)) return;
+    setState(() {
+      _busy = true;
+      _updatingStatus = status;
+    });
     try {
       await _api.updateApplication('${widget.application['id']}', status);
-      if (mounted) setState(() => _status = status);
-    } catch (error) { _message(error); }
-    finally { if (mounted) setState(() => _busy = false); }
+      if (mounted) {
+        setState(() {
+          _status = status;
+          if (_data != null && _data!['application'] is Map) {
+            _data!['application']['status'] = status;
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                Text('Application marked as $status'),
+              ],
+            ),
+            backgroundColor: const Color(0xFF0F172A),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    } catch (error) {
+      _message(error);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _updatingStatus = null;
+        });
+      }
+    }
   }
 
   void _message(Object error) {
@@ -195,9 +241,21 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
                       border: Border.all(color: const Color(0xFFE2E8E5))),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Row(children: [
-                        CircleAvatar(radius: 27, backgroundColor: const Color(0xFFE9F7EF),
+                        CircleAvatar(
+                          radius: 27,
+                          backgroundColor: const Color(0xFFDCFCE7),
                           backgroundImage: photo.isNotEmpty ? NetworkImage(photo) : null,
-                          child: photo.isEmpty ? Text(name.isEmpty ? '?' : name[0].toUpperCase()) : null),
+                          child: photo.isEmpty
+                              ? Text(
+                                  name.isEmpty ? '?' : name[0].toUpperCase(),
+                                  style: const TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w900,
+                                    color: AppTheme.primary,
+                                  ),
+                                )
+                              : null,
+                        ),
                         const SizedBox(width: 13),
                         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Text(name.isEmpty ? 'Applicant' : name,
@@ -263,11 +321,64 @@ class _EmployerApplicantScreenState extends State<EmployerApplicantScreen> {
                       ])),
                   ]),
                   _section('Move application', [
-                    Wrap(spacing: 8, runSpacing: 8, children: [
-                      for (final status in ['Shortlisted', 'Interview', 'Hired', 'Rejected'])
-                        OutlinedButton(onPressed: _busy || _status == status ? null
-                          : () => _changeStatus(status), child: Text(status)),
-                    ]),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final status in ['Shortlisted', 'Interview', 'Hired', 'Rejected']) ...[
+                          if (_updatingStatus == status)
+                            OutlinedButton.icon(
+                              onPressed: null,
+                              icon: const SizedBox(
+                                width: 13,
+                                height: 13,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppTheme.primary,
+                                ),
+                              ),
+                              label: Text('$status...'),
+                            )
+                          else if (_isCurrent(status))
+                            FilledButton.icon(
+                              onPressed: null,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: status == 'Rejected'
+                                    ? const Color(0xFFDC2626)
+                                    : AppTheme.primary,
+                                disabledBackgroundColor: status == 'Rejected'
+                                    ? const Color(0xFFDC2626)
+                                    : AppTheme.primary,
+                                disabledForegroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              ),
+                              icon: const Icon(Icons.check_rounded, size: 16, color: Colors.white),
+                              label: Text(
+                                status,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            )
+                          else
+                            OutlinedButton(
+                              onPressed: _busy ? null : () => _changeStatus(status),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: status == 'Rejected'
+                                    ? const Color(0xFFDC2626)
+                                    : AppTheme.primary,
+                                side: BorderSide(
+                                  color: status == 'Rejected'
+                                      ? const Color(0xFFFCA5A5)
+                                      : const Color(0xFFBBF7D0),
+                                ),
+                              ),
+                              child: Text(status),
+                            ),
+                        ],
+                      ],
+                    ),
                     const SizedBox(height: 8),
                   ]),
                   const SizedBox(height: 24),

@@ -1474,22 +1474,13 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
         }
       }
 
-      if (_applicantFilter == 'Unlocked') {
-        return app['unlocked'] == true;
-      } else if (_applicantFilter == 'New / Locked') {
-        return app['unlocked'] != true;
-      } else if (_applicantFilter == 'Shortlisted') {
-        return '${app['status']}'.toLowerCase().contains('shortlist');
-      } else if (_applicantFilter == 'Hired') {
-        return '${app['status']}'.toLowerCase().contains('hire');
-      }
-      return true;
+      return _matchesApplicationStatus(app, _applicantFilter);
     }).toList();
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 20, 18, 32),
       children: [
-        // Section Header with inline Unlocks Balance Pill
+        // Each row represents an application, including repeat candidates.
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1499,7 +1490,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
                 children: [
                   Row(
                     children: [
-                      const _SectionTitle('Applicants'),
+                      const _SectionTitle('Applications'),
                       if (applications.isNotEmpty) ...[
                         const SizedBox(width: 8),
                         Container(
@@ -1522,7 +1513,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    'Review candidates and move them through hiring.',
+                    'Review applications and move candidates through hiring.',
                     style: TextStyle(
                       fontSize: 13,
                       color: AppTheme.textSecondary,
@@ -1531,55 +1522,42 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            if (_entitlementFuture != null)
-              FutureBuilder<Map<String, dynamic>>(
-                future: _entitlementFuture,
-                builder: (context, snapshot) {
-                  final entitlement = snapshot.data?['entitlement'];
-                  if (entitlement is! Map) return const SizedBox.shrink();
-                  final limit = entitlement['profileUnlockLimit'] as int? ?? 0;
-                  final used = entitlement['unlocksUsed'] as int? ?? 0;
-                  final remaining = (limit - used).clamp(0, limit);
-                  final isLow = remaining < 10;
-
-                  return InkWell(
-                    onTap: _openPlans,
-                    borderRadius: BorderRadius.circular(20),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: isLow ? const Color(0xFFFFFBEB) : const Color(0xFFF0FDF4),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: isLow ? const Color(0xFFFDE68A) : const Color(0xFFBBF7D0),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.bolt_rounded,
-                            size: 15,
-                            color: isLow ? const Color(0xFFD97706) : AppTheme.primary,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '$remaining left',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: isLow ? const Color(0xFFB45309) : const Color(0xFF15803D),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
           ],
         ),
+        if (_entitlementFuture != null) ...[
+          const SizedBox(height: 10),
+          FutureBuilder<Map<String, dynamic>>(
+            future: _entitlementFuture,
+            builder: (context, snapshot) {
+              final entitlement = snapshot.data?['entitlement'];
+              if (entitlement is! Map || entitlement['active'] != true) {
+                return const SizedBox.shrink();
+              }
+              final limit = (entitlement['profileUnlockLimit'] as num?)?.toInt() ?? 0;
+              final used = (entitlement['unlocksUsed'] as num?)?.toInt() ?? 0;
+              final remaining = (limit - used).clamp(0, limit);
+              return Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFBBF7D0)),
+                  ),
+                  child: Text(
+                    '$remaining candidate profiles left',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF15803D),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
         const SizedBox(height: 16),
 
         // Search Bar
@@ -1620,13 +1598,15 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
             children: [
               _applicantFilterChip('All', applications.length),
               const SizedBox(width: 8),
-              _applicantFilterChip('Unlocked', applications.where((a) => a['unlocked'] == true).length),
+              _applicantFilterChip('New', applications.where((a) => _matchesApplicationStatus(a, 'New')).length),
               const SizedBox(width: 8),
-              _applicantFilterChip('New / Locked', applications.where((a) => a['unlocked'] != true).length),
+              _applicantFilterChip('Shortlisted', applications.where((a) => _matchesApplicationStatus(a, 'Shortlisted')).length),
               const SizedBox(width: 8),
-              _applicantFilterChip('Shortlisted', applications.where((a) => '${a['status']}'.toLowerCase().contains('shortlist')).length),
+              _applicantFilterChip('Interview', applications.where((a) => _matchesApplicationStatus(a, 'Interview')).length),
               const SizedBox(width: 8),
-              _applicantFilterChip('Hired', applications.where((a) => '${a['status']}'.toLowerCase().contains('hire')).length),
+              _applicantFilterChip('Hired', applications.where((a) => _matchesApplicationStatus(a, 'Hired')).length),
+              const SizedBox(width: 8),
+              _applicantFilterChip('Rejected', applications.where((a) => _matchesApplicationStatus(a, 'Rejected')).length),
             ],
           ),
         ),
@@ -1640,7 +1620,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
         else if (filtered.isEmpty)
           const _StatePanel(
             icon: Icons.search_off_rounded,
-            title: 'No matching applicants',
+            title: 'No matching applications',
             detail: 'Try clearing your search query or filter selection.',
           )
         else
@@ -1648,6 +1628,14 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
             _applicantCard(application),
       ],
     );
+  }
+
+  bool _matchesApplicationStatus(Map<String, dynamic> application, String filter) {
+    if (filter == 'All') return true;
+    final status = '${application['status'] ?? 'Applied'}'.toLowerCase();
+    return filter == 'New'
+        ? status == 'applied' || status == 'submitted'
+        : status == filter.toLowerCase();
   }
 
   Widget _applicantFilterChip(String label, int count) {
@@ -1672,7 +1660,6 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
   }
 
   Widget _applicantCard(Map<String, dynamic> application) {
-    final isUnlocked = application['unlocked'] == true;
     final name = '${application['candidateName'] ?? 'Applicant'}';
     final jobTitle = '${application['jobTitle'] ?? 'Job'}';
     final status = '${application['status'] ?? 'Applied'}';
@@ -1687,8 +1674,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isUnlocked ? const Color(0xFFBBF7D0) : const Color(0xFFE2E8F0),
-          width: isUnlocked ? 1.5 : 1,
+          color: const Color(0xFFE2E8F0),
         ),
         boxShadow: [
           BoxShadow(
@@ -1709,7 +1695,7 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Top Row: Avatar, Name, Job, Unlock Badge
+                // Candidate and job
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1717,16 +1703,16 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
                       width: 44,
                       height: 44,
                       decoration: BoxDecoration(
-                        color: isUnlocked ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                        color: const Color(0xFFDCFCE7),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       alignment: Alignment.center,
                       child: Text(
                         _initial(name),
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w900,
-                          color: isUnlocked ? AppTheme.primary : const Color(0xFF334155),
+                          color: AppTheme.primary,
                         ),
                       ),
                     ),
@@ -1757,55 +1743,6 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    if (isUnlocked)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFDCFCE7),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFF86EFAC)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.lock_open_rounded, size: 12, color: AppTheme.success),
-                            SizedBox(width: 4),
-                            Text(
-                              'Unlocked ✓',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.success,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    else
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(Icons.lock_outline_rounded, size: 12, color: Color(0xFF64748B)),
-                            SizedBox(width: 4),
-                            Text(
-                              '1 Unlock',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF64748B),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                   ],
                 ),
 
@@ -1860,18 +1797,18 @@ class _EmployerWorkspaceScreenState extends State<EmployerWorkspaceScreen> {
                     Row(
                       children: [
                         Text(
-                          isUnlocked ? 'View Profile' : 'Unlock & View',
-                          style: TextStyle(
+                          'View profile',
+                          style: const TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
-                            color: isUnlocked ? AppTheme.primary : const Color(0xFF0F172A),
+                            color: AppTheme.primary,
                           ),
                         ),
                         const SizedBox(width: 3),
-                        Icon(
+                        const Icon(
                           Icons.arrow_forward_rounded,
                           size: 14,
-                          color: isUnlocked ? AppTheme.primary : const Color(0xFF0F172A),
+                          color: AppTheme.primary,
                         ),
                       ],
                     ),

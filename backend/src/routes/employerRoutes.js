@@ -381,9 +381,13 @@ employerRouter.get('/entitlement', verifySupabaseToken, verified, async (req, re
 employerRouter.get('/applications', verifySupabaseToken, verified, async (req, res) => {
   try {
     const employer = await approvedEmployer(req.user.uid);
+    const offset = Number(req.query.offset ?? 0);
+    if (!Number.isSafeInteger(offset) || offset < 0) throw fail('Choose a valid applications page.');
+    const pageSize = 200;
     const [appsResult, jobsResult, entitlementResult] = await Promise.all([
-      supabaseAdmin.from('job_applications').select('*').eq('employer_id', employer.id)
-        .order('created_at', { ascending: false }).limit(200),
+      supabaseAdmin.from('job_applications').select('*', { count: 'exact' }).eq('employer_id', employer.id)
+        .order('created_at', { ascending: false }).order('id', { ascending: false })
+        .range(offset, offset + pageSize - 1),
       supabaseAdmin.from('jobs').select('id,title').eq('employer_id', employer.id),
       supabaseAdmin.from('employer_entitlements').select('*').eq('employer_id', employer.id).maybeSingle(),
     ]);
@@ -403,11 +407,15 @@ employerRouter.get('/applications', verifySupabaseToken, verified, async (req, r
       coverNote: app.cover_note || '', hasResume: Boolean(app.resume_url),
       status: !app.status || app.status === 'SUBMITTED' ? 'Applied' :
         app.status.charAt(0) + app.status.slice(1).toLowerCase(),
-      appliedAt: app.created_at, unlocked: unlockedIds.has(app.candidate_id),
+      appliedAt: app.created_at, createdAt: app.created_at,
+      district: app.applicant_district || '', unlocked: unlockedIds.has(app.candidate_id),
     }));
     res.set('Cache-Control', 'no-store');
-    return res.json({ applications, remainingUnlocks: active
-      ? Math.max(0, entitlement.profile_unlock_limit - entitlement.unlocks_used) : 0 });
+    return res.json({ applications, totalApplications: appsResult.count ?? offset + apps.length,
+      hasMore: appsResult.count == null ? apps.length === pageSize
+        : offset + apps.length < appsResult.count,
+      remainingUnlocks: active
+        ? Math.max(0, entitlement.profile_unlock_limit - entitlement.unlocks_used) : 0 });
   } catch (error) { return handleError(res, error); }
 });
 
@@ -439,7 +447,7 @@ employerRouter.post('/applications/:applicationId/view', verifySensitiveToken, v
     });
     if (unlockResult.error) {
       if (/no profile unlocks remaining|active plan/i.test(unlockResult.error.message)) {
-        throw fail('No profile unlocks remain on your current plan. Choose a hiring plan to continue.', 402);
+        throw fail('Your plan has reached its applicant profile viewing limit. Choose a hiring plan to continue.', 402);
       }
       throw fail('Applicant details are temporarily unavailable. Try again.', 503);
     }

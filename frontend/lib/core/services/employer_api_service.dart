@@ -109,8 +109,8 @@ class EmployerApiService {
 
   Future<Map<String, dynamic>> entitlement() => _request('GET', '/entitlement');
 
-  Future<Map<String, dynamic>> applications() =>
-      _request('GET', '/applications');
+  Future<Map<String, dynamic>> applications({int offset = 0}) =>
+      _request('GET', '/applications?offset=$offset');
 
   Future<Map<String, dynamic>> viewApplicant(String id) async {
     final data = await _request(
