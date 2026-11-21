@@ -231,13 +231,28 @@ export const reconcilePaymentRefund = (token: string, orderId: string) =>
   adminRequest<{ status: string }>(token, `/payments/${encodeURIComponent(orderId)}/reconcile`, 'POST');
 
 export type JobReport = { id: string; jobId: string; jobTitle: string; companyName: string;
-  candidateUid: string; reason: string; details: string; status: string; createdAt: string | null };
-export type ReportSummary = { candidates: number; employers: number; jobs: number; applications: number; paidOrders: number };
-export const getReports = (token: string, cursor?: string) => adminRequest<{
-  available?: boolean; summary: ReportSummary | null; reports: JobReport[]; nextCursor: string | null;
-}>(token, `/reports${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`);
+  jobStatus: string; reason: string; details: string; status: string; createdAt: string | null;
+  resolvedAt: string | null; resolutionNotes: string };
+export type ReportSummary = { pending: number; dismissed: number; jobClosed: number };
+export type ReportDetail = { report: JobReport & { resolvedBy: string | null };
+  job: { id: string; title: string; companyName: string; description: string;
+    category: string; district: string; salaryText: string; status: string;
+    createdAt: string | null; expiresAt: string | null } | null;
+  relatedReports: Array<{ id: string; reason: string; details: string; status: string; createdAt: string | null }> };
+export const getReports = (token: string, options: {
+  status?: string; reason?: string; search?: string; cursor?: string;
+} = {}) => {
+  const query = new URLSearchParams({ status: options.status || 'pending' });
+  if (options.reason && options.reason !== 'all') query.set('reason', options.reason);
+  if (options.search) query.set('search', options.search);
+  if (options.cursor) query.set('cursor', options.cursor);
+  return adminRequest<{ summary: ReportSummary; reports: JobReport[];
+    total: number; nextCursor: string | null }>(token, `/reports?${query}`);
+};
+export const getReport = (token: string, id: string) =>
+  adminRequest<ReportDetail>(token, `/reports/${encodeURIComponent(id)}`);
 export const resolveReport = (token: string, id: string, decision: 'dismissed' | 'job_closed', notes = '') =>
-  adminRequest<{ status: string }>(token, `/reports/${encodeURIComponent(id)}/resolve`, 'POST', { decision, notes });
+  adminRequest<{ status: string; affectedReports: number }>(token, `/reports/${encodeURIComponent(id)}/resolve`, 'POST', { decision, notes });
 
 export async function getAdminIdentity(token: string): Promise<AdminIdentity> {
   const identity: unknown = await adminRequest(token, '/me');

@@ -20,6 +20,7 @@ import 'data/models/employer_profile.dart';
 import 'features/auth/role_selection_screen.dart';
 import 'features/candidate/candidate_guidelines_screen.dart';
 import 'features/candidate/job_detail_screen.dart';
+import 'features/candidate/report_job_sheet.dart';
 import 'features/employer/employer_guidelines_screen.dart';
 import 'features/employer/employer_login_screen.dart';
 import 'features/auth/candidate_login_screen.dart';
@@ -1872,109 +1873,26 @@ class _MainShellScreenState extends State<MainShellScreen>
   }
 
   Future<void> _reportJob(JobModel job) async {
-    final detailsController = TextEditingController();
-    var reason = 'fraud';
-    var message = '';
-    final report = await showDialog<Map<String, String>>(
+    final sent = await showModalBottomSheet<bool>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Report this job'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                initialValue: reason,
-                decoration: const InputDecoration(labelText: 'Reason'),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'fraud',
-                    child: Text('Looks fraudulent'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'misleading',
-                    child: Text('Misleading details'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'duplicate',
-                    child: Text('Duplicate listing'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'inappropriate',
-                    child: Text('Inappropriate content'),
-                  ),
-                  DropdownMenuItem(value: 'other', child: Text('Other')),
-                ],
-                onChanged: (value) => setDialogState(() {
-                  reason = value ?? 'fraud';
-                  message = '';
-                }),
-              ),
-              if (reason == 'other')
-                TextField(
-                  controller: detailsController,
-                  maxLength: 500,
-                  maxLines: 3,
-                  decoration: const InputDecoration(labelText: 'Tell us more'),
-                ),
-              if (message.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    message,
-                    style: const TextStyle(color: Colors.red),
-                  ),
-                ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                if (reason == 'other' &&
-                    detailsController.text.trim().length < 5) {
-                  setDialogState(
-                    () => message = 'Please add at least five characters.',
-                  );
-                  return;
-                }
-                Navigator.pop(dialogContext, {
-                  'reason': reason,
-                  'details': detailsController.text.trim(),
-                });
-              },
-              child: const Text('Submit report'),
-            ),
-          ],
-        ),
+      isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
+      showDragHandle: false,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (_) => ReportJobSheet(
+        job: job,
+        onSubmit: (reason, details) =>
+            _platformContentService.reportJob(job.id, reason, details),
       ),
     );
-    detailsController.dispose();
-    if (report == null || !mounted) return;
-    try {
-      await _platformContentService.reportJob(
-        job.id,
-        report['reason']!,
-        report['details']!,
+    if (sent == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Thanks. Your report was sent for review.')),
       );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Thanks. Your report was sent for review.'),
-          ),
-        );
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(error.toString().replaceFirst('Bad state: ', '')),
-          ),
-        );
-      }
     }
   }
 

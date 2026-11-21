@@ -4,6 +4,7 @@ import { requireAdmin } from '../middlewares/adminMiddleware.js';
 import { supabaseAdmin } from '../config/supabase.js';
 import adminSupabaseModules from './adminSupabaseModules.js';
 import { razorpayRequest, revokeFullyRefundedOrder } from './employerRoutes.js';
+import { sendNotificationToUser } from '../services/fcmService.js';
 
 const router = express.Router();
 
@@ -357,11 +358,130 @@ router.post('/payments/:orderId/reconcile', async (req, res) => {
     res.json({ status: refund.status });
   } catch (error) { fail(res, error); }
 });
-router.get('/reports', (_req, res) => {
-  return res.set('Cache-Control', 'no-store').json({ available: false, summary: null, reports: [], nextCursor: null });
+const reportReasons = new Set(['fraud', 'misleading', 'duplicate', 'inappropriate', 'other']);
+const reportStatuses = new Set(['pending', 'dismissed', 'job_closed']);
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function reportRecord(row) {
+  const job = row.jobs || {};
+  return {
+    id: row.id, jobId: row.job_id, jobTitle: job.title || 'Job listing',
+    companyName: job.company_name || '', jobStatus: job.status || '',
+    reason: row.reason, details: row.details || '', status: row.status,
+    createdAt: row.created_at, resolvedAt: row.resolved_at || null,
+    resolutionNotes: row.resolution_notes || '',
+  };
+}
+
+router.get('/reports', async (req, res) => {
+  try {
+    const status = req.query.status === 'all' ? 'all' :
+      reportStatuses.has(req.query.status) ? req.query.status : 'pending';
+    const reason = reportReasons.has(req.query.reason) ? req.query.reason : 'all';
+    const search = typeof req.query.search === 'string'
+      ? req.query.search.trim().slice(0, 80).replace(/[(),.%_*\\]/g, ' ').trim() : '';
+    const offset = Number(req.query.cursor ?? 0);
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100000) {
+      return res.status(400).json({ error: { message: 'Invalid page cursor.' } });
+    }
+    let query = supabaseAdmin.from('job_reports').select(
+      'id,job_id,reason,details,status,created_at,resolved_at,resolution_notes,jobs!inner(title,company_name,status)',
+      { count: 'exact' },
+    ).order('created_at', { ascending: false }).order('id', { ascending: false });
+    if (status !== 'all') query = query.eq('status', status);
+    if (reason !== 'all') query = query.eq('reason', reason);
+    if (search) query = query.or(`title.ilike.%${search}%,company_name.ilike.%${search}%`,
+      { referencedTable: 'jobs' });
+    const [page, pending, dismissed, closed] = await Promise.all([
+      query.range(offset, offset + 29),
+      countRows('job_reports', (q) => q.eq('status', 'pending')),
+      countRows('job_reports', (q) => q.eq('status', 'dismissed')),
+      countRows('job_reports', (q) => q.eq('status', 'job_closed')),
+    ]);
+    if (page.error) throw Object.assign(new Error('Reports are temporarily unavailable.'), { status: 503 });
+    const rows = page.data || [];
+    res.set('Cache-Control', 'no-store').json({
+      summary: { pending, dismissed, jobClosed: closed },
+      reports: rows.map(reportRecord),
+      total: page.count ?? rows.length,
+      nextCursor: offset + rows.length < (page.count ?? offset + rows.length)
+        ? String(offset + rows.length) : null,
+    });
+  } catch (error) { fail(res, error); }
 });
-router.post('/reports/:id/resolve', (_req, res) => {
-  return res.status(503).json({ error: { message: 'This admin action is temporarily unavailable.' } });
+
+router.get('/reports/:id', async (req, res) => {
+  try {
+    if (!uuid.test(req.params.id)) return res.status(400).json({ error: { message: 'Invalid report ID.' } });
+    const { data: report, error } = await supabaseAdmin.from('job_reports')
+      .select('id,job_id,reason,details,status,created_at,resolved_at,resolution_notes,resolved_by')
+      .eq('id', req.params.id).maybeSingle();
+    if (error) throw Object.assign(new Error('Report is temporarily unavailable.'), { status: 503 });
+    if (!report) return res.status(404).json({ error: { message: 'Report not found.' } });
+    const [jobResult, relatedResult] = await Promise.all([
+      supabaseAdmin.from('jobs').select('id,employer_id,title,company_name,description,category,district,salary_text,status,created_at,expires_at')
+        .eq('id', report.job_id).maybeSingle(),
+      supabaseAdmin.from('job_reports').select('id,reason,details,status,created_at')
+        .eq('job_id', report.job_id).order('created_at', { ascending: false }).limit(100),
+    ]);
+    if (jobResult.error || relatedResult.error) throw Object.assign(new Error('Report details are temporarily unavailable.'), { status: 503 });
+    const job = jobResult.data;
+    const { data: employer, error: employerError } = job?.employer_id
+      ? await supabaseAdmin.from('employers').select('company_name').eq('id', job.employer_id).maybeSingle()
+      : { data: null, error: null };
+    if (employerError) throw Object.assign(new Error('Company details are temporarily unavailable.'), { status: 503 });
+    res.set('Cache-Control', 'no-store').json({
+      report: { ...reportRecord({ ...report, jobs: job }), resolvedBy: report.resolved_by || null },
+      job: job ? { id: job.id, title: job.title, companyName: employer?.company_name || job.company_name || '',
+        description: job.description || '', category: job.category || '', district: job.district || '',
+        salaryText: job.salary_text || '', status: job.status, createdAt: job.created_at,
+        expiresAt: job.expires_at } : null,
+      relatedReports: (relatedResult.data || []).map((row) => ({
+        id: row.id, reason: row.reason, details: row.details || '',
+        status: row.status, createdAt: row.created_at,
+      })),
+    });
+  } catch (error) { fail(res, error); }
+});
+
+router.post('/reports/:id/resolve', async (req, res) => {
+  try {
+    if (!uuid.test(req.params.id)) return res.status(400).json({ error: { message: 'Invalid report ID.' } });
+    const decision = req.body?.decision;
+    const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : '';
+    if (!['dismissed', 'job_closed'].includes(decision) || notes.length > 1000 ||
+        (decision === 'job_closed' && notes.length < 5)) {
+      return res.status(400).json({ error: { message: 'Choose a decision and add a reason of at least five characters to close a job.' } });
+    }
+    const { data, error } = await supabaseAdmin.rpc('resolve_job_report', {
+      p_report_id: req.params.id, p_actor_uid: req.user.uid,
+      p_decision: decision, p_notes: notes,
+    });
+    if (error) {
+      if (/already been reviewed|only a published|not found/i.test(error.message)) {
+        return res.status(409).json({ error: { message: error.message } });
+      }
+      throw Object.assign(new Error('Could not resolve this report.'), { status: 503 });
+    }
+    if (decision === 'job_closed' && data?.employerUid) {
+      try {
+        const notice = await supabaseAdmin.from('notifications').insert({
+          user_id: data.employerUid, title: 'Job listing closed',
+          message: `Career360 closed your listing "${data.jobTitle}" after review. ${notes}`,
+          type: 'job_moderation',
+        });
+        if (notice.error) console.warn('[Report notification]', notice.error.message);
+        sendNotificationToUser({ userId: data.employerUid,
+          title: 'Job listing closed',
+          body: `Your listing "${data.jobTitle}" was closed after review. Open the employer portal for details.`,
+          type: 'job_moderation', metadata: { jobId: data.jobId },
+        }).catch((pushError) => console.warn('[Report push]', pushError.message));
+      } catch (notificationError) {
+        console.warn('[Report notification]', notificationError);
+      }
+    }
+    res.set('Cache-Control', 'no-store').json({ status: data.status, affectedReports: data.affectedReports });
+  } catch (error) { fail(res, error); }
 });
 
 export default router;

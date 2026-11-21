@@ -36,7 +36,7 @@ const copy: Record<AdminTab, { title: string; description: string }> = {
   jobseekers: { title: 'Job Seekers', description: 'Find candidate accounts and manage access to Career360.' },
   plans: { title: 'Hiring plans', description: 'Set the offers employers see in the app.' },
   payments: { title: 'Payments', description: 'Track orders, payment status, and refunds.' },
-  reports: { title: 'Reports', description: 'Resolve reported listings and review platform totals.' },
+  reports: { title: 'Reports', description: 'Review reported jobs and record moderation decisions.' },
   settings: { title: 'Settings', description: 'Manage the password for your admin account.' },
 };
 

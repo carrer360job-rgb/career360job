@@ -6,6 +6,7 @@ import EmployersPanel from './EmployersPanel';
 import JobsPanel from './JobsPanel';
 import PlansPanel from './PlansPanel';
 import OperationsPanels from './OperationsPanels';
+import ReportsPanel from './ReportsPanel';
 import AdminDashboard, { AdminDashboardSkeleton } from './AdminDashboard';
 import SettingsPanel from './SettingsPanel';
 
@@ -174,8 +175,9 @@ export default function App() {
           {activeTab === 'jobs' && <JobsPanel />}
           {activeTab === 'plans' && <PlansPanel />}
           {activeTab === 'settings' && <SettingsPanel identity={view.identity} />}
-          {['jobseekers', 'payments', 'reports'].includes(activeTab) && (
-            <OperationsPanels key={activeTab} kind={activeTab as 'jobseekers' | 'payments' | 'reports'} />
+          {activeTab === 'reports' && <ReportsPanel />}
+          {['jobseekers', 'payments'].includes(activeTab) && (
+            <OperationsPanels key={activeTab} kind={activeTab as 'jobseekers' | 'payments'} />
           )}
       </AdminDashboard>
     );

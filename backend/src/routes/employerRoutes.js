@@ -263,11 +263,20 @@ employerRouter.post('/jobs/:jobId/report', verifySensitiveToken, verified, async
     if (req.user.role !== 'CANDIDATE') throw fail('Only job seekers can report a listing.', 403);
     const reason = ['fraud', 'misleading', 'duplicate', 'inappropriate', 'other'].includes(req.body?.reason)
       ? req.body.reason : null;
-    const details = typeof req.body?.details === 'string' ? req.body.details.trim().slice(0, 500) : '';
-    if (!reason || (reason === 'other' && details.length < 5)) throw fail('Choose a report reason and add details when selecting Other.');
-    const job = checked(await supabaseAdmin.from('jobs').select('id')
+    const details = typeof req.body?.details === 'string' ? req.body.details.trim() : '';
+    if (!reason || details.length > 500 || (reason === 'other' && details.length < 5)) {
+      throw fail('Choose a report reason and add up to 500 characters of details. Other requires at least five characters.');
+    }
+    const job = checked(await supabaseAdmin.from('jobs').select('id,status,expires_at')
       .eq('id', req.params.jobId).maybeSingle());
     if (!job) throw fail('Job not found.', 404);
+    if (job.status !== 'PUBLISHED' || (job.expires_at && Date.parse(job.expires_at) <= Date.now())) {
+      throw fail('This job is no longer available to report.', 409);
+    }
+    const recent = await supabaseAdmin.from('job_reports').select('id', { count: 'exact', head: true })
+      .eq('candidate_user_id', req.user.uid).gte('created_at', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+    if (recent.error) throw fail('Reports are temporarily unavailable. Try again.', 503);
+    if ((recent.count ?? 0) >= 10) throw fail('You have sent several reports recently. Please try again later.', 429);
     const result = await supabaseAdmin.from('job_reports').insert({
       job_id: job.id, candidate_user_id: req.user.uid, reason, details,
     });

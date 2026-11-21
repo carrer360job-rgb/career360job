@@ -33,18 +33,24 @@ class PlatformContentService {
     final uri = Uri.parse(
       '${_baseUrl.replaceAll(RegExp(r"/+$"), "")}/api/employer/jobs/${Uri.encodeComponent(jobId)}/report',
     );
-    final response = await http
-        .post(
-          uri,
-          headers: {
-            'Authorization': 'Bearer $token',
-            'Content-Type': 'application/json',
-          },
-          body: jsonEncode({'reason': reason, 'details': details}),
-        )
-        .timeout(const Duration(seconds: 12));
+    late http.Response response;
+    try {
+      response = await http
+          .post(
+            uri,
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({'reason': reason, 'details': details}),
+          )
+          .timeout(const Duration(seconds: 12));
+    } catch (_) {
+      throw StateError('Could not send your report. Check your connection and try again.');
+    }
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      final decoded = jsonDecode(response.body);
+      Object? decoded;
+      try { decoded = jsonDecode(response.body); } catch (_) { /* Server error body may be plain text. */ }
       final error = decoded is Map ? decoded['error'] : null;
       final message = error is Map ? error['message'] : null;
       throw StateError(
