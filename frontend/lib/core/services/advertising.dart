@@ -32,7 +32,10 @@ class Advertising {
 
   static Future<Map<String, dynamic>> eligibleSettings() {
     final uid = SupabaseService.client.auth.currentUser?.id;
-    if (uid == null) return Future.value({});
+    if (uid == null) {
+      debugPrint('[AdMob] No user logged in; ads disabled.');
+      return Future.value({});
+    }
     if (uid != _userId ||
         _checkedAt == null ||
         DateTime.now().difference(_checkedAt!).inSeconds >= 45) {
@@ -47,14 +50,19 @@ class Advertising {
               .single();
           final profile = await SupabaseService.getCandidateProfile(uid);
           final age = profile?['age'];
-          if (account['role'] != 'CANDIDATE' ||
-              account['status'] != 'ACTIVE' ||
-              age is! int ||
-              age < 18) {
+          final role = (account['role'] ?? '').toString().toUpperCase();
+          final status = (account['status'] ?? '').toString().toUpperCase();
+          final isAdult = age is int ? age >= 18 : !kReleaseMode;
+          debugPrint('[AdMob] Checking eligibility for $uid: role=$role, status=$status, age=$age, isAdult=$isAdult');
+          if (role != 'CANDIDATE' || status != 'ACTIVE' || !isAdult) {
+            debugPrint('[AdMob] User not eligible for ads (role=$role, status=$status, isAdult=$isAdult).');
             return <String, dynamic>{};
           }
-          return await settings();
-        } catch (_) {
+          final s = await settings();
+          debugPrint('[AdMob] Remote ad settings loaded: enabled=${s['enabled']}, banner=${s['banner']}, native=${s['native']}');
+          return s;
+        } catch (e) {
+          debugPrint('[AdMob] Error checking eligible settings: $e');
           return <String, dynamic>{};
         }
       }();
@@ -73,20 +81,31 @@ class Advertising {
             final allowed =
                 error == null &&
                 await ConsentInformation.instance.canRequestAds();
-            if (allowed) await MobileAds.instance.initialize();
-            if (!completer.isCompleted) completer.complete(allowed);
-          } catch (_) {
-            if (!completer.isCompleted) completer.complete(false);
+            if (allowed || !kReleaseMode) {
+              await MobileAds.instance.initialize();
+            }
+            debugPrint('[AdMob UMP] Consent finished. Allowed: $allowed, error: $error');
+            if (!completer.isCompleted) completer.complete(allowed || !kReleaseMode);
+          } catch (e) {
+            debugPrint('[AdMob UMP] Consent check error: $e');
+            try { await MobileAds.instance.initialize(); } catch (_) {}
+            if (!completer.isCompleted) completer.complete(!kReleaseMode);
           }
         });
       },
-      (_) {
-        if (!completer.isCompleted) completer.complete(false);
+      (formError) async {
+        debugPrint('[AdMob UMP] Consent info update error: ${formError.message}');
+        try { await MobileAds.instance.initialize(); } catch (_) {}
+        if (!completer.isCompleted) completer.complete(!kReleaseMode);
       },
     );
     return completer.future.timeout(
-      const Duration(seconds: 15),
-      onTimeout: () => false,
+      const Duration(seconds: 10),
+      onTimeout: () async {
+        debugPrint('[AdMob UMP] Consent timeout; initializing MobileAds directly.');
+        try { await MobileAds.instance.initialize(); } catch (_) {}
+        return !kReleaseMode;
+      },
     );
   }
 
@@ -257,15 +276,17 @@ class _CandidateAdState extends State<CandidateAd> with WidgetsBindingObserver {
                   widget.jobPosition % interval == 0 &&
                   widget.jobPosition ~/ interval <= 3));
       if (!eligible) {
+        debugPrint('[AdMob] Ad placement (native: ${widget.native}, pos: ${widget.jobPosition}) is not eligible under settings (enabled: ${settings['enabled']}).');
         _clear();
         return;
       }
-      if (!mounted ||
-          !(ModalRoute.of(context)?.isCurrent ?? false) ||
+      final hasConsent = await Advertising.consent();
+      if (!mounted) return;
+      if (!(ModalRoute.of(context)?.isCurrent ?? false) ||
           _ad != null ||
-          !await Advertising.consent() ||
-          !mounted ||
+          !hasConsent ||
           uid != SupabaseService.client.auth.currentUser?.id) {
+        debugPrint('[AdMob] Pre-load check stopped: mounted=$mounted, isCurrent=${ModalRoute.of(context)?.isCurrent}, adExists=${_ad != null}, consent=$hasConsent');
         return;
       }
       final id = widget.native
@@ -282,6 +303,7 @@ class _CandidateAdState extends State<CandidateAd> with WidgetsBindingObserver {
                   )
                 : 'ca-app-pub-3940256099942544/6300978111');
       if (id.isEmpty) return;
+      debugPrint('[AdMob] Requesting ${widget.native ? "Native" : "Banner"} ad with ID: $id');
       if (widget.native) {
         _ad = NativeAd(
           adUnitId: id,
@@ -291,6 +313,7 @@ class _CandidateAdState extends State<CandidateAd> with WidgetsBindingObserver {
           ),
           listener: NativeAdListener(
             onAdLoaded: (ad) {
+              debugPrint('[AdMob Native] Loaded successfully!');
               if (mounted && identical(_ad, ad)) {
                 setState(() => _loaded = true);
               } else {
@@ -298,6 +321,7 @@ class _CandidateAdState extends State<CandidateAd> with WidgetsBindingObserver {
               }
             },
             onAdFailedToLoad: (ad, error) {
+              debugPrint('[AdMob Native] Failed to load: ${error.message} (code: ${error.code})');
               ad.dispose();
               if (identical(_ad, ad)) _ad = null;
             },
@@ -314,6 +338,7 @@ class _CandidateAdState extends State<CandidateAd> with WidgetsBindingObserver {
           request: const AdRequest(),
           listener: BannerAdListener(
             onAdLoaded: (ad) {
+              debugPrint('[AdMob Banner] Loaded successfully!');
               if (mounted && identical(_ad, ad)) {
                 setState(() => _loaded = true);
               } else {
@@ -321,6 +346,7 @@ class _CandidateAdState extends State<CandidateAd> with WidgetsBindingObserver {
               }
             },
             onAdFailedToLoad: (ad, error) {
+              debugPrint('[AdMob Banner] Failed to load: ${error.message} (code: ${error.code})');
               ad.dispose();
               if (identical(_ad, ad)) _ad = null;
             },
@@ -328,7 +354,9 @@ class _CandidateAdState extends State<CandidateAd> with WidgetsBindingObserver {
         );
       }
       await _ad!.load();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[AdMob] Error checking or loading ad: $e');
+      _clear();
       _clear();
     } finally {
       _checking = false;
